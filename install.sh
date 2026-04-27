@@ -291,7 +291,7 @@ ask_repo() {
 
 ask_branch() {
   CFG[BRANCH]=$(wt_input "Ветка или тег для установки:" "$ARG_BRANCH") || die "Прервано"
-  [ -z "${CFG[BRANCH]}" ] && CFG[BRANCH]="$ARG_BRANCH"
+  CFG[BRANCH]="${CFG[BRANCH]:-$ARG_BRANCH}"
 }
 
 ask_version() {
@@ -300,8 +300,7 @@ ask_version() {
 
 Используйте 'latest' для последней стабильной, или 'v1.2.0' для конкретной." \
     "$DEFAULT_VERSION") || die "Прервано"
-  [ -z "$val" ] && val="$DEFAULT_VERSION"
-  CFG[VERSION]="$val"
+  CFG[VERSION]="${val:-$DEFAULT_VERSION}"
 }
 
 ask_domain() {
