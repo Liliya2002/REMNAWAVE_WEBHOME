@@ -473,8 +473,8 @@ menu_ssl() {
 
     case "$choice" in
       1) action_cert_info ;;
-      2) run_and_show "certbot renew" docker compose run --rm certbot renew --webroot -w /var/www/certbot ;;
-      3) run_and_show "certbot renew --force" docker compose run --rm certbot renew --force-renewal --webroot -w /var/www/certbot ;;
+      2) run_and_show "certbot renew" docker compose run --rm --entrypoint certbot certbot renew --webroot -w /var/www/certbot ;;
+      3) run_and_show "certbot renew --force" docker compose run --rm --entrypoint certbot certbot renew --force-renewal --webroot -w /var/www/certbot ;;
       4) action_cert_issue ;;
       0) return 0 ;;
     esac
@@ -523,7 +523,7 @@ DNS A-запись для ${domain} должна указывать на это�
   fi
 
   step "Issue cert"
-  if docker compose run --rm certbot certonly \
+  if docker compose run --rm --entrypoint certbot certbot certonly \
        --webroot -w /var/www/certbot \
        -d "$domain" --email "$email" \
        --agree-tos --no-eff-email --non-interactive; then

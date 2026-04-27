@@ -767,7 +767,10 @@ phase_b_tls() {
   local email="${CFG[ADMIN_EMAIL]}"
 
   log "Запрашиваю сертификат для ${domain} (email: ${email})…"
-  if docker compose run --rm certbot certonly \
+  # ВАЖНО: --entrypoint certbot нужен потому что в compose у сервиса certbot
+  # entrypoint — это loop для авто-renew. Без override наша команда certonly
+  # передаётся в shell как $1 $2... и игнорируется.
+  if docker compose run --rm --entrypoint certbot certbot certonly \
       --webroot -w /var/www/certbot \
       -d "$domain" \
       --email "$email" \
