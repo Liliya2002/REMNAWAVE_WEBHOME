@@ -159,11 +159,11 @@ export default function Servers() {
   return (
     <section className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Заголовок */}
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+      <div className="mb-6 sm:mb-8 pt-4 sm:pt-0">
+        <h2 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
           Серверы
         </h2>
-        <p className="mt-2 text-slate-400">Выберите сервер для подключения к VPN</p>
+        <p className="mt-2 text-sm sm:text-base text-slate-400">Выберите сервер для подключения к VPN</p>
       </div>
 
       {/* Счётчики */}

@@ -170,15 +170,15 @@ export default function Register(){
   }, [navigate, referralCode])
 
   return (
-    <div className="min-h-[calc(100vh-200px)] flex items-center justify-center px-4 sm:px-6 lg:px-8">
+    <div className="min-h-[calc(100vh-200px)] flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md">
-        <div className="bg-gradient-to-br from-slate-800/40 via-slate-900/50 to-slate-950 border border-slate-700/50 rounded-2xl p-8 shadow-2xl">
+        <div className="bg-gradient-to-br from-slate-800/40 via-slate-900/50 to-slate-950 border border-slate-700/50 rounded-2xl p-5 sm:p-8 shadow-2xl">
           {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent mb-2">
+          <div className="text-center mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent mb-2">
               Присоединитесь
             </h1>
-            <p className="text-slate-400">Создайте аккаунт за 30 секунд</p>
+            <p className="text-sm sm:text-base text-slate-400">Создайте аккаунт за 30 секунд</p>
           </div>
 
           {/* Referral Bonus Alert */}

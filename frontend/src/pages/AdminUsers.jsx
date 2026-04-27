@@ -137,8 +137,8 @@ export default function AdminUsers() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-surface border border-slate-700 rounded-xl p-6">
-        <h2 className="text-2xl font-bold mb-6">👥 Управление пользователями</h2>
+      <div className="bg-surface border border-slate-700 rounded-xl p-4 sm:p-6">
+        <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">👥 Управление пользователями</h2>
 
         {/* Фильтры */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

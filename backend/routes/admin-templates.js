@@ -1,6 +1,7 @@
 const express = require('express')
 const db = require('../db')
 const { verifyToken, verifyAdmin } = require('../middleware')
+const maint = require('../services/maintenance')
 
 const router = express.Router()
 
@@ -439,6 +440,9 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
     if (typeof remnwave.invalidateConfigCache === 'function') {
       remnwave.invalidateConfigCache()
     }
+
+    // Сбрасываем кеш maintenance — изменение применится сразу, не через 30с
+    maint.invalidate()
 
     res.json({ config: result.rows[0], message: 'Configuration updated' })
   } catch (err) {

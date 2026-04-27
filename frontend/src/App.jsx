@@ -33,6 +33,7 @@ import PaymentHistory from './pages/PaymentHistory'
 import AdminNotifications from './components/AdminNotifications'
 import TemplateBuilder from './components/TemplateBuilder'
 import NotificationBell from './components/NotificationBell'
+import MaintenanceGate from './components/MaintenanceGate'
 
 function Navigation(){
   const [isAuth, setIsAuth] = useState(!!localStorage.getItem('token'))
@@ -183,6 +184,7 @@ export default function App(){
 
   return (
     <BrowserRouter>
+      <MaintenanceGate>
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-200 font-sans">
         {/* Header */}
         <header className="sticky top-0 z-40 border-b border-slate-800/50 bg-slate-950/80 backdrop-blur-lg">
@@ -237,10 +239,10 @@ export default function App(){
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-slate-800/50 bg-slate-950/50 py-12 px-4 sm:px-6 lg:px-8 mt-24">
+        <footer className="border-t border-slate-800/50 bg-slate-950/50 py-8 sm:py-12 px-4 sm:px-6 lg:px-8 mt-12 sm:mt-24">
           <div className="max-w-7xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
-              <div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-8">
+              <div className="col-span-2 md:col-span-1">
                 <h3 className="text-lg font-bold mb-4">{siteTitle}</h3>
                 <p className="text-slate-400 text-sm">{siteDesc}</p>
               </div>
@@ -278,6 +280,7 @@ export default function App(){
           </div>
         </footer>
       </div>
+      </MaintenanceGate>
     </BrowserRouter>
   )
 }

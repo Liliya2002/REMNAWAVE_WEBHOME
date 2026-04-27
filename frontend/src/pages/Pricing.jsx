@@ -252,18 +252,18 @@ export default function Pricing(){
   }
   
   return (
-    <div className="w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen py-24 px-4 sm:px-6 lg:px-8">
+    <div className="w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen py-10 sm:py-16 lg:py-24 px-4 sm:px-6 lg:px-8">
       <section className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="text-center mb-16">
-          <h1 className="text-5xl sm:text-6xl font-bold mb-6">
+        <div className="text-center mb-8 sm:mb-12 lg:mb-16">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-4 sm:mb-6 leading-tight">
             <span className="bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
               Прозрачные цены
             </span>
             <br />
             <span className="text-slate-300">без скрытых платежей</span>
           </h1>
-          <p className="text-lg text-slate-400 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto">
             Каждый аккаунт - неограниченный трафик и полная приватность. Без подписки и автосписаний.
           </p>
         </div>

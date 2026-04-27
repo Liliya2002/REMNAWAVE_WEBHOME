@@ -14,17 +14,17 @@ export default function Landing() {
   return (
     <div className="w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
       {/* Hero Section */}
-      <section className="pt-32 pb-24 px-4 sm:px-6 lg:px-8">
+      <section className="pt-16 sm:pt-24 lg:pt-32 pb-12 sm:pb-20 lg:pb-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           <div className="text-center">
             {/* Badge */}
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-full mb-8 hover:border-blue-500/40 transition-colors">
+            <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 rounded-full mb-6 sm:mb-8 hover:border-blue-500/40 transition-colors">
               <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></span>
-              <span className="text-sm text-blue-300">Защита мирового уровня</span>
+              <span className="text-xs sm:text-sm text-blue-300">Защита мирового уровня</span>
             </div>
 
             {/* Main Heading */}
-            <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold tracking-tight mb-6">
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-4 sm:mb-6 leading-tight">
               <span className="bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-600 bg-clip-text text-transparent">
                 {heroTitle}
               </span>
@@ -33,49 +33,49 @@ export default function Landing() {
             </h1>
 
             {/* Subheading */}
-            <p className="max-w-2xl mx-auto text-lg sm:text-xl text-slate-400 mb-8">
+            <p className="max-w-2xl mx-auto text-base sm:text-lg lg:text-xl text-slate-400 mb-6 sm:mb-8">
               Высокая скорость, шифрование AES-256, серверы в 150+ странах и поддержка всех устройств.
               Начните всего за <span className="text-blue-400 font-semibold">10 рублей</span>
             </p>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center mb-10 sm:mb-16">
               <button
                 onClick={() => navigate('/pricing')}
-                className="px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-lg hover:shadow-xl hover:shadow-blue-500/50 transition-all duration-300 transform hover:scale-105"
+                className="px-6 sm:px-8 py-3 sm:py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-lg hover:shadow-xl hover:shadow-blue-500/50 transition-all duration-300 sm:transform sm:hover:scale-105"
               >
                 Попробовать за 10 ₽
               </button>
               <button
                 onClick={() => navigate('/pricing')}
-                className="px-8 py-4 border border-slate-600 text-slate-300 font-bold rounded-lg hover:border-blue-500 hover:text-blue-300 transition-all duration-300"
+                className="px-6 sm:px-8 py-3 sm:py-4 border border-slate-600 text-slate-300 font-bold rounded-lg hover:border-blue-500 hover:text-blue-300 transition-all duration-300"
               >
                 Выбрать тариф
               </button>
             </div>
 
             {/* Metrics Bar */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-12 border-t border-b border-slate-800/50">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 py-6 sm:py-12 border-t border-b border-slate-800/50">
               <div className="text-center">
-                <div className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                <div className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                   150+
                 </div>
-                <div className="text-sm text-slate-400">Стран</div>
+                <div className="text-xs sm:text-sm text-slate-400">Стран</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                <div className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                   10 Гбит/с
                 </div>
-                <div className="text-sm text-slate-400">Макс скорость</div>
+                <div className="text-xs sm:text-sm text-slate-400">Макс скорость</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                <div className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                   &lt;20мс
                 </div>
-                <div className="text-sm text-slate-400">Задержка</div>
+                <div className="text-xs sm:text-sm text-slate-400">Задержка</div>
               </div>
               <div className="text-center">
-                <div className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                <div className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                   99.9%
                 </div>
                 <div className="text-sm text-slate-400">Доступность</div>
@@ -86,14 +86,14 @@ export default function Landing() {
       </section>
 
       {/* Features Section */}
-      <section className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
+      <section className="py-12 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Почему выбирают нас</h2>
+          <div className="text-center mb-10 sm:mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3 sm:mb-4">Почему выбирают нас</h2>
             <p className="text-slate-400">Лучшие технологии для вашей безопасности</p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
             {[
               {
                 icon: <Lock className="w-9 h-9 text-blue-400" />,
@@ -128,11 +128,11 @@ export default function Landing() {
             ].map((feature, i) => (
               <div
                 key={i}
-                className="p-8 bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700/50 rounded-xl hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300"
+                className="p-5 sm:p-6 lg:p-8 bg-gradient-to-br from-slate-800/50 to-slate-900/50 border border-slate-700/50 rounded-xl hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300"
               >
-                <div className="text-4xl mb-4">{typeof feature.icon === 'string' ? feature.icon : feature.icon}</div>
-                <h3 className="text-xl font-bold mb-3 text-slate-100">{feature.title}</h3>
-                <p className="text-slate-400">{feature.description}</p>
+                <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">{typeof feature.icon === 'string' ? feature.icon : feature.icon}</div>
+                <h3 className="text-lg sm:text-xl font-bold mb-2 sm:mb-3 text-slate-100">{feature.title}</h3>
+                <p className="text-sm sm:text-base text-slate-400">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -140,14 +140,14 @@ export default function Landing() {
       </section>
 
       {/* How It Works Section */}
-      <section className="py-24 px-4 sm:px-6 lg:px-8">
+      <section className="py-12 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Подключение за 2 минуты</h2>
+          <div className="text-center mb-10 sm:mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3 sm:mb-4">Подключение за 2 минуты</h2>
             <p className="text-slate-400">Простой и быстрый процесс для новичков</p>
           </div>
 
-          <div className="grid md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6">
             {[
               {
                 num: '1',
@@ -188,10 +188,10 @@ export default function Landing() {
       </section>
 
       {/* Comparison Section */}
-      <section className="py-24 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
+      <section className="py-12 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8 bg-slate-900/50">
         <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Мы выгоднее конкурентов</h2>
+          <div className="text-center mb-10 sm:mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3 sm:mb-4">Мы выгоднее конкурентов</h2>
             <p className="text-slate-400">Лучшие цены на рынке</p>
           </div>
 
@@ -224,10 +224,10 @@ export default function Landing() {
       </section>
 
       {/* FAQ Section */}
-      <section className="py-24 px-4 sm:px-6 lg:px-8">
+      <section className="py-12 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-4">Частые вопросы</h2>
+          <div className="text-center mb-10 sm:mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold mb-3 sm:mb-4">Частые вопросы</h2>
           </div>
 
           <div className="space-y-4">
@@ -269,13 +269,13 @@ export default function Landing() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-blue-600 to-cyan-600">
+      <section className="py-12 sm:py-20 lg:py-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-blue-600 to-cyan-600">
         <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-4xl font-bold text-white mb-6">Готовы подключиться?</h2>
-          <p className="text-lg text-blue-100 mb-8">Получите доступ к безопасному интернету всего за пару минут</p>
+          <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4 sm:mb-6">Готовы подключиться?</h2>
+          <p className="text-base sm:text-lg text-blue-100 mb-6 sm:mb-8">Получите доступ к безопасному интернету всего за пару минут</p>
           <button
             onClick={() => navigate('/pricing')}
-            className="px-8 py-4 bg-white text-blue-600 font-bold rounded-lg hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 transform hover:scale-110"
+            className="px-6 sm:px-8 py-3 sm:py-4 bg-white text-blue-600 font-bold rounded-lg hover:shadow-2xl hover:shadow-blue-500/50 transition-all duration-300 sm:transform sm:hover:scale-110"
           >
             Начать за 10 ₽
           </button>

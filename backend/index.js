@@ -108,12 +108,20 @@ const adminUploadsRoutes = require('./routes/admin-uploads')
 const adminAuditRoutes = require('./routes/admin-audit')
 const adminSystemRoutes = require('./routes/admin-system')
 const healthRoutes = require('./routes/health')
+const maintenanceRoutes = require('./routes/maintenance')
+const maintenanceGuard = require('./middleware/maintenance')
 const landingsRoutes = require('./routes/landings')
 const seoRoutes = require('./routes/seo')
 const { landingSsrMiddleware } = require('./middleware/landingSsr')
 const path = require('path')
 const notificationsRoutes = require('./routes/notifications')
 const sessionsRoutes = require('./routes/sessions')
+
+// Maintenance status — публичный, БЕЗ guard (фронт его пингует чтобы понять что делать)
+app.use('/api/maintenance', maintenanceRoutes)
+
+// Guard срабатывает на всех остальных роутах: блокирует не-админов когда maintenance ON
+app.use(maintenanceGuard)
 
 app.use('/auth', authLimiter, authRoutes)
 app.use('/api', apiRoutes)

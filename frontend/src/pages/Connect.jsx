@@ -130,8 +130,8 @@ export default function Connect() {
   /* ─── Error ─── */
   if (error) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-16">
-        <div className="p-8 bg-red-500/10 border border-red-500/50 rounded-2xl text-center">
+      <div className="max-w-2xl mx-auto px-4 py-10 sm:py-16">
+        <div className="p-5 sm:p-8 bg-red-500/10 border border-red-500/50 rounded-2xl text-center">
           <div className="text-5xl mb-4"><AlertTriangle className="w-12 h-12 text-red-400 mx-auto" /></div>
           <h2 className="text-xl font-bold text-red-400 mb-2">Не удалось загрузить конфиг</h2>
           <p className="text-red-300/80 mb-6">{error}</p>
