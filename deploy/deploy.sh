@@ -89,11 +89,12 @@ command -v git >/dev/null || { err "git не установлен"; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || { err "не git-репозиторий"; exit 1; }
 
 if ! git diff --quiet HEAD 2>/dev/null; then
-  warn "В рабочем дереве есть несохранённые изменения. Они могут быть утеряны при checkout."
-  if [ "$ASSUME_YES" != 1 ]; then
-    read -r -p "Продолжить (y/N)? " ans
-    [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { err "Отменено"; exit 1; }
-  fi
+  err "В рабочем дереве есть несохранённые изменения:"
+  git status -s | sed 's/^/  /' >&2
+  echo "" >&2
+  err "git checkout не сможет переключиться на новый тег без потери этих правок."
+  err "Закоммить (git commit -a) или отбрось (git checkout -- .) и запусти deploy.sh заново."
+  exit 1
 fi
 
 # IMAGE_NAMESPACE для compose
@@ -165,8 +166,12 @@ rollback() {
     sed -i.bak "s/^VERSION=.*/VERSION=${ROLLBACK_VERSION#v}/" .env && rm -f .env.bak
     ok "VERSION в .env вернули на ${ROLLBACK_VERSION#v}"
   fi
+  # ВАЖНО: после правки .env нужно перечитать переменные, иначе docker compose
+  # ниже всё ещё видит новую VERSION в shell env и снова потянет её, а не старую.
+  set -a; . ./.env; set +a
+
   if [ "$DEPLOY_STARTED" = 1 ]; then
-    log "docker compose pull (старые образы)…"
+    log "docker compose pull (старые образы ${VERSION})…"
     docker compose pull backend frontend 2>&1 | sed 's/^/  /' || warn "compose pull упал"
     log "docker compose up -d (откат контейнеров)…"
     docker compose up -d backend frontend 2>&1 | sed 's/^/  /' || warn "compose up упал"
@@ -175,7 +180,7 @@ rollback() {
     warn "БД не восстановлена автоматически. Если миграции прошли частично:"
     warn "  gunzip -c ${BACKUP_FILE} | docker compose exec -T db psql -U \$PGUSER \$PGDATABASE"
   fi
-  err "Откат завершён. Проверьте состояние: docker compose ps && curl http://localhost/api/health"
+  err "Откат завершён. Проверьте: docker compose ps && curl -kL https://\$DOMAIN/api/health"
 }
 
 trap cleanup_on_failure ERR INT TERM
@@ -236,17 +241,28 @@ step "Smoke test"
 # Ждём пока backend поднимется (макс 60 сек)
 MAX_WAIT=60
 WAITED=0
-HEALTH_URL="http://127.0.0.1/api/health"   # через nginx 80
+HEALTH_URL="http://127.0.0.1/api/health"
 
-# Если nginx не запущен или не настроен на TLS — health на самом backend
+# Если nginx не запущен — стучим прямо на backend (но он не expose-нут наружу,
+# так что попробуем через docker exec)
+NGINX_UP=1
 if ! docker compose ps nginx 2>/dev/null | grep -q "Up\|running"; then
-  HEALTH_URL="http://127.0.0.1:4000/api/health"
+  NGINX_UP=0
 fi
 
 log "Жду /api/health на ${HEALTH_URL} (макс ${MAX_WAIT}s)…"
 
 while [ "$WAITED" -lt "$MAX_WAIT" ]; do
-  if curl -fsS --max-time 3 "$HEALTH_URL" > /tmp/.deploy_health 2>/dev/null; then
+  # -L: следовать редиректам (HTTP→HTTPS); -k: принять самоподписанный для localhost;
+  #     если nginx отдал 301 на https — curl сходит на https://127.0.0.1, увидит cert
+  #     для DOMAIN, не совпадёт с 127.0.0.1, поэтому -k нужен.
+  # Если nginx не запущен — health через docker exec на backend контейнер.
+  if [ "$NGINX_UP" = 1 ]; then
+    HEALTH_CMD=(curl -fskSL --max-time 3 "$HEALTH_URL")
+  else
+    HEALTH_CMD=(docker compose exec -T backend wget -q -O - --tries=1 --timeout=3 http://127.0.0.1:4000/api/health)
+  fi
+  if "${HEALTH_CMD[@]}" > /tmp/.deploy_health 2>/dev/null; then
     HEALTH_VERSION=$(cat /tmp/.deploy_health | grep -oE '"version":"[^"]+"' | head -1 | sed 's/"version":"//;s/"$//')
     if [ "$HEALTH_VERSION" = "$VERSION_NUM" ]; then
       ok "Health OK, version=${HEALTH_VERSION}"
