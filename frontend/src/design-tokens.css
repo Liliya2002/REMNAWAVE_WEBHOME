@@ -1,0 +1,12 @@
+:root{
+  --bg: #0B1020;
+  --surface: #0F1724;
+  --brand: #6366F1;
+  --brand-light: #A78BFA;
+  --neon: #06B6D4;
+  --muted: #94A3B8;
+  --success: #10B981;
+  --danger: #EF4444;
+}
+
+body { background-color: var(--bg); color: #cbd5e1; }

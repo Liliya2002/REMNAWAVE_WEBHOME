@@ -1,0 +1,159 @@
+# ════════════════════════════════════════════════════════════════════════════
+# vpnwebhome — .gitignore
+# ════════════════════════════════════════════════════════════════════════════
+
+# ─── Секреты и локальная конфигурация ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.bak
+.env.bak.*
+.env.editing.bak
+*.env
+
+# .env.example — общая болванка, его коммитим
+!.env.example
+
+# Файлы, генерируемые install.sh из шаблонов с подстановкой $DOMAIN
+nginx/conf.d/app.conf
+
+# Локальный override docker-compose (каждый разработчик правит под себя)
+docker-compose.override.yml
+
+# Пароли / приватные ключи / TLS-сертификаты — никогда не коммитим
+*.pem
+*.key
+!**/test/**/*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+secrets/
+
+# Файлы шифрованных credentials (если кто-то вдруг сохранит)
+*.gpg
+*.asc
+
+# ─── Node.js ────────────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ─── Сборка ─────────────────────────────────────────────────────────────────
+dist/
+build/
+.next/
+.nuxt/
+.parcel-cache/
+.cache/
+.vite/
+frontend/dist/
+backend/dist/
+
+# ─── Бэкапы БД и SQL-дампы ─────────────────────────────────────────────────
+*.sql.gz
+*.dump
+backups/
+backend/_schema_dump.sql
+backend/_dump_*.sql
+
+# ─── Загрузки пользователей (runtime, не часть репо) ───────────────────────
+backend/uploads/
+
+# ─── Логи и временные файлы ────────────────────────────────────────────────
+*.log
+logs/
+*.tmp
+*.swp
+*.swo
+*~
+
+# Логи backup-cron-а
+/var/log/vpnwebhome-backup.log
+
+# ─── Тесты / coverage ──────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+*.lcov
+.jest-cache/
+
+# ─── IDE / редакторы ───────────────────────────────────────────────────────
+# .vscode — оставляем, но не персональные настройки
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json.example
+
+.idea/
+*.iml
+.fleet/
+.zed/
+.cursor/
+
+# Sublime
+*.sublime-project
+*.sublime-workspace
+
+# ─── ОС ─────────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ─── Claude / AI assistants (project-specific tools) ───────────────────────
+.sixth/
+.claude/
+.aider*
+
+# ─── Docker / Kubernetes ───────────────────────────────────────────────────
+# Локальные state-файлы k8s/kustomize если кто-то использует
+*.kubeconfig
+.docker/
+
+# ─── Certbot / Let's Encrypt (на сервере храним в docker volume) ───────────
+letsencrypt/
+certbot_certs/
+certbot_www/
+
+# ─── React Native (VpnMobile/) ─────────────────────────────────────────────
+# Большая часть отрегулирована в VpnMobile/.gitignore, но защитимся от утечек:
+*.apk
+*.aab
+*.ipa
+*.app
+**/Pods/
+**/build/
+**/.gradle/
+**/local.properties
+**/*.xcworkspace
+**/*.xcuserdatad
+**/Podfile.lock
+
+# Карта source maps для прода (если случайно положили)
+**/*.map
+
+# ─── Прочее ────────────────────────────────────────────────────────────────
+# pgAdmin / DBeaver / TablePlus локальные дампы
+*.bak
+*.old
+*.orig
+
+# Если кто-то запустит "git diff > patch.txt"
+*.patch
+*.diff
+
+# Архивы — обычно не нужны в репо
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+VpnMobile/ 

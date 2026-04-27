@@ -1,0 +1,41 @@
+# Зависимости — пересобираются в образе
+node_modules
+npm-debug.log*
+
+# Секреты и локальная конфигурация
+.env
+.env.local
+.env.*.local
+
+# Загруженные пользователями файлы (живут в volume)
+uploads/
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Тесты
+coverage/
+*.test.js
+
+# Docker самого себя
+Dockerfile*
+.dockerignore
+
+# Документация (не нужна в образе)
+*.md
+!migrations/*.md
+
+# Скрипты разработчика
+scripts/squash_migrations.js
+_schema_dump.sql
+_dump_*.sql

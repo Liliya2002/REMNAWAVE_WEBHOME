@@ -1,0 +1,80 @@
+# Bootstrap config: HTTP-only.
+# Используется только при первоначальной установке, пока не выпущен TLS-сертификат.
+# Установщик заменяет этот файл на app.conf (с HTTPS) после issue cert.
+#
+# Подстановка ${DOMAIN}:
+#   envsubst '$DOMAIN' < app-bootstrap.conf.template > app.conf
+
+server {
+  listen 80;
+  listen [::]:80;
+  server_name ${DOMAIN};
+
+  # ACME challenge — webroot для certbot
+  location /.well-known/acme-challenge/ {
+    root /var/www/certbot;
+  }
+
+  add_header X-Frame-Options "DENY" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+  # Backend API
+  location /api/ {
+    proxy_pass http://backend:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto http;
+    proxy_read_timeout 60s;
+    proxy_send_timeout 60s;
+  }
+
+  location /auth/ {
+    proxy_pass http://backend:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto http;
+  }
+
+  location /servers/ {
+    proxy_pass http://backend:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto http;
+  }
+
+  location /uploads/ {
+    proxy_pass http://backend:4000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto http;
+  }
+
+  location = /sitemap.xml { proxy_pass http://backend:4000; proxy_set_header Host $host; }
+  location = /robots.txt  { proxy_pass http://backend:4000; proxy_set_header Host $host; }
+
+  location ~ ^/p/ {
+    proxy_pass http://backend:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto http;
+  }
+
+  # Frontend (статика SPA)
+  location / {
+    proxy_pass http://frontend:80;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto http;
+  }
+}

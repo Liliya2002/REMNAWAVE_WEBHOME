@@ -1,0 +1,145 @@
+# Production docker-compose — собирает приложение из готовых образов в ghcr.io.
+# Для локальной разработки используйте docker-compose.override.yml (см. example).
+#
+# Переменные:
+#   IMAGE_REGISTRY  — реестр (по умолчанию ghcr.io)
+#   IMAGE_NAMESPACE — owner/repo на GitHub (например artur/vpnwebhome)
+#   VERSION         — какую версию тянуть (например 1.0.0). По умолчанию latest.
+#
+# Применение:
+#   export VERSION=1.0.0
+#   docker compose pull
+#   docker compose run --rm migrate
+#   docker compose up -d
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${PGDATABASE:-vpn_db}
+      POSTGRES_USER: ${PGUSER:-vpn_user}
+      POSTGRES_PASSWORD: ${PGPASSWORD:?Set PGPASSWORD in .env}
+    expose:
+      - "5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-vpn_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?Set IMAGE_NAMESPACE in .env}-backend:${VERSION:-latest}
+    restart: always
+    env_file:
+      - .env
+    environment:
+      PORT: ${BACKEND_PORT:-4000}
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${PGUSER:-vpn_user}
+      PGPASSWORD: ${PGPASSWORD:-vpn_pass}
+      PGDATABASE: ${PGDATABASE:-vpn_db}
+      HOSTING_CATALOG_URL: ${HOSTING_CATALOG_URL:-}
+      HOSTING_CATALOG_TOKEN: ${HOSTING_CATALOG_TOKEN:-}
+      # deploy-runner: backend проксирует запросы /api/admin/system/deploy на эту цель
+      DEPLOY_RUNNER_URL: http://deploy-runner:4100
+      DEPLOY_TOKEN: ${DEPLOY_TOKEN:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "4000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "--tries=1", "--timeout=4", "http://127.0.0.1:4000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # One-shot контейнер для миграций. Запускается:
+  #   docker compose run --rm migrate          → npm run migrate:up
+  #   docker compose run --rm migrate status   → npm run migrate:status
+  # depends_on выше делает так что backend ждёт его успешного завершения.
+  migrate:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?Set IMAGE_NAMESPACE in .env}-backend:${VERSION:-latest}
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: ${PGUSER:-vpn_user}
+      PGPASSWORD: ${PGPASSWORD:-vpn_pass}
+      PGDATABASE: ${PGDATABASE:-vpn_db}
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["node", "scripts/migrate.js"]
+    command: ["up"]
+
+  frontend:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?Set IMAGE_NAMESPACE in .env}-frontend:${VERSION:-latest}
+    restart: always
+    depends_on:
+      - backend
+    expose:
+      - "80"
+
+  # deploy-runner — отдельный контейнер, который запускает deploy.sh при нажатии
+  # кнопки "Обновить" в /admin/system. Не пересоздаётся во время деплоя
+  # (его задача — пережить рестарт backend-а).
+  #
+  # Доступ только из внутренней сети (другие сервисы compose-стека).
+  deploy-runner:
+    image: ${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_NAMESPACE:?Set IMAGE_NAMESPACE in .env}-deploy-runner:${VERSION:-latest}
+    restart: always
+    env_file:
+      - .env
+    environment:
+      RUNNER_PORT: 4100
+      PROJECT_DIR: /project
+      DEPLOY_TOKEN: ${DEPLOY_TOKEN:?Set DEPLOY_TOKEN in .env (openssl rand -hex 32)}
+    volumes:
+      # Docker socket — runner запускает 'docker compose pull/up' через хост-демон
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Сам проект (deploy.sh, .env, git-репо)
+      - .:/project
+    expose:
+      - "4100"
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: always
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    command: >
+      sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+
+volumes:
+  db_data:
+  certbot_certs:
+  certbot_www:

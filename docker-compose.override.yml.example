@@ -1,0 +1,42 @@
+# Локальная разработка через docker compose.
+#
+# Установка:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#
+# Файл переопределяет image: на build: — собирает образы локально из исходников
+# вместо pull-а из ghcr.io. docker-compose.yml автоматически подмержит этот файл.
+#
+# В .gitignore: docker-compose.override.yml — каждый разработчик правит под себя.
+
+services:
+  backend:
+    # Указание build: переопределяет image — пересборка из локальных исходников.
+    # IMAGE_NAMESPACE по-прежнему нужен в .env, но pull не делается.
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        VERSION: dev
+        BUILD_SHA: local
+        BUILD_DATE: ""
+    # Пробрасываем порт наружу для локальной отладки
+    ports:
+      - "4000:4000"
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        VERSION: dev
+    ports:
+      - "8080:80"
+
+  # Локально nginx+certbot обычно не нужны — закомментируйте если хотите ходить напрямую
+  # на frontend:8080 и backend:4000.
