@@ -12,7 +12,7 @@
 # Docker socket монтируется в /var/run/docker.sock.
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM docker:27-cli-alpine3.20
+FROM docker:27-cli AS runtime
 
 ARG VERSION=0.0.0-dev
 ARG BUILD_SHA=
