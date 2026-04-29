@@ -86,14 +86,20 @@ function applyConfigToDOM(cfg) {
   }
 
   // --- Favicon ---
-  if (cfg.site_favicon_url) {
+  // Если site_favicon_url пустой — возвращаем дефолтный /favicon.svg.
+  // Это нужно чтобы при очистке поля админом фавикон не "залип" со старым URL.
+  {
     let link = document.querySelector("link[rel~='icon']")
     if (!link) {
       link = document.createElement('link')
       link.rel = 'icon'
       document.head.appendChild(link)
     }
-    link.href = cfg.site_favicon_url
+    const url = cfg.site_favicon_url || '/favicon.svg'
+    link.href = url
+    // SVG отдаём с правильным MIME, чтобы браузер не пытался гадать
+    if (url.endsWith('.svg')) link.type = 'image/svg+xml'
+    else link.removeAttribute('type')
   }
 
   // --- Custom CSS ---

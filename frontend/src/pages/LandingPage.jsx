@@ -31,7 +31,7 @@ export default function LandingPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <RefreshCw className="w-10 h-10 text-blue-400 animate-spin" />
+        <RefreshCw className="w-10 h-10 text-blue-600 dark:text-blue-400 animate-spin" />
       </div>
     )
   }
@@ -39,8 +39,8 @@ export default function LandingPage() {
   if (notFound || !landing) {
     return (
       <div className="text-center py-32 px-4">
-        <h1 className="text-4xl font-bold text-white mb-3">404</h1>
-        <p className="text-slate-400">Страница не найдена</p>
+        <h1 className="text-4xl font-bold text-sky-900 dark:text-white mb-3">404</h1>
+        <p className="text-sky-700 dark:text-slate-400 dark:text-slate-400">Страница не найдена</p>
       </div>
     )
   }

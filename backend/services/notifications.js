@@ -150,6 +150,45 @@ async function notifyWelcome(userId) {
   });
 }
 
+/**
+ * Предупреждение о приближении к лимиту трафика на ноде.
+ */
+async function notifyTrafficWarning(userId, { nodeName, usedGb, limitGb, percent }) {
+  return createNotification(userId, {
+    title: 'Приближение к лимиту трафика',
+    message: `Вы использовали ${usedGb} ГБ из ${limitGb} ГБ (${percent}%) на сервере «${nodeName}». При достижении 100% подписка будет автоматически отключена.`,
+    type: 'warning',
+    category: 'subscription',
+    link: '/dashboard'
+  });
+}
+
+/**
+ * Подписка отключена из-за превышения лимита на ноде.
+ */
+async function notifyTrafficBlocked(userId, { nodeName, usedGb, limitGb }) {
+  return createNotification(userId, {
+    title: 'Подписка отключена',
+    message: `Превышен лимит трафика на сервере «${nodeName}»: ${usedGb} из ${limitGb} ГБ. Подписка автоматически отключена. Свяжитесь с поддержкой для восстановления.`,
+    type: 'error',
+    category: 'subscription',
+    link: '/dashboard'
+  });
+}
+
+/**
+ * Подписка автоматически разблокирована (новый период).
+ */
+async function notifyTrafficUnblocked(userId, { nodeName }) {
+  return createNotification(userId, {
+    title: 'Подписка восстановлена',
+    message: `Лимит трафика на «${nodeName}» сброшен в новом периоде. Подписка снова активна.`,
+    type: 'success',
+    category: 'subscription',
+    link: '/dashboard'
+  });
+}
+
 // Склонение слова "день"
 function getDaysWord(n) {
   const abs = Math.abs(n);
@@ -169,5 +208,8 @@ module.exports = {
   notifySubscriptionExpired,
   notifyReferralBonus,
   notifyNewServer,
-  notifyWelcome
+  notifyWelcome,
+  notifyTrafficWarning,
+  notifyTrafficBlocked,
+  notifyTrafficUnblocked
 };

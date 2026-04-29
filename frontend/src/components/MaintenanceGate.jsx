@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { Wrench, ShieldCheck, LogIn } from 'lucide-react'
+import { Wrench, ShieldCheck, LogIn, Mail, Send } from 'lucide-react'
+import { useSiteConfig } from '../contexts/SiteConfigContext'
 
 const API = import.meta.env.VITE_API_URL || ''
 const POLL_INTERVAL_MS = 30000
@@ -91,19 +92,52 @@ export default function MaintenanceGate({ children }) {
 
 // ─── Fullscreen для обычных юзеров ───────────────────────────────────────────
 function MaintenancePage({ message }) {
+  const { config } = useSiteConfig()
+  const supportEmail = config?.support_email || ''
+  const supportTelegram = config?.support_telegram || ''
+  const hasSupport = !!(supportEmail || supportTelegram)
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex items-center justify-center p-6">
       <div className="text-center max-w-md">
         <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-amber-500/15 border border-amber-500/40 flex items-center justify-center">
-          <Wrench className="w-10 h-10 text-amber-400" />
+          <Wrench className="w-10 h-10 text-amber-600 dark:text-amber-400" />
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white mb-3">Технические работы</h1>
-        <p className="text-slate-300 leading-relaxed whitespace-pre-line">{message}</p>
-        <p className="text-xs text-slate-500 mt-8">Сайт скоро будет доступен. Спасибо за терпение.</p>
+        <h1 className="text-2xl sm:text-3xl font-bold text-sky-900 dark:text-white mb-3">Технические работы</h1>
+        <p className="text-sky-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">{message}</p>
+        <p className="text-xs text-sky-700 dark:text-slate-400 mt-8">Сайт скоро будет доступен. Спасибо за терпение.</p>
+
+        {hasSupport && (
+          <div className="mt-8 pt-6 border-t border-sky-200 dark:border-slate-800">
+            <p className="text-xs text-sky-700 dark:text-slate-400 mb-3">Возникли вопросы? Напишите в поддержку:</p>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              {supportEmail && (
+                <a
+                  href={`mailto:${supportEmail}`}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-sky-100 hover:bg-sky-200 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-sky-300 dark:border-slate-700 text-sky-900 dark:text-slate-200 text-sm transition-all"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span className="break-all">{supportEmail}</span>
+                </a>
+              )}
+              {supportTelegram && (
+                <a
+                  href={supportTelegram}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/40 text-cyan-700 dark:text-cyan-300 text-sm transition-all"
+                >
+                  <Send className="w-4 h-4" />
+                  Telegram
+                </a>
+              )}
+            </div>
+          </div>
+        )}
 
         <Link
           to="/login"
-          className="mt-8 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/60 border border-slate-700 hover:bg-slate-800 hover:border-slate-600 text-slate-400 hover:text-slate-200 text-xs transition-all"
+          className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800/60 border border-sky-300 dark:border-slate-700 hover:bg-slate-800 hover:border-slate-600 text-sky-700 dark:text-slate-400 dark:text-slate-400 hover:text-slate-200 text-xs transition-all"
         >
           <LogIn className="w-3.5 h-3.5" />
           Вход для администратора
@@ -120,7 +154,7 @@ function MaintenanceBanner() {
       <div className="max-w-7xl mx-auto flex items-center justify-center gap-2 text-sm text-amber-200">
         <ShieldCheck className="w-4 h-4 shrink-0" />
         <span className="font-medium">Включён режим техработ.</span>
-        <span className="text-amber-300/80">Сайт виден только администраторам.</span>
+        <span className="text-amber-700 dark:text-amber-300/80">Сайт виден только администраторам.</span>
       </div>
     </div>
   )

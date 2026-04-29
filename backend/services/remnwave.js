@@ -427,6 +427,37 @@ async function restartNode(uuid) {
 }
 
 /**
+ * Трафик одного пользователя с разбивкой по нодам и по дням.
+ * RemnaWave 2.7+: GET /api/bandwidth-stats/users/{uuid}?start=YYYY-MM-DD&end=YYYY-MM-DD
+ *
+ * Ответ:
+ *   {
+ *     categories: ['2026-04-22', ...],
+ *     series: [{ uuid, name, color, countryCode, total, data: [bytes per day] }],
+ *     sparklineData: [...],
+ *     topNodes: [...]
+ *   }
+ *
+ * @param {string} userUuid - UUID пользователя в RemnaWave
+ * @param {string} startDate - YYYY-MM-DD
+ * @param {string} endDate   - YYYY-MM-DD
+ */
+async function getUserBandwidthStats(userUuid, startDate, endDate) {
+  const qs = new URLSearchParams({ start: startDate, end: endDate })
+  return apiRequest('GET', `/api/bandwidth-stats/users/${userUuid}?${qs}`, null, null)
+}
+
+/**
+ * Общий трафик по всем нодам за период (для итоговой строки).
+ * GET /api/bandwidth-stats/nodes?start=YYYY-MM-DD&end=YYYY-MM-DD
+ * Возвращает {categories, series:[{uuid, name, total, data:[..]}], sparklineData, topNodes}.
+ */
+async function getNodesBandwidthStats(startDate, endDate) {
+  const qs = new URLSearchParams({ start: startDate, end: endDate })
+  return apiRequest('GET', `/api/bandwidth-stats/nodes?${qs}`, null, null)
+}
+
+/**
  * Включить хосты (bulk)
  */
 async function enableHosts(uuids) {
@@ -471,6 +502,8 @@ module.exports = {
   restartNode,
   enableHosts,
   disableHosts,
+  getUserBandwidthStats,
+  getNodesBandwidthStats,
   getConfig,
   invalidateConfigCache
 }

@@ -211,7 +211,7 @@ export default function Pricing(){
       return (
         <button 
           onClick={() => navigate('/login')}
-          className="w-full px-4 py-2 bg-brand text-white rounded hover:bg-brand/90"
+          className="w-full px-4 py-2 bg-brand text-sky-900 dark:text-white rounded hover:bg-brand/90"
         >
           Войти для активации
         </button>
@@ -222,7 +222,7 @@ export default function Pricing(){
       return (
         <button 
           disabled
-          className="w-full px-4 py-2 bg-slate-700 text-slate-400 rounded cursor-not-allowed"
+          className="w-full px-4 py-2 bg-slate-700 text-sky-700 dark:text-slate-400 dark:text-slate-400 rounded cursor-not-allowed"
         >
           Пробный период уже использован
         </button>
@@ -233,7 +233,7 @@ export default function Pricing(){
       return (
         <button 
           disabled
-          className="w-full px-4 py-2 bg-slate-700 text-slate-400 rounded cursor-not-allowed"
+          className="w-full px-4 py-2 bg-slate-700 text-sky-700 dark:text-slate-400 dark:text-slate-400 rounded cursor-not-allowed"
         >
           Уже активировано
         </button>
@@ -244,7 +244,7 @@ export default function Pricing(){
       <button 
         onClick={handleActivateFreeTrial}
         disabled={loading}
-        className="w-full px-4 py-2 rounded transition-all bg-neon text-white hover:bg-neon/90 disabled:opacity-50"
+        className="w-full px-4 py-2 rounded transition-all bg-neon text-sky-900 dark:text-white hover:bg-neon/90 disabled:opacity-50"
       >
         {loading ? 'Активация...' : 'Активировать бесплатно'}
       </button>
@@ -252,7 +252,7 @@ export default function Pricing(){
   }
   
   return (
-    <div className="w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 min-h-screen py-10 sm:py-16 lg:py-24 px-4 sm:px-6 lg:px-8">
+    <div className="w-full bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 min-h-screen py-10 sm:py-16 lg:py-24 px-4 sm:px-6 lg:px-8">
       <section className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8 sm:mb-12 lg:mb-16">
@@ -261,22 +261,22 @@ export default function Pricing(){
               Прозрачные цены
             </span>
             <br />
-            <span className="text-slate-300">без скрытых платежей</span>
+            <span className="text-sky-700 dark:text-slate-300">без скрытых платежей</span>
           </h1>
-          <p className="text-base sm:text-lg text-slate-400 max-w-2xl mx-auto">
+          <p className="text-base sm:text-lg text-sky-700 dark:text-slate-400 dark:text-slate-400 max-w-2xl mx-auto">
             Каждый аккаунт - неограниченный трафик и полная приватность. Без подписки и автосписаний.
           </p>
         </div>
       
       {/* Error/Success Messages */}
       {error && (
-        <div className="mb-8 max-w-2xl mx-auto p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-center">
+        <div className="mb-8 max-w-2xl mx-auto p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-600 dark:text-red-400 text-center">
           {error}
         </div>
       )}
       
       {success && (
-        <div className="mb-8 max-w-2xl mx-auto p-4 bg-green-500/10 border border-green-500/50 rounded-lg text-green-400 text-center">
+        <div className="mb-8 max-w-2xl mx-auto p-4 bg-green-500/10 border border-green-500/50 rounded-lg text-green-600 dark:text-green-400 text-center">
           {success}
         </div>
       )}
@@ -301,49 +301,49 @@ export default function Pricing(){
         <div className="mb-20">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-2">Начните бесплатно</h2>
-            <p className="text-slate-400">7 дней полноценного доступа для тестирования</p>
+            <p className="text-sky-700 dark:text-slate-400 dark:text-slate-400">7 дней полноценного доступа для тестирования</p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-1 gap-6 max-w-2xl mx-auto">
             {plans.filter(p => p.is_trial).map((trialPlan) => (
               <div 
                 key={trialPlan.id} 
-                className="relative p-8 rounded-2xl border-2 border-gradient-to-r from-cyan-500 to-blue-500 bg-gradient-to-br from-cyan-500/10 via-slate-900 to-slate-950 shadow-[0_0_40px_rgba(34,211,238,0.2)] hover:shadow-[0_0_60px_rgba(34,211,238,0.3)] transition-all duration-300"
+                className="relative p-8 rounded-2xl border-2 border-cyan-500/60 dark:bg-slate-900 bg-gradient-to-br from-cyan-50 via-sky-50 to-cyan-100 dark:from-cyan-500/10 dark:via-slate-900 dark:to-slate-950 shadow-[0_0_40px_rgba(34,211,238,0.2)] hover:shadow-[0_0_60px_rgba(34,211,238,0.3)] transition-all duration-300"
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent rounded-2xl" />
                 <div className="relative z-10">
                   <div className="flex items-center justify-between mb-6">
                     <div>
-                      <div className="text-xs text-cyan-400 uppercase tracking-widest font-bold mb-2 flex items-center gap-1"><Gift className="w-4 h-4" /> Полностью бесплатно</div>
-                      <h3 className="text-3xl font-bold text-white">{trialPlan.name}</h3>
+                      <div className="text-xs text-cyan-600 dark:text-cyan-400 uppercase tracking-widest font-bold mb-2 flex items-center gap-1"><Gift className="w-4 h-4" /> Полностью бесплатно</div>
+                      <h3 className="text-3xl font-bold text-sky-900 dark:text-white">{trialPlan.name}</h3>
                     </div>
-                    <div className="text-5xl"><Rocket className="w-12 h-12 text-cyan-400" /></div>
+                    <div className="text-5xl"><Rocket className="w-12 h-12 text-cyan-600 dark:text-cyan-400" /></div>
                   </div>
                   
-                  <div className="mb-8 py-6 border-y border-slate-700/50">
+                  <div className="mb-8 py-6 border-y border-sky-200 dark:border-slate-700/50">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-6xl font-extrabold text-cyan-400">0</span>
-                      <span className="text-2xl text-cyan-400">₽</span>
+                      <span className="text-6xl font-extrabold text-cyan-600 dark:text-cyan-400">0</span>
+                      <span className="text-2xl text-cyan-600 dark:text-cyan-400">₽</span>
                     </div>
-                    <p className="text-sm text-slate-400 mt-3">7 полных дней со всеми возможностями</p>
+                    <p className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 mt-3">7 полных дней со всеми возможностями</p>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                     <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4">
-                      <div className="mb-2"><Infinity className="w-7 h-7 text-cyan-400" /></div>
-                      <div className="text-sm text-slate-300">Неограниченный трафик</div>
+                      <div className="mb-2"><Infinity className="w-7 h-7 text-cyan-600 dark:text-cyan-400" /></div>
+                      <div className="text-sm text-sky-700 dark:text-slate-300">Неограниченный трафик</div>
                     </div>
                     <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4">
-                      <div className="mb-2"><Globe className="w-7 h-7 text-cyan-400" /></div>
-                      <div className="text-sm text-slate-300">Все локации доступны</div>
+                      <div className="mb-2"><Globe className="w-7 h-7 text-cyan-600 dark:text-cyan-400" /></div>
+                      <div className="text-sm text-sky-700 dark:text-slate-300">Все локации доступны</div>
                     </div>
                     <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4">
-                      <div className="mb-2"><Lock className="w-7 h-7 text-cyan-400" /></div>
-                      <div className="text-sm text-slate-300">No-logs шифрование</div>
+                      <div className="mb-2"><Lock className="w-7 h-7 text-cyan-600 dark:text-cyan-400" /></div>
+                      <div className="text-sm text-sky-700 dark:text-slate-300">No-logs шифрование</div>
                     </div>
                     <div className="bg-cyan-500/10 border border-cyan-500/30 rounded-lg p-4">
-                      <div className="mb-2"><Smartphone className="w-7 h-7 text-cyan-400" /></div>
-                      <div className="text-sm text-slate-300">Все устройства</div>
+                      <div className="mb-2"><Smartphone className="w-7 h-7 text-cyan-600 dark:text-cyan-400" /></div>
+                      <div className="text-sm text-sky-700 dark:text-slate-300">Все устройства</div>
                     </div>
                   </div>
                   
@@ -361,12 +361,12 @@ export default function Pricing(){
       <div>
         <div className="text-center mb-12">
           <h2 className="text-3xl font-bold mb-2">Платные подписки</h2>
-          <p className="text-slate-400">Выберите период оплаты - чем дольше, тем выгоднее</p>
+          <p className="text-sky-700 dark:text-slate-400 dark:text-slate-400">Выберите период оплаты - чем дольше, тем выгоднее</p>
         </div>
         
         {plansLoading ? (
           <div className="text-center py-20">
-            <div className="inline-flex items-center gap-3 text-slate-400">
+            <div className="inline-flex items-center gap-3 text-sky-700 dark:text-slate-400 dark:text-slate-400">
               <svg className="animate-spin h-6 w-6" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
@@ -375,7 +375,7 @@ export default function Pricing(){
             </div>
           </div>
         ) : plans.filter(p => !p.is_trial).length === 0 ? (
-          <div className="text-center py-20 text-slate-400">Платные тарифы недоступны</div>
+          <div className="text-center py-20 text-sky-700 dark:text-slate-400 dark:text-slate-400">Платные тарифы недоступны</div>
         ) : (
           <div className={`grid gap-8 justify-center ${
             (() => {
@@ -390,10 +390,10 @@ export default function Pricing(){
                 key={plan.id} 
                 className={`group relative rounded-2xl border overflow-visible transition-all duration-300 ${
                   idx === 0 && arr.length > 1
-                    ? 'border-blue-500/50 bg-gradient-to-br from-blue-900/20 via-slate-900 to-slate-950 shadow-[0_0_40px_rgba(59,130,246,0.2)] hover:shadow-[0_0_60px_rgba(59,130,246,0.3)] mt-4'
+                    ? 'border-blue-500/60 dark:bg-slate-900 bg-gradient-to-br from-blue-50 via-sky-50 to-cyan-50 dark:from-blue-900/20 dark:via-slate-900 dark:to-slate-950 shadow-[0_0_40px_rgba(59,130,246,0.25)] hover:shadow-[0_0_60px_rgba(59,130,246,0.35)] mt-4'
                     : idx === 0 && arr.length === 1
-                    ? 'border-blue-500/50 bg-gradient-to-br from-blue-900/20 via-slate-900 to-slate-950 shadow-[0_0_40px_rgba(59,130,246,0.2)] hover:shadow-[0_0_60px_rgba(59,130,246,0.3)]'
-                    : 'border-slate-700/50 bg-gradient-to-br from-slate-800/30 via-slate-900 to-slate-950 hover:border-blue-500/50 hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]'
+                    ? 'border-blue-500/60 dark:bg-slate-900 bg-gradient-to-br from-blue-50 via-sky-50 to-cyan-50 dark:from-blue-900/20 dark:via-slate-900 dark:to-slate-950 shadow-[0_0_40px_rgba(59,130,246,0.25)] hover:shadow-[0_0_60px_rgba(59,130,246,0.35)]'
+                    : 'border-sky-200 dark:border-slate-700/50 bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-800/30 dark:via-slate-900 dark:to-slate-950 hover:border-blue-500/50 hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]'
                 }`}
               >
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/0 via-transparent to-transparent opacity-0 group-hover:opacity-10 transition-opacity duration-300" />
@@ -406,35 +406,35 @@ export default function Pricing(){
                 
                 <div className="p-8 relative z-10 h-full flex flex-col">
                   <div className="mb-6">
-                    <h3 className="text-2xl font-bold text-white mb-2">{plan.name}</h3>
+                    <h3 className="text-2xl font-bold text-sky-900 dark:text-white mb-2">{plan.name}</h3>
                     {plan.description && (
-                      <p className="text-sm text-slate-400">{plan.description}</p>
+                      <p className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400">{plan.description}</p>
                     )}
                   </div>
                   
-                  <div className="mb-8 py-6 border-y border-slate-700/50">
+                  <div className="mb-8 py-6 border-y border-sky-200 dark:border-slate-700/50">
                     <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-extrabold text-blue-400">{plan.price_monthly}</span>
-                      <span className="text-slate-400">₽/мес</span>
+                      <span className="text-4xl font-extrabold text-blue-600 dark:text-blue-400">{plan.price_monthly}</span>
+                      <span className="text-sky-700 dark:text-slate-400 dark:text-slate-400">₽/мес</span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-2">Может быть дешевле при длительной подписке</p>
+                    <p className="text-xs text-sky-700 dark:text-slate-400 mt-2">Может быть дешевле при длительной подписке</p>
                   </div>
                   
                   {/* Traffic highlight */}
                   <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 mb-6">
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-300 font-semibold">Трафик</span>
-                      <span className="text-xl font-bold text-blue-400">{plan.traffic_gb} GB/мес</span>
+                      <span className="text-sky-700 dark:text-slate-300 font-semibold">Трафик</span>
+                      <span className="text-xl font-bold text-blue-600 dark:text-blue-400">{plan.traffic_gb} GB/мес</span>
                     </div>
                   </div>
                   
                   {/* Features */}
                   <div className="mb-8 flex-grow">
-                    <p className="text-xs text-slate-500 uppercase font-semibold mb-3">Включено:</p>
+                    <p className="text-xs text-sky-700 dark:text-slate-400 uppercase font-semibold mb-3">Включено:</p>
                     <ul className="space-y-2">
                       {plan.features?.slice(0, 5).map((feat, fidx) => (
-                        <li key={fidx} className="flex items-start gap-2 text-sm text-slate-300">
-                          <span className="text-blue-400 mt-1 text-lg">✓</span>
+                        <li key={fidx} className="flex items-start gap-2 text-sm text-sky-700 dark:text-slate-300">
+                          <span className="text-blue-600 dark:text-blue-400 mt-1 text-lg">✓</span>
                           <span>{feat}</span>
                         </li>
                       ))}
@@ -448,7 +448,7 @@ export default function Pricing(){
                     className={`w-full px-6 py-3 rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 ${
                       idx === 0
                         ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:shadow-[0_0_20px_rgba(59,130,246,0.5)] hover:from-blue-600 hover:to-cyan-600'
-                        : 'border border-slate-600 text-slate-300 hover:border-blue-500 hover:text-blue-300'
+                        : 'border border-slate-600 text-sky-700 dark:text-slate-300 hover:border-blue-500 hover:text-blue-300'
                     }`}
                   >
                     {paymentLoading ? 'Обработка...' : 'Выбрать тариф'}

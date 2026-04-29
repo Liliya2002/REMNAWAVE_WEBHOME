@@ -123,7 +123,7 @@ export default function Dashboard() {
           <div className="relative bg-gradient-to-r from-blue-600 to-cyan-600 rounded-2xl p-8 sm:p-12 overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-blue-600/50 to-cyan-600/50 blur-3xl opacity-30"></div>
             <div className="relative z-10">
-              <h1 className="text-4xl sm:text-5xl font-bold text-white mb-3 flex items-center gap-3">
+              <h1 className="text-4xl sm:text-5xl font-bold text-sky-900 dark:text-white mb-3 flex items-center gap-3">
                 <Hand className="w-10 h-10 shrink-0" /> Добро пожаловать, {user?.login || 'пользователь'}!
               </h1>
               <p className="text-blue-100 text-lg">
@@ -136,7 +136,7 @@ export default function Dashboard() {
 
       {error && (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-6">
-          <div className="p-4 bg-red-500/10 border border-red-500/50 text-red-400 rounded-xl text-center">
+          <div className="p-4 bg-red-500/10 border border-red-500/50 text-red-600 dark:text-red-400 rounded-xl text-center">
             {error}
           </div>
         </div>
@@ -148,10 +148,10 @@ export default function Dashboard() {
           {pendingPayments.map(p => (
             <div key={p.id} className="p-4 mb-3 bg-gradient-to-r from-yellow-900/30 to-orange-900/30 border border-yellow-500/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <CreditCard className="w-6 h-6 text-yellow-400 shrink-0" />
+                <CreditCard className="w-6 h-6 text-yellow-600 dark:text-yellow-400 shrink-0" />
                 <div>
                   <p className="text-yellow-200 font-semibold text-sm">Ожидает оплаты: {p.plan_name}</p>
-                  <p className="text-yellow-300/60 text-xs mt-0.5">{Number(p.amount).toFixed(0)} ₽ • {new Date(p.created_at).toLocaleDateString('ru-RU')}</p>
+                  <p className="text-yellow-700 dark:text-yellow-300/60 text-xs mt-0.5">{Number(p.amount).toFixed(0)} ₽ • {new Date(p.created_at).toLocaleDateString('ru-RU')}</p>
                 </div>
               </div>
               <a
@@ -177,8 +177,8 @@ export default function Dashboard() {
                 onClick={() => setActiveSection(item.id)}
                 className={`relative shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
                   activeSection === item.id
-                    ? 'bg-blue-500/20 border border-blue-500/50 text-blue-300'
-                    : 'bg-slate-800/50 border border-slate-700/50 text-slate-400'
+                    ? 'bg-blue-500/20 border border-blue-500/50 text-blue-700 dark:text-blue-300'
+                    : 'bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 text-sky-700 dark:text-slate-400 dark:text-slate-400'
                 }`}
               >
                 <item.Icon className="w-4 h-4 shrink-0" />
@@ -199,18 +199,18 @@ export default function Dashboard() {
             <div className="sticky top-24 space-y-4">
               {/* Профиль карточка */}
               {user && (
-                <div className="bg-gradient-to-br from-slate-800/40 to-slate-900/50 border border-slate-700/50 rounded-xl p-6">
+                <div className="bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-800/40 dark:to-slate-900/50 border border-sky-200 dark:border-slate-700/50 rounded-xl p-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
-                      <User className="w-6 h-6 text-white" />
+                      <User className="w-6 h-6 text-sky-900 dark:text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-white text-sm">{user.login}</div>
-                      <div className="text-xs text-slate-400 truncate">{user.email}</div>
+                      <div className="font-semibold text-sky-900 dark:text-white text-sm">{user.login}</div>
+                      <div className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400 truncate">{user.email}</div>
                     </div>
                   </div>
                   {user.is_admin && (
-                    <div className="px-2 py-1 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-400 font-semibold inline-flex items-center gap-1">
+                    <div className="px-2 py-1 bg-red-500/20 border border-red-500/50 rounded text-xs text-red-600 dark:text-red-400 font-semibold inline-flex items-center gap-1">
                       <span className="w-2 h-2 rounded-full bg-red-500"></span> АДМИНИСТРАТОР
                     </div>
                   )}
@@ -220,36 +220,36 @@ export default function Dashboard() {
               {/* Статус подписки */}
               <div className={`bg-gradient-to-br rounded-xl p-4 border ${
                 user?.hasActiveSubscription
-                  ? 'from-slate-800/40 to-slate-900/50 border-slate-700/50'
+                  ? 'from-slate-800/40 to-slate-900/50 border-sky-200 dark:border-slate-700/50'
                   : 'from-red-900/20 to-orange-900/20 border-red-500/30'
               }`}>
-                <div className="text-xs text-slate-400 uppercase font-bold mb-3">Статус подписки</div>
+                <div className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400 uppercase font-bold mb-3">Статус подписки</div>
                 {user?.hasActiveSubscription ? (
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
-                      <span className="text-sm text-green-400 font-semibold">✓ Активна</span>
+                      <span className="text-sm text-green-600 dark:text-green-400 font-semibold">✓ Активна</span>
                     </div>
                     {user?.subscriptionExpiresAt && (
-                      <div className="text-xs text-slate-400">
-                        Истекает: <span className="text-slate-300 font-semibold">
+                      <div className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400">
+                        Истекает: <span className="text-sky-700 dark:text-slate-300 font-semibold">
                           {new Date(user.subscriptionExpiresAt).toLocaleDateString('ru-RU')}
                         </span>
                       </div>
                     )}
                     {user?.subscriptionPlan && (
-                      <div className="text-xs text-slate-400 mt-1">
-                        Тариф: <span className="text-blue-400 font-semibold">{user.subscriptionPlan}</span>
+                      <div className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400 mt-1">
+                        Тариф: <span className="text-blue-600 dark:text-blue-400 font-semibold">{user.subscriptionPlan}</span>
                       </div>
                     )}
                   </div>
                 ) : user?.subscriptionPlan ? (
                   <div>
                     <div className="flex items-center gap-2 mb-3">
-                      <Ban className="w-5 h-5 text-red-400" />
-                      <span className="text-sm text-red-400 font-semibold">Подписка истекла</span>
+                      <Ban className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      <span className="text-sm text-red-600 dark:text-red-400 font-semibold">Подписка истекла</span>
                     </div>
-                    <a href="/pricing" className="text-xs text-blue-400 hover:text-blue-300 font-semibold block mt-3">
+                    <a href="/pricing" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-300 font-semibold block mt-3">
                       Продлить подписку →
                     </a>
                   </div>
@@ -257,9 +257,9 @@ export default function Dashboard() {
                   <div>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="w-3 h-3 rounded-full bg-slate-500"></span>
-                      <span className="text-sm text-slate-400 font-semibold">Нет подписки</span>
+                      <span className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 font-semibold">Нет подписки</span>
                     </div>
-                    <a href="/pricing" className="text-xs text-blue-400 hover:text-blue-300 font-semibold block mt-3">
+                    <a href="/pricing" className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-300 font-semibold block mt-3">
                       Выбрать тариф →
                     </a>
                   </div>
@@ -274,8 +274,8 @@ export default function Dashboard() {
                     onClick={() => setActiveSection(item.id)}
                     className={`w-full text-left px-4 py-3 rounded-xl transition-all font-medium flex items-center gap-2 ${
                       activeSection === item.id
-                        ? 'bg-blue-500/20 border border-blue-500/50 text-blue-300 shadow-lg shadow-blue-500/20'
-                        : 'text-slate-300 hover:bg-slate-800/50 border border-transparent'
+                        ? 'bg-blue-500/20 border border-blue-500/50 text-blue-700 dark:text-blue-300 shadow-lg shadow-blue-500/20'
+                        : 'text-sky-700 dark:text-slate-300 hover:bg-slate-800/50 border border-transparent'
                     }`}
                   >
                     <item.Icon className="w-5 h-5 shrink-0" />

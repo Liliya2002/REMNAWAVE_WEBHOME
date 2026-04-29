@@ -13,14 +13,14 @@ export default function PaymentFailed() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">Оплата не прошла</h1>
-          <p className="text-slate-300">Что-то пошло не так</p>
+          <h1 className="text-3xl font-bold text-sky-900 dark:text-white mb-2">Оплата не прошла</h1>
+          <p className="text-sky-700 dark:text-slate-300">Что-то пошло не так</p>
         </div>
 
         <div className="space-y-4">
           <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-left">
-            <p className="text-sm text-slate-300 mb-2">Возможные причины:</p>
-            <ul className="text-sm text-slate-400 space-y-1 list-disc list-inside">
+            <p className="text-sm text-sky-700 dark:text-slate-300 mb-2">Возможные причины:</p>
+            <ul className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 space-y-1 list-disc list-inside">
               <li>Недостаточно средств на счете</li>
               <li>Платеж был отменен</li>
               <li>Истекло время на оплату</li>
@@ -31,19 +31,19 @@ export default function PaymentFailed() {
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={() => navigate('/pricing')}
-              className="flex-1 px-5 py-3 bg-brand text-white rounded-lg hover:bg-brand/90 transition-all font-semibold text-sm sm:text-base"
+              className="flex-1 px-5 py-3 bg-brand text-sky-900 dark:text-white rounded-lg hover:bg-brand/90 transition-all font-semibold text-sm sm:text-base"
             >
               Попробовать снова
             </button>
             <button
               onClick={() => navigate('/dashboard')}
-              className="flex-1 px-5 py-3 bg-surface border border-slate-600 text-white rounded-lg hover:bg-slate-700 transition-all text-sm sm:text-base"
+              className="flex-1 px-5 py-3 bg-surface border border-slate-600 text-sky-900 dark:text-white rounded-lg hover:bg-slate-700 transition-all text-sm sm:text-base"
             >
               В личный кабинет
             </button>
           </div>
 
-          <p className="text-sm text-slate-400 mt-4">
+          <p className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 mt-4">
             Если проблема повторяется, свяжитесь с поддержкой
           </p>
         </div>

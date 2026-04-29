@@ -63,10 +63,10 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
         <div className="p-4 sm:p-5 bg-gradient-to-r from-green-900/30 to-emerald-900/30 border border-green-500/40 rounded-2xl">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="text-3xl"><Gift className="w-8 h-8 text-green-400" /></div>
+              <div className="text-3xl"><Gift className="w-8 h-8 text-green-600 dark:text-green-400" /></div>
               <div>
-                <div className="text-sm font-bold text-green-300">+{pendingBonusDays} бонусных дней от рефералов</div>
-                <div className="text-xs text-slate-400">Нажмите кнопку, чтобы продлить подписку</div>
+                <div className="text-sm font-bold text-green-700 dark:text-green-300">+{pendingBonusDays} бонусных дней от рефералов</div>
+                <div className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400">Нажмите кнопку, чтобы продлить подписку</div>
               </div>
             </div>
             <button
@@ -78,13 +78,13 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
             </button>
           </div>
           {bonusResult && (
-            <div className="mt-3 p-3 bg-green-500/10 border border-green-500/40 rounded-xl text-sm text-green-400">
+            <div className="mt-3 p-3 bg-green-500/10 border border-green-500/40 rounded-xl text-sm text-green-600 dark:text-green-400">
               ✓ {bonusResult.message} — подписка до {new Date(bonusResult.newExpiresAt).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
-              {bonusResult.wasReactivated && <span className="text-green-300 font-semibold"> (подписка реактивирована!)</span>}
+              {bonusResult.wasReactivated && <span className="text-green-700 dark:text-green-300 font-semibold"> (подписка реактивирована!)</span>}
             </div>
           )}
           {bonusError && (
-            <div className="mt-3 p-3 bg-red-500/10 border border-red-500/40 rounded-xl text-sm text-red-400">
+            <div className="mt-3 p-3 bg-red-500/10 border border-red-500/40 rounded-xl text-sm text-red-600 dark:text-red-400">
               ✕ {bonusError}
             </div>
           )}
@@ -97,10 +97,10 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
       )}
 
       {subscriptions.length === 0 ? (
-        <div className="p-6 sm:p-12 bg-gradient-to-br from-slate-800/40 to-slate-900/50 border border-slate-700/50 rounded-2xl text-center">
-          <div className="text-5xl sm:text-6xl mb-4"><MailOpen className="w-14 h-14 sm:w-16 sm:h-16 text-slate-500 mx-auto" /></div>
-          <h3 className="text-xl sm:text-2xl font-bold text-slate-300 mb-2">Нет подписок</h3>
-          <p className="text-slate-400 mb-6">Активируйте тестовый период или комбинеру платный тариф</p>
+        <div className="p-6 sm:p-12 bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-800/40 dark:to-slate-900/50 border border-sky-200 dark:border-slate-700/50 rounded-2xl text-center">
+          <div className="text-5xl sm:text-6xl mb-4"><MailOpen className="w-14 h-14 sm:w-16 sm:h-16 text-sky-700 dark:text-slate-400 mx-auto" /></div>
+          <h3 className="text-xl sm:text-2xl font-bold text-sky-700 dark:text-slate-300 mb-2">Нет подписок</h3>
+          <p className="text-sky-700 dark:text-slate-400 dark:text-slate-400 mb-6">Активируйте тестовый период или комбинеру платный тариф</p>
           <a href="/pricing" className="inline-block px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold rounded-lg hover:shadow-lg hover:shadow-blue-500/50 transition-all">
             Выбрать тариф →
           </a>
@@ -120,12 +120,12 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
               {/* Статус истечения подписки */}
               {isExpired && (
                 <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-xl flex items-center gap-3">
-                  <span className="text-2xl"><Ban className="w-6 h-6 text-red-400" /></span>
+                  <span className="text-2xl"><Ban className="w-6 h-6 text-red-600 dark:text-red-400" /></span>
                   <div className="flex-1">
-                    <div className="text-sm font-bold text-red-400">Подписка истекла</div>
-                    <div className="text-xs text-red-300/80">Истекла {new Date(sub.expires_at).toLocaleDateString('ru-RU')}</div>
+                    <div className="text-sm font-bold text-red-600 dark:text-red-400">Подписка истекла</div>
+                    <div className="text-xs text-red-700 dark:text-red-300/80">Истекла {new Date(sub.expires_at).toLocaleDateString('ru-RU')}</div>
                   </div>
-                  <a href="/pricing" className="px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-all text-sm font-medium whitespace-nowrap">
+                  <a href="/pricing" className="px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-500/30 transition-all text-sm font-medium whitespace-nowrap">
                     Продлить →
                   </a>
                 </div>
@@ -135,23 +135,23 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
               <div className={`p-4 sm:p-8 rounded-2xl border ${
                 sub.is_active
                   ? 'bg-gradient-to-br from-blue-900/20 to-cyan-900/20 border-blue-500/30'
-                  : 'bg-gradient-to-br from-slate-900/30 to-slate-950/40 border-slate-700/30 opacity-70'
+                  : 'bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-900/30 dark:to-slate-950/40 border-sky-200 dark:border-slate-700/30 opacity-70'
               }`}>
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-4 sm:mb-6">
                   <div className="min-w-0">
-                    <h3 className="text-xl sm:text-3xl font-bold text-white mb-2">
+                    <h3 className="text-xl sm:text-3xl font-bold text-sky-900 dark:text-white mb-2">
                       {sub.plan_name === 'FREE_TRIAL' ? <><Gift className="w-5 h-5 inline" /> Тестовый период</> : sub.plan_name}
                     </h3>
-                    <p className="text-slate-300 flex flex-wrap items-center gap-2">
+                    <p className="text-sky-700 dark:text-slate-300 flex flex-wrap items-center gap-2">
                       <span className="text-sm">Username:</span>
-                      <span className="font-mono text-blue-400 font-semibold text-sm break-all">{sub.remnwave_username}</span>
+                      <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold text-sm break-all">{sub.remnwave_username}</span>
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(sub.remnwave_username)
                           setCopySuccess(sub.id)
                           setTimeout(() => setCopySuccess(null), 2000)
                         }}
-                        className="text-xs text-slate-400 hover:text-slate-200"
+                        className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400 hover:text-slate-200"
                       >
                         {copySuccess === sub.id ? '✓' : <Clipboard className="w-3.5 h-3.5" />}
                       </button>
@@ -168,18 +168,18 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                       <div className={`text-2xl sm:text-4xl font-extrabold ${
                         sub.is_active
                           ? daysLeft <= 7
-                            ? 'text-orange-400'
-                            : 'text-blue-400'
-                          : 'text-red-400'
+                            ? 'text-orange-600 dark:text-orange-400'
+                            : 'text-blue-600 dark:text-blue-400'
+                          : 'text-red-600 dark:text-red-400'
                       }`}>
                         {daysLeft > 0 ? daysLeft : '0'}
                       </div>
                       <div className={`text-xs ${
                         sub.is_active
                           ? daysLeft <= 7
-                            ? 'text-orange-300/80'
-                            : 'text-slate-400'
-                          : 'text-red-300/80'
+                            ? 'text-orange-700 dark:text-orange-300/80'
+                            : 'text-sky-700 dark:text-slate-400 dark:text-slate-400'
+                          : 'text-red-700 dark:text-red-300/80'
                       } mt-1`}>
                         {sub.is_active ? 'дней осталось' : 'подписка истекла'}
                       </div>
@@ -191,12 +191,12 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                 {sub.is_active && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium text-slate-300">Использование трафика</label>
-                      <span className="text-sm font-mono text-slate-400">
+                      <label className="text-sm font-medium text-sky-700 dark:text-slate-300">Использование трафика</label>
+                      <span className="text-sm font-mono text-sky-700 dark:text-slate-400 dark:text-slate-400">
                         {(sub.traffic_used_gb || 0).toFixed(2)} / {sub.traffic_limit_gb} GB
                       </span>
                     </div>
-                    <div className="w-full h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
+                    <div className="w-full h-4 bg-sky-100 dark:bg-slate-900 rounded-full overflow-hidden border border-sky-300 dark:border-slate-700">
                       <div 
                         className={`h-full transition-all rounded-full ${
                           trafficPercent > 80 ? 'bg-gradient-to-r from-red-500 to-red-400' : 
@@ -206,7 +206,7 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                         style={{ width: `${Math.min(trafficPercent, 100)}%` }}
                       />
                     </div>
-                    <div className="text-xs text-slate-400">
+                    <div className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400">
                       {trafficPercent}% использовано
                     </div>
                   </div>
@@ -215,11 +215,11 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
 
               {/* Subscription URL + Connect button */}
               {sub.subscription_url && sub.is_active && (
-                <div className="p-4 sm:p-6 bg-slate-900/50 border border-slate-700/50 rounded-xl">
-                  <div className="text-sm text-slate-400 mb-3 sm:mb-4 font-medium flex items-center gap-1.5"><Link2 className="w-4 h-4" /> Ссылка подписки для клиента VPN</div>
+                <div className="p-4 sm:p-6 bg-sky-50 dark:bg-slate-900/50 border border-sky-200 dark:border-slate-700/50 rounded-xl">
+                  <div className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 mb-3 sm:mb-4 font-medium flex items-center gap-1.5"><Link2 className="w-4 h-4" /> Ссылка подписки для клиента VPN</div>
                   <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1 px-4 py-3 bg-slate-800/50 border border-slate-700 rounded-lg overflow-x-auto">
-                      <code className="text-xs text-blue-400 font-mono whitespace-nowrap">
+                    <div className="flex-1 px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-300 dark:border-slate-700 rounded-lg overflow-x-auto">
+                      <code className="text-xs text-blue-600 dark:text-blue-400 font-mono whitespace-nowrap">
                         {sub.subscription_url}
                       </code>
                     </div>
@@ -229,7 +229,7 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                         setCopySuccess(sub.id)
                         setTimeout(() => setCopySuccess(null), 2000)
                       }}
-                      className="px-4 py-3 bg-blue-500/20 border border-blue-500/50 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-all whitespace-nowrap font-medium"
+                      className="px-4 py-3 bg-blue-500/20 border border-blue-500/50 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-500/30 transition-all whitespace-nowrap font-medium"
                     >
                       {copySuccess === sub.id ? '✓ Скопирована' : <><ClipboardCheck className="w-4 h-4 inline" /> Копировать</>}
                     </button>
@@ -246,10 +246,10 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
 
               {/* Серверная группа (только отображение) */}
               {sub.is_active && sub.squad_uuid && (
-                <div className="p-4 sm:p-6 bg-slate-900/50 border border-slate-700/50 rounded-xl">
-                  <h4 className="text-base sm:text-lg font-bold text-white flex items-center gap-1.5"><Server className="w-4 h-4" /> Серверная группа</h4>
-                  <p className="text-sm text-slate-400 mt-2">
-                    Текущая: <span className="text-blue-400 font-semibold">{getSquadName(sub.squad_uuid)}</span>
+                <div className="p-4 sm:p-6 bg-sky-50 dark:bg-slate-900/50 border border-sky-200 dark:border-slate-700/50 rounded-xl">
+                  <h4 className="text-base sm:text-lg font-bold text-sky-900 dark:text-white flex items-center gap-1.5"><Server className="w-4 h-4" /> Серверная группа</h4>
+                  <p className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 mt-2">
+                    Текущая: <span className="text-blue-600 dark:text-blue-400 font-semibold">{getSquadName(sub.squad_uuid)}</span>
                   </p>
                 </div>
               )}

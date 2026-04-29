@@ -6,20 +6,20 @@ const API_URL = import.meta.env.VITE_API_URL || ''
 
 // Иконки типов
 const typeIcons = {
-  success: <CheckCircle className="w-5 h-5 text-green-400" />,
-  error: <XCircle className="w-5 h-5 text-red-400" />,
-  warning: <AlertTriangle className="w-5 h-5 text-yellow-400" />,
-  info: <Info className="w-5 h-5 text-blue-400" />,
-  promo: <PartyPopper className="w-5 h-5 text-purple-400" />
+  success: <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />,
+  error: <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />,
+  warning: <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />,
+  info: <Info className="w-5 h-5 text-blue-600 dark:text-blue-400" />,
+  promo: <PartyPopper className="w-5 h-5 text-purple-600 dark:text-purple-400" />
 }
 
 const categoryIcons = {
-  payment: <CreditCard className="w-5 h-5 text-blue-400" />,
-  subscription: <ClipboardList className="w-5 h-5 text-cyan-400" />,
-  referral: <Gift className="w-5 h-5 text-green-400" />,
-  server: <Globe className="w-5 h-5 text-indigo-400" />,
-  admin: <Megaphone className="w-5 h-5 text-orange-400" />,
-  system: <Info className="w-5 h-5 text-slate-400" />
+  payment: <CreditCard className="w-5 h-5 text-blue-600 dark:text-blue-400" />,
+  subscription: <ClipboardList className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />,
+  referral: <Gift className="w-5 h-5 text-green-600 dark:text-green-400" />,
+  server: <Globe className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />,
+  admin: <Megaphone className="w-5 h-5 text-orange-600 dark:text-orange-400" />,
+  system: <Info className="w-5 h-5 text-sky-700 dark:text-slate-400 dark:text-slate-400" />
 }
 
 export default function NotificationBell() {
@@ -166,7 +166,7 @@ export default function NotificationBell() {
       <button
         ref={bellRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative w-10 h-10 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-all"
+        className="relative w-10 h-10 flex items-center justify-center rounded-lg text-sky-700 dark:text-slate-400 dark:text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-all"
         aria-label="Уведомления"
       >
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -189,14 +189,14 @@ export default function NotificationBell() {
 
           <div
             ref={panelRef}
-            className="fixed inset-x-0 top-[65px] bottom-0 sm:absolute sm:inset-auto sm:right-0 sm:top-12 sm:w-96 sm:max-h-[480px] sm:rounded-xl bg-slate-900/95 backdrop-blur-xl border-0 sm:border border-slate-700/50 shadow-2xl shadow-black/30 overflow-hidden z-[100] animate-in slide-in-from-top-2 duration-200"
+            className="fixed inset-x-0 top-[65px] bottom-0 sm:absolute sm:inset-auto sm:right-0 sm:top-12 sm:w-96 sm:max-h-[480px] sm:rounded-xl bg-sky-50/95 dark:bg-slate-900/95 backdrop-blur-xl border-0 sm:border border-sky-200 dark:border-slate-700/50 shadow-2xl shadow-black/30 overflow-hidden z-[100] animate-in slide-in-from-top-2 duration-200"
           >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-sky-200 dark:border-slate-700/50">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold text-slate-200">Уведомления</h3>
+              <h3 className="text-sm font-semibold text-sky-700 dark:text-slate-200">Уведомления</h3>
               {unreadCount > 0 && (
-                <span className="px-1.5 py-0.5 text-[10px] font-bold text-blue-300 bg-blue-500/20 rounded-full">
+                <span className="px-1.5 py-0.5 text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-500/20 rounded-full">
                   {unreadCount}
                 </span>
               )}
@@ -204,7 +204,7 @@ export default function NotificationBell() {
             {unreadCount > 0 && (
               <button
                 onClick={markAllAsRead}
-                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-300 transition-colors"
               >
                 Прочитать все
               </button>
@@ -218,7 +218,7 @@ export default function NotificationBell() {
                 <div className="w-6 h-6 border-2 border-slate-600 border-t-blue-400 rounded-full animate-spin" />
               </div>
             ) : notifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-slate-500">
+              <div className="flex flex-col items-center justify-center py-12 text-sky-700 dark:text-slate-400">
                 <svg className="w-12 h-12 mb-3 opacity-30" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
                 </svg>
@@ -242,24 +242,24 @@ export default function NotificationBell() {
 
                   {/* Icon */}
                   <span className="flex-shrink-0 mt-0.5">
-                    {categoryIcons[notif.category] || typeIcons[notif.type] || <Info className="w-5 h-5 text-slate-400" />}
+                    {categoryIcons[notif.category] || typeIcons[notif.type] || <Info className="w-5 h-5 text-sky-700 dark:text-slate-400 dark:text-slate-400" />}
                   </span>
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm leading-tight ${notif.is_read ? 'text-slate-400' : 'text-slate-200 font-medium'}`}>
+                    <p className={`text-sm leading-tight ${notif.is_read ? 'text-sky-700 dark:text-slate-400 dark:text-slate-400' : 'text-sky-700 dark:text-slate-200 font-medium'}`}>
                       {notif.title}
                     </p>
                     {notif.message && (
-                      <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{notif.message}</p>
+                      <p className="text-xs text-sky-700 dark:text-slate-400 mt-0.5 line-clamp-2">{notif.message}</p>
                     )}
-                    <p className="text-[10px] text-slate-600 mt-1">{timeAgo(notif.created_at)}</p>
+                    <p className="text-[10px] text-sky-700 mt-1">{timeAgo(notif.created_at)}</p>
                   </div>
 
                   {/* Delete — always visible on touch, hover on desktop */}
                   <button
                     onClick={(e) => deleteNotification(e, notif.id)}
-                    className="flex-shrink-0 w-7 h-7 flex sm:hidden group-hover:flex items-center justify-center rounded text-slate-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                    className="flex-shrink-0 w-7 h-7 flex sm:hidden group-hover:flex items-center justify-center rounded text-sky-700 hover:text-red-400 hover:bg-red-500/10 transition-colors"
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

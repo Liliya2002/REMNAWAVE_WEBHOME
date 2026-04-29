@@ -99,15 +99,15 @@ export default function TrafficChart() {
   }, [buckets, totalInPeriod, limitBytes, currentUsedBytes])
 
   return (
-    <div className="p-4 sm:p-6 bg-gradient-to-br from-slate-900/60 to-slate-950/50 border border-slate-700/50 rounded-2xl">
+    <div className="p-4 sm:p-6 bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-900/60 dark:to-slate-950/50 border border-sky-200 dark:border-slate-700/50 rounded-2xl">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
-            <Activity className="w-5 h-5 text-white" />
+            <Activity className="w-5 h-5 text-sky-900 dark:text-white" />
           </div>
           <div>
-            <h3 className="text-base sm:text-lg font-bold text-white">Потребление трафика</h3>
-            <p className="text-xs text-slate-400">
+            <h3 className="text-base sm:text-lg font-bold text-sky-900 dark:text-white">Потребление трафика</h3>
+            <p className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400">
               {data?.subscription?.planName ? `Тариф: ${data.subscription.planName}` : 'Снимки обновляются раз в сутки'}
             </p>
           </div>
@@ -119,8 +119,8 @@ export default function TrafficChart() {
               onClick={() => setDays(p.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                 days === p.id
-                  ? 'bg-violet-500/20 border-violet-500/50 text-violet-300'
-                  : 'bg-slate-800/40 border-slate-700/50 text-slate-400 hover:text-slate-200'
+                  ? 'bg-violet-500/20 border-violet-500/50 text-violet-700 dark:text-violet-300'
+                  : 'bg-sky-100/60 dark:bg-slate-800/40 border-sky-200 dark:border-slate-700/50 text-sky-700 dark:text-slate-400 dark:text-slate-400 hover:text-slate-200'
               }`}
             >
               {p.label}
@@ -131,21 +131,21 @@ export default function TrafficChart() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        <div className="p-3 bg-slate-800/40 border border-slate-700/40 rounded-lg">
-          <div className="text-[11px] text-slate-500 uppercase font-medium">Использовано</div>
-          <div className="text-base sm:text-lg font-bold text-slate-100 mt-0.5">{fmtBytes(currentUsedBytes)}</div>
+        <div className="p-3 bg-sky-100/60 dark:bg-slate-800/40 border border-slate-700/40 rounded-lg">
+          <div className="text-[11px] text-sky-700 dark:text-slate-400 uppercase font-medium">Использовано</div>
+          <div className="text-base sm:text-lg font-bold text-sky-900 dark:text-slate-100 mt-0.5">{fmtBytes(currentUsedBytes)}</div>
         </div>
-        <div className="p-3 bg-slate-800/40 border border-slate-700/40 rounded-lg">
-          <div className="text-[11px] text-slate-500 uppercase font-medium">Лимит</div>
-          <div className="text-base sm:text-lg font-bold text-slate-100 mt-0.5">{limitBytes > 0 ? fmtBytes(limitBytes) : '∞'}</div>
+        <div className="p-3 bg-sky-100/60 dark:bg-slate-800/40 border border-slate-700/40 rounded-lg">
+          <div className="text-[11px] text-sky-700 dark:text-slate-400 uppercase font-medium">Лимит</div>
+          <div className="text-base sm:text-lg font-bold text-sky-900 dark:text-slate-100 mt-0.5">{limitBytes > 0 ? fmtBytes(limitBytes) : '∞'}</div>
         </div>
-        <div className="p-3 bg-slate-800/40 border border-slate-700/40 rounded-lg">
-          <div className="text-[11px] text-slate-500 uppercase font-medium">За период</div>
-          <div className="text-base sm:text-lg font-bold text-slate-100 mt-0.5">{fmtBytes(totalInPeriod)}</div>
+        <div className="p-3 bg-sky-100/60 dark:bg-slate-800/40 border border-slate-700/40 rounded-lg">
+          <div className="text-[11px] text-sky-700 dark:text-slate-400 uppercase font-medium">За период</div>
+          <div className="text-base sm:text-lg font-bold text-sky-900 dark:text-slate-100 mt-0.5">{fmtBytes(totalInPeriod)}</div>
         </div>
-        <div className="p-3 bg-slate-800/40 border border-slate-700/40 rounded-lg">
-          <div className="text-[11px] text-slate-500 uppercase font-medium flex items-center gap-1"><TrendingUp className="w-3 h-3" /> В среднем/день</div>
-          <div className="text-base sm:text-lg font-bold text-slate-100 mt-0.5">
+        <div className="p-3 bg-sky-100/60 dark:bg-slate-800/40 border border-slate-700/40 rounded-lg">
+          <div className="text-[11px] text-sky-700 dark:text-slate-400 uppercase font-medium flex items-center gap-1"><TrendingUp className="w-3 h-3" /> В среднем/день</div>
+          <div className="text-base sm:text-lg font-bold text-sky-900 dark:text-slate-100 mt-0.5">
             {buckets.length ? fmtBytes(totalInPeriod / buckets.length) : '—'}
           </div>
         </div>
@@ -155,14 +155,14 @@ export default function TrafficChart() {
       {limitBytes > 0 && (
         <div className="mb-5">
           <div className="flex items-center justify-between mb-1.5 text-xs">
-            <span className="text-slate-400">{usedPercent}% от лимита</span>
+            <span className="text-sky-700 dark:text-slate-400 dark:text-slate-400">{usedPercent}% от лимита</span>
             {projectedExhaustionDays != null && (
-              <span className="text-slate-500">
+              <span className="text-sky-700 dark:text-slate-400">
                 При текущем темпе хватит на ~{projectedExhaustionDays} дн.
               </span>
             )}
           </div>
-          <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+          <div className="w-full h-2.5 bg-sky-200 dark:bg-slate-800 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${
                 usedPercent > 80 ? 'bg-gradient-to-r from-red-500 to-orange-500'
@@ -182,12 +182,12 @@ export default function TrafficChart() {
             <div className="w-6 h-6 border-2 border-slate-600 border-t-violet-400 rounded-full animate-spin" />
           </div>
         ) : error ? (
-          <div className="h-48 flex flex-col items-center justify-center text-slate-500 gap-2">
+          <div className="h-48 flex flex-col items-center justify-center text-sky-700 dark:text-slate-400 gap-2">
             <AlertTriangle className="w-6 h-6 text-amber-500/60" />
             <p className="text-sm">{error}</p>
           </div>
         ) : !buckets.length ? (
-          <div className="h-48 flex flex-col items-center justify-center text-slate-500 gap-2">
+          <div className="h-48 flex flex-col items-center justify-center text-sky-700 dark:text-slate-400 gap-2">
             <Activity className="w-8 h-8 opacity-30" />
             <p className="text-sm">Снимков ещё нет</p>
             <p className="text-xs">Первые данные появятся в ближайшие 24 часа</p>
@@ -207,15 +207,15 @@ export default function TrafficChart() {
                       className="w-full rounded-t bg-gradient-to-t from-violet-500/80 to-fuchsia-400/80 hover:from-violet-400 hover:to-fuchsia-300 transition-all"
                       style={{ height: `${Math.max(heightPct, b.delta > 0 ? 2 : 0)}%` }}
                     />
-                    <div className="hidden group-hover:block absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-slate-900 border border-slate-700 rounded text-[11px] whitespace-nowrap z-10">
-                      <div className="text-slate-200 font-medium">{fmtBytes(b.delta)}</div>
-                      <div className="text-slate-500">{fmtDateShort(b.date)}</div>
+                    <div className="hidden group-hover:block absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-2 py-1 bg-sky-100 dark:bg-slate-900 border border-sky-300 dark:border-slate-700 rounded text-[11px] whitespace-nowrap z-10">
+                      <div className="text-sky-700 dark:text-slate-200 font-medium">{fmtBytes(b.delta)}</div>
+                      <div className="text-sky-700 dark:text-slate-400">{fmtDateShort(b.date)}</div>
                     </div>
                   </div>
                 )
               })}
             </div>
-            <div className="flex justify-between mt-1.5 text-[10px] text-slate-500">
+            <div className="flex justify-between mt-1.5 text-[10px] text-sky-700 dark:text-slate-400">
               <span>{firstPoint && fmtDateShort(firstPoint.date)}</span>
               <span>{lastPoint && fmtDateShort(lastPoint.date)}</span>
             </div>

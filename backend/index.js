@@ -62,7 +62,7 @@ app.use(express.json({ limit: '100kb' }))
 // Rate limiting — общий
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
-  max: 300,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' }
@@ -107,6 +107,9 @@ const adminRwUsersRoutes = require('./routes/admin-rwusers')
 const adminUploadsRoutes = require('./routes/admin-uploads')
 const adminAuditRoutes = require('./routes/admin-audit')
 const adminSystemRoutes = require('./routes/admin-system')
+const adminDocsRoutes = require('./routes/admin-docs')
+const adminTrafficRoutes = require('./routes/admin-traffic')
+const adminTrafficGuardRoutes = require('./routes/admin-traffic-guard')
 const healthRoutes = require('./routes/health')
 const maintenanceRoutes = require('./routes/maintenance')
 const maintenanceGuard = require('./middleware/maintenance')
@@ -135,7 +138,7 @@ app.use('/api/referrals', referralsRoutes)
 // Rate limiting — админ-эндпоинты
 const adminLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many admin requests, please try again later' }
@@ -152,6 +155,9 @@ app.use('/api/admin/rwusers', adminLimiter, adminRwUsersRoutes)
 app.use('/api/admin/uploads', adminLimiter, adminUploadsRoutes)
 app.use('/api/admin/audit', adminLimiter, adminAuditRoutes)
 app.use('/api/admin/system', adminLimiter, adminSystemRoutes)
+app.use('/api/admin/docs', adminLimiter, adminDocsRoutes)
+app.use('/api/admin/traffic', adminLimiter, adminTrafficRoutes)
+app.use('/api/admin/traffic-guard', adminLimiter, adminTrafficGuardRoutes)
 // /api/health — публичный, без auth/limiter (для health-check'ов)
 app.use('/api/health', healthRoutes)
 app.use('/api/landings', landingsRoutes)
@@ -177,6 +183,9 @@ require('./cron/expireSubscriptions').start()
 
 // Cron: ежедневные снимки потребления трафика подписок (для графиков)
 require('./cron/trafficSnapshots').start()
+
+// Cron: Traffic Guard — проверка превышений per-node лимитов и автоблокировка
+require('./cron/trafficGuard').start()
 
 const PORT = process.env.PORT || 4000
 app.listen(PORT, ()=> console.log(`Backend running on port ${PORT}`))

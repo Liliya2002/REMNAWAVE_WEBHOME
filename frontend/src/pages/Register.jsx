@@ -172,18 +172,18 @@ export default function Register(){
   return (
     <div className="min-h-[calc(100vh-200px)] flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
       <div className="w-full max-w-md">
-        <div className="bg-gradient-to-br from-slate-800/40 via-slate-900/50 to-slate-950 border border-slate-700/50 rounded-2xl p-5 sm:p-8 shadow-2xl">
+        <div className="bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-800/40 dark:via-slate-900/50 dark:to-slate-950 border border-sky-200 dark:border-slate-700/50 rounded-2xl p-5 sm:p-8 shadow-2xl">
           {/* Header */}
           <div className="text-center mb-6 sm:mb-8">
             <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent mb-2">
               Присоединитесь
             </h1>
-            <p className="text-sm sm:text-base text-slate-400">Создайте аккаунт за 30 секунд</p>
+            <p className="text-sm sm:text-base text-sky-700 dark:text-slate-400 dark:text-slate-400">Создайте аккаунт за 30 секунд</p>
           </div>
 
           {/* Referral Bonus Alert */}
           {referralCode && (
-            <div className="mb-6 p-4 bg-green-500/10 border border-green-500/50 rounded-lg text-green-400 text-sm flex items-center gap-2">
+            <div className="mb-6 p-4 bg-green-500/10 border border-green-500/50 rounded-lg text-green-600 dark:text-green-400 text-sm flex items-center gap-2">
               <Gift className="w-5 h-5 shrink-0" />
               <span>Вы получите бонус за реферальную ссылку!</span>
             </div>
@@ -191,14 +191,14 @@ export default function Register(){
 
           {/* Error Message */}
           {error && (
-            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm">
+            <div className="mb-6 p-4 bg-red-500/10 border border-red-500/50 rounded-lg text-red-600 dark:text-red-400 text-sm">
               {error}
             </div>
           )}
 
           {/* Success Message */}
           {success && (
-            <div className="mb-6 p-4 bg-green-500/10 border border-green-500/50 rounded-lg text-green-400 text-sm">
+            <div className="mb-6 p-4 bg-green-500/10 border border-green-500/50 rounded-lg text-green-600 dark:text-green-400 text-sm">
               {success}
             </div>
           )}
@@ -208,27 +208,27 @@ export default function Register(){
             <>
               <form onSubmit={requireEmail ? handleSendCode : handleDirectRegister} className="space-y-4 mb-6">
                 <div>
-                  <label htmlFor="login" className="block text-sm font-medium text-slate-300 mb-2">Логин</label>
+                  <label htmlFor="login" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Логин</label>
                   <input id="login" value={loginField} onChange={e => setLoginField(e.target.value)} type="text"
-                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-slate-100 placeholder-slate-500"
+                    className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="your_login" disabled={loading} required />
                 </div>
                 <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">Email</label>
+                  <label htmlFor="email" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Email</label>
                   <input id="email" value={email} onChange={e => setEmail(e.target.value)} type="email"
-                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-slate-100 placeholder-slate-500"
+                    className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="your@email.com" disabled={loading} required />
                 </div>
                 <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">Пароль</label>
+                  <label htmlFor="password" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Пароль</label>
                   <input id="password" value={password} onChange={e => setPassword(e.target.value)} type="password"
-                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-slate-100 placeholder-slate-500"
+                    className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="••••••••" disabled={loading} required />
                 </div>
                 <div>
-                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-300 mb-2">Подтвердите пароль</label>
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Подтвердите пароль</label>
                   <input id="confirmPassword" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} type="password"
-                    className="w-full px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-slate-100 placeholder-slate-500"
+                    className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="••••••••" disabled={loading} required />
                 </div>
                 <button type="submit" disabled={loading}
@@ -252,8 +252,8 @@ export default function Register(){
 
               {/* Telegram */}
               <div className="relative mb-6">
-                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-700/50"></div></div>
-                <div className="relative flex justify-center text-sm"><span className="px-2 bg-slate-900 text-slate-500">или быстрая регистрация</span></div>
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-sky-200 dark:border-slate-700/50"></div></div>
+                <div className="relative flex justify-center text-sm"><span className="px-2 bg-sky-100 dark:bg-slate-900 text-sky-700 dark:text-slate-400">или быстрая регистрация</span></div>
               </div>
               <div className="mb-6">
                 <TelegramLoginButton botName={import.meta.env.VITE_TELEGRAM_BOT_NAME} onAuth={handleTelegramAuth} />
@@ -264,17 +264,17 @@ export default function Register(){
           {/* Form — Шаг 2: Ввод кода подтверждения */}
           {step === 2 && (
             <div className="mb-6">
-              <div className="mb-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-300 text-sm flex items-center gap-2">
+              <div className="mb-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-700 dark:text-blue-300 text-sm flex items-center gap-2">
                 <Mail className="w-5 h-5 shrink-0" />
                 <span>Код отправлен на <strong>{email}</strong></span>
               </div>
 
               <form onSubmit={handleRegister} className="space-y-4">
                 <div>
-                  <label htmlFor="emailCode" className="block text-sm font-medium text-slate-300 mb-2">Код подтверждения</label>
+                  <label htmlFor="emailCode" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Код подтверждения</label>
                   <input id="emailCode" value={emailCode} onChange={e => setEmailCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     type="text" inputMode="numeric" autoComplete="one-time-code" autoFocus
-                    className="w-full px-4 py-4 bg-slate-800/50 border border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-slate-100 text-center text-2xl tracking-[0.5em] font-mono placeholder-slate-500"
+                    className="w-full px-4 py-4 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 text-center text-2xl tracking-[0.5em] font-mono placeholder-slate-500"
                     placeholder="000000" disabled={loading} required maxLength={6} />
                 </div>
 
@@ -293,11 +293,11 @@ export default function Register(){
 
                 <div className="flex items-center justify-between">
                   <button type="button" onClick={() => { setStep(1); setEmailCode(''); setError(null) }}
-                    className="text-sm text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1">
+                    className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1">
                     <ArrowLeft className="w-4 h-4" /> Назад
                   </button>
                   <button type="button" onClick={handleResendCode} disabled={cooldown > 0 || loading}
-                    className="text-sm text-blue-400 hover:text-blue-300 transition-colors disabled:text-slate-600 disabled:cursor-not-allowed">
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-300 transition-colors disabled:text-slate-600 disabled:cursor-not-allowed">
                     {cooldown > 0 ? `Отправить повторно (${cooldown}с)` : 'Отправить код повторно'}
                   </button>
                 </div>
@@ -308,28 +308,28 @@ export default function Register(){
           {/* Divider */}
           <div className="relative mb-6">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-700/50"></div>
+              <div className="w-full border-t border-sky-200 dark:border-slate-700/50"></div>
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-slate-900 text-slate-500">уже есть аккаунт?</span>
+              <span className="px-2 bg-sky-100 dark:bg-slate-900 text-sky-700 dark:text-slate-400">уже есть аккаунт?</span>
             </div>
           </div>
 
           {/* Login Link */}
           <div className="text-center">
-            <p className="text-slate-400 text-sm">
-              <Link to="/login" className="text-blue-400 hover:text-blue-300 font-semibold transition-colors">
+            <p className="text-sky-700 dark:text-slate-400 dark:text-slate-400 text-sm">
+              <Link to="/login" className="text-blue-600 dark:text-blue-400 hover:text-blue-300 font-semibold transition-colors">
                 Войти в аккаунт
               </Link>
             </p>
           </div>
 
           {/* Terms */}
-          <div className="border-t border-slate-700/50 pt-6 mt-6">
-            <p className="text-xs text-slate-500 text-center">
+          <div className="border-t border-sky-200 dark:border-slate-700/50 pt-6 mt-6">
+            <p className="text-xs text-sky-700 dark:text-slate-400 text-center">
               Регистрируясь, вы соглашаетесь с нашей{' '}
-              <a href="#" className="text-blue-400 hover:text-blue-300">политикой конфиденциальности</a> и{' '}
-              <a href="#" className="text-blue-400 hover:text-blue-300">условиями использования</a>
+              <a href="#" className="text-blue-600 dark:text-blue-400 hover:text-blue-300">политикой конфиденциальности</a> и{' '}
+              <a href="#" className="text-blue-600 dark:text-blue-400 hover:text-blue-300">условиями использования</a>
             </p>
           </div>
         </div>

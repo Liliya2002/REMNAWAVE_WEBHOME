@@ -8,7 +8,7 @@ import {
   Gift, Bell,
   Sparkles, FileText,
   Globe, Server, ShoppingCart,
-  Settings, Activity, Palette, ShieldCheck,
+  Settings, Activity, Palette, ShieldCheck, BookOpen, TrendingUp, Shield,
   // ui
   Search, Circle,
 } from 'lucide-react'
@@ -30,9 +30,10 @@ const GROUPS = [
     title: 'Пользователи',
     color: 'from-emerald-500 to-teal-500',
     items: [
-      { to: '/admin/users',         Icon: Users,    label: 'Пользователи' },
-      { to: '/admin/referrals',     Icon: Gift,     label: 'Рефералы' },
-      { to: '/admin/notifications', Icon: Bell,     label: 'Уведомления' },
+      { to: '/admin/users',         Icon: Users,      label: 'Пользователи' },
+      { to: '/admin/traffic',       Icon: TrendingUp, label: 'Трафик / Отслеживание' },
+      { to: '/admin/referrals',     Icon: Gift,       label: 'Рефералы' },
+      { to: '/admin/notifications', Icon: Bell,       label: 'Уведомления' },
     ],
   },
   {
@@ -68,7 +69,16 @@ const GROUPS = [
     title: 'Безопасность',
     color: 'from-rose-500 to-red-500',
     items: [
-      { to: '/admin/audit', Icon: History, label: 'Журнал аудита' },
+      { to: '/admin/audit',         Icon: History, label: 'Журнал аудита' },
+      { to: '/admin/traffic-guard', Icon: Shield,  label: 'Traffic Guard' },
+    ],
+  },
+  {
+    id: 'docs',
+    title: 'Документация',
+    color: 'from-cyan-500 to-blue-500',
+    items: [
+      { to: '/admin/instructions', Icon: BookOpen, label: 'Инструкции' },
     ],
   },
 ]

@@ -1,5 +1,8 @@
 module.exports = {
   content: ['./index.html', './src/**/*.{js,jsx}'],
+  // Светлая тема — по умолчанию. Тёмная активируется классом 'dark' на <html>.
+  // ThemeContext добавляет/убирает этот класс. Админка всегда форсит 'dark'.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {

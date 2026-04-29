@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, User, Mail, Shield, ShieldOff, Calendar, Wallet,
   Clock, CreditCard, Save, Plus, RefreshCw, Trash2, Crown, Ban, CheckCircle,
-  Info, Database, Server, AlertTriangle
+  Info, Database, Server, AlertTriangle, Activity, Unlock, AlertCircle, TrendingUp,
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || ''
@@ -78,6 +78,14 @@ export default function AdminUserCard() {
   const [remnwaveInfo, setRemnwaveInfo] = useState(null)
   const [remnwaveLoading, setRemnwaveLoading] = useState(false)
   const [remnwaveError, setRemnwaveError] = useState(null)
+
+  // Traffic tab
+  const [trafficData, setTrafficData] = useState(null)
+  const [trafficLoading, setTrafficLoading] = useState(false)
+  const [trafficError, setTrafficError] = useState(null)
+  const [trafficPeriod, setTrafficPeriod] = useState('7d')
+  const [violations, setViolations] = useState([])
+  const [violationsLoading, setViolationsLoading] = useState(false)
 
   // Active tab
   const [tab, setTab] = useState('info')
@@ -215,8 +223,62 @@ export default function AdminUserCard() {
     if (tab === 'remnwave' && !remnwaveInfo && !remnwaveLoading) {
       loadRemnwaveInfo()
     }
+    if (tab === 'traffic') {
+      loadTraffic()
+      loadViolations()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab])
+  }, [tab, trafficPeriod])
+
+  // Загрузка трафика по нодам
+  async function loadTraffic() {
+    const sub = subscriptions.find(s => s.remnwave_user_uuid)
+    if (!sub) {
+      setTrafficError('У пользователя нет подписки RemnaWave')
+      setTrafficData(null)
+      return
+    }
+    try {
+      setTrafficLoading(true)
+      setTrafficError(null)
+      const res = await apiFetch(`/api/admin/traffic/by-user/${sub.remnwave_user_uuid}?period=${trafficPeriod}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || data.error || `HTTP ${res.status}`)
+      setTrafficData(data)
+    } catch (err) {
+      setTrafficError(err.message)
+    } finally {
+      setTrafficLoading(false)
+    }
+  }
+
+  // Загрузка нарушений Traffic Guard
+  async function loadViolations() {
+    try {
+      setViolationsLoading(true)
+      const res = await apiFetch(`/api/admin/traffic-guard/violations?user_id=${id}&limit=50`)
+      const data = await res.json()
+      setViolations(res.ok && Array.isArray(data.items) ? data.items : [])
+    } catch {
+      setViolations([])
+    } finally {
+      setViolationsLoading(false)
+    }
+  }
+
+  // Разблокировать violation
+  async function handleUnblockViolation(vid) {
+    if (!confirm('Разблокировать пользователя по этому нарушению?')) return
+    try {
+      const res = await apiFetch(`/api/admin/traffic-guard/violations/${vid}/unblock`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Ошибка')
+      showSuccess('Пользователь разблокирован')
+      loadViolations()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   // Sync Remnwave with DB (repair tool)
   async function handleSyncRemnwave(subId) {
@@ -285,6 +347,7 @@ export default function AdminUserCard() {
     { id: 'info', label: 'Профиль', icon: User },
     { id: 'subscription', label: 'Подписка', icon: Shield },
     { id: 'balance', label: 'Баланс', icon: Wallet },
+    { id: 'traffic', label: 'Трафик', icon: TrendingUp },
     { id: 'history', label: 'История', icon: Clock },
     { id: 'remnwave', label: 'Информация', icon: Info },
   ]
@@ -634,6 +697,29 @@ export default function AdminUserCard() {
           </div>
         )}
 
+        {/* === TAB: Трафик (по нодам + Traffic Guard violations) === */}
+        {tab === 'traffic' && (
+          <div className="space-y-5">
+            {/* Traffic Guard violations card */}
+            <TrafficGuardSection
+              violations={violations}
+              loading={violationsLoading}
+              onRefresh={loadViolations}
+              onUnblock={handleUnblockViolation}
+            />
+
+            {/* Traffic by-node card */}
+            <UserTrafficByNode
+              data={trafficData}
+              loading={trafficLoading}
+              error={trafficError}
+              period={trafficPeriod}
+              onPeriodChange={setTrafficPeriod}
+              onRefresh={loadTraffic}
+            />
+          </div>
+        )}
+
         {/* === TAB: Информация (сравнение БД vs Remnwave) === */}
         {tab === 'remnwave' && (() => {
           const activeSubForCompare = subscriptions.find(s => s.is_active) || subscriptions[0] || null
@@ -872,6 +958,249 @@ export default function AdminUserCard() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Sub-components for Traffic tab ──────────────────────────────────────────
+
+const COUNTRY_FLAGS = {
+  RU: '🇷🇺', DE: '🇩🇪', US: '🇺🇸', NL: '🇳🇱', FI: '🇫🇮', SG: '🇸🇬',
+  GB: '🇬🇧', FR: '🇫🇷', JP: '🇯🇵', CA: '🇨🇦', AU: '🇦🇺', KR: '🇰🇷',
+  SE: '🇸🇪', CH: '🇨🇭', PL: '🇵🇱', TR: '🇹🇷', AE: '🇦🇪', IN: '🇮🇳',
+  BR: '🇧🇷', HK: '🇭🇰', TW: '🇹🇼', UA: '🇺🇦', KZ: '🇰🇿', CZ: '🇨🇿', GE: '🇬🇪',
+}
+
+function fmtBytes(bytes) {
+  const n = Number(bytes) || 0
+  if (n === 0) return '0 B'
+  const k = 1024
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(Math.floor(Math.log(n) / Math.log(k)), units.length - 1)
+  return `${(n / Math.pow(k, i)).toFixed(i === 0 ? 0 : 2)} ${units[i]}`
+}
+
+function TrafficGuardSection({ violations, loading, onRefresh, onUnblock }) {
+  const active = violations.filter(v => !v.resolved_at)
+  const blocked = active.filter(v => v.level === 'blocked')
+  const warnings = active.filter(v => v.level === 'warning')
+  const resolved = violations.filter(v => v.resolved_at)
+
+  return (
+    <div className="bg-gradient-to-br from-rose-500/5 to-slate-900/60 border border-slate-700/50 rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${blocked.length > 0 ? 'bg-red-500/20 text-red-400' : warnings.length > 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+            <Shield className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Traffic Guard</h3>
+            <p className="text-xs text-slate-400">
+              {blocked.length > 0 && <span className="text-red-300 font-medium">Заблокирован: {blocked.length}</span>}
+              {blocked.length > 0 && warnings.length > 0 && ' · '}
+              {warnings.length > 0 && <span className="text-amber-300">Предупреждений: {warnings.length}</span>}
+              {blocked.length === 0 && warnings.length === 0 && <span className="text-emerald-300">Нарушений нет</span>}
+            </p>
+          </div>
+        </div>
+        <button onClick={onRefresh} disabled={loading} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition disabled:opacity-50">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      <div className="p-5 space-y-3">
+        {loading && violations.length === 0 ? (
+          <div className="flex items-center justify-center py-6 text-slate-500 text-sm">
+            <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Загрузка…
+          </div>
+        ) : violations.length === 0 ? (
+          <div className="flex items-center gap-3 py-4 text-emerald-300/90 text-sm">
+            <CheckCircle className="w-5 h-5 shrink-0" />
+            <div>
+              <div className="font-medium">Нарушений нет</div>
+              <div className="text-xs text-slate-500 mt-0.5">Пользователь в пределах всех лимитов трафика</div>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Active violations first */}
+            {active.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Активные ({active.length})</div>
+                {active.map(v => <ViolationItem key={v.id} v={v} onUnblock={onUnblock} />)}
+              </div>
+            )}
+            {resolved.length > 0 && (
+              <div className="space-y-2 mt-4 pt-4 border-t border-slate-800/60">
+                <div className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">История ({resolved.length})</div>
+                {resolved.slice(0, 5).map(v => <ViolationItem key={v.id} v={v} />)}
+                {resolved.length > 5 && (
+                  <div className="text-xs text-slate-500 text-center pt-1">… ещё {resolved.length - 5}</div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ViolationItem({ v, onUnblock }) {
+  const isResolved = !!v.resolved_at
+  const isBlocked = v.level === 'blocked'
+  const tone = isResolved ? 'emerald' : (isBlocked ? 'red' : 'amber')
+  const map = {
+    red:     'bg-red-500/10 border-red-500/40 text-red-200',
+    amber:   'bg-amber-500/10 border-amber-500/40 text-amber-200',
+    emerald: 'bg-emerald-500/5 border-emerald-500/30 text-emerald-200/80',
+  }
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${map[tone]}`}>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex-1 min-w-[150px]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+              isResolved ? 'bg-emerald-500/30' : isBlocked ? 'bg-red-500/30' : 'bg-amber-500/30'
+            }`}>{isResolved ? 'resolved' : v.level}</span>
+            <span className="font-semibold text-sm text-slate-200">{v.node_name}</span>
+            <span className="text-[10px] text-slate-500">{v.period_key}</span>
+          </div>
+          <div className="text-xs mt-1 opacity-80">
+            {fmtBytes(v.used_bytes)} / {fmtBytes(v.limit_bytes)} ({Number(v.used_percent).toFixed(0)}%)
+            <span className="text-slate-500 ml-2">· {v.action_taken || 'pending'}</span>
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">
+            {new Date(v.detected_at).toLocaleString('ru-RU')}
+            {v.resolved_at && ` · закрыто ${new Date(v.resolved_at).toLocaleString('ru-RU')}`}
+          </div>
+        </div>
+        {!isResolved && isBlocked && onUnblock && (
+          <button onClick={() => onUnblock(v.id)} className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200">
+            <Unlock className="w-3 h-3" /> Разблокировать
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function UserTrafficByNode({ data, loading, error, period, onPeriodChange, onRefresh }) {
+  const PERIODS = [
+    { id: '24h', label: '24 ч' },
+    { id: '7d',  label: '7 дн' },
+    { id: '30d', label: '30 дн' },
+  ]
+  return (
+    <div className="bg-gradient-to-br from-slate-800/50 to-slate-900/60 border border-slate-700/50 rounded-2xl overflow-hidden shadow-xl shadow-cyan-500/5">
+      <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg shadow-cyan-500/25 shrink-0">
+            <Activity className="w-4 h-4 text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Расход трафика по нодам</h3>
+            <p className="text-xs text-slate-400">
+              {data ? `${data.range.start} — ${data.range.end} · всего ${fmtBytes(data.totalBytes)}` : 'Live из RemnaWave'}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex gap-0.5 p-0.5 bg-slate-900/60 border border-slate-700/40 rounded-lg">
+            {PERIODS.map(p => (
+              <button
+                key={p.id}
+                onClick={() => onPeriodChange(p.id)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  period === p.id
+                    ? 'bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow shadow-cyan-500/25'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >{p.label}</button>
+            ))}
+          </div>
+          <button onClick={onRefresh} disabled={loading} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      <div className="p-5">
+        {error && (
+          <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-200 text-sm">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-medium">Не удалось загрузить трафик</div>
+              <div className="text-xs text-red-300/80 mt-1 font-mono break-all">{error}</div>
+            </div>
+          </div>
+        )}
+        {loading && !data && (
+          <div className="flex items-center justify-center py-12 text-slate-500">
+            <RefreshCw className="w-5 h-5 animate-spin mr-2" /> Загружаю…
+          </div>
+        )}
+        {data && data.byNode.length === 0 && (
+          <div className="text-center py-10 text-slate-500 text-sm">
+            <Activity className="w-10 h-10 mx-auto mb-2 text-slate-700" />
+            Нет потребления за выбранный период
+          </div>
+        )}
+        {data && data.byNode.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-slate-700/40">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-900/50 border-b border-slate-700/40">
+                  <th className="text-left px-4 py-2.5 text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Нода</th>
+                  <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-wide text-slate-400 font-semibold">Объём</th>
+                  <th className="text-right px-4 py-2.5 text-[11px] uppercase tracking-wide text-slate-400 font-semibold w-32">Доля</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.byNode.map((n, idx) => {
+                  const pct = data.totalBytes > 0 ? (n.usedBytes / data.totalBytes * 100) : 0
+                  const flag = COUNTRY_FLAGS[n.countryCode] || '🌐'
+                  return (
+                    <tr key={n.nodeUuid} className={`border-b border-slate-800/40 hover:bg-slate-800/30 transition ${idx % 2 === 0 ? 'bg-slate-900/20' : ''}`}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-lg">{flag}</span>
+                          <div>
+                            <div className="font-medium text-slate-200">{n.nodeName}</div>
+                            <div className="text-[10px] text-slate-500 font-mono truncate max-w-[200px]">{n.nodeUuid}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="text-right px-4 py-3 font-mono font-bold text-cyan-300 whitespace-nowrap">
+                        {fmtBytes(n.usedBytes)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2 justify-end">
+                          <span className="text-xs text-slate-400 font-mono w-10 text-right">{pct.toFixed(0)}%</span>
+                          <div className="flex-1 max-w-[80px] h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full"
+                              style={{ width: `${Math.min(100, pct)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-900/60 border-t-2 border-slate-700/60 font-semibold">
+                  <td className="px-4 py-3 text-slate-300">Всего</td>
+                  <td className="text-right px-4 py-3 font-mono text-emerald-300 whitespace-nowrap">{fmtBytes(data.totalBytes)}</td>
+                  <td className="px-4 py-3 text-right text-xs text-slate-500">{data.byNode.length} нод</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         )}
       </div>

@@ -1,13 +1,36 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { Outlet, useLocation, Link } from 'react-router-dom'
 import { ArrowLeft, LayoutDashboard } from 'lucide-react'
 
 // Сайдбар убран — навигация по разделам идёт через стартовый экран /admin
 // (groups + поиск). На каждой подстранице показываем минибар для возврата.
+//
+// Админка ВСЕГДА в тёмной теме — независимо от пользовательских настроек.
+// Форсим класс 'dark' на <html> при заходе и снимаем при выходе с /admin.
 
 export default function AdminLayout() {
   const location = useLocation()
   const isOverview = location.pathname === '/admin' || location.pathname === '/admin/'
+
+  // Форсируем тёмную тему пока юзер в админке.
+  // Сохраняем предыдущее состояние класса и восстанавливаем при unmount.
+  useEffect(() => {
+    const root = document.documentElement
+    const wasDark = root.classList.contains('dark')
+    root.classList.add('dark')
+    return () => {
+      // Восстанавливаем как было ДО входа в админку (читаем из localStorage)
+      try {
+        const pref = localStorage.getItem('vpn_theme') || 'system'
+        const sysDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+        const shouldBeDark = pref === 'dark' || (pref === 'system' && sysDark)
+        if (shouldBeDark) root.classList.add('dark')
+        else root.classList.remove('dark')
+      } catch {
+        if (!wasDark) root.classList.remove('dark')
+      }
+    }
+  }, [])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">

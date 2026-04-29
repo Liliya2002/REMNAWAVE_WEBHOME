@@ -297,8 +297,28 @@ export default function TemplateBuilder() {
               </div>
               <Field label="Описание проекта"><textarea value={form.site_description || ''} onChange={(e) => setField('site_description', e.target.value)} rows={3} className={inputClass()} /></Field>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Логотип (URL)"><input value={form.site_logo_url || ''} onChange={(e) => setField('site_logo_url', e.target.value)} className={inputClass()} /></Field>
-                <Field label="Favicon (URL)"><input value={form.site_favicon_url || ''} onChange={(e) => setField('site_favicon_url', e.target.value)} className={inputClass()} /></Field>
+                <Field
+                  label="Логотип (URL)"
+                  hint="По умолчанию используется логотип проекта (/logo.svg). Чтобы заменить — укажи URL. Рекомендуемые размеры: SVG 64×64 (любой квадрат) или PNG 32×32 / 64×64. В шапке отображается 24×24 (mobile) или 32×32 (desktop)."
+                >
+                  <input
+                    value={form.site_logo_url || ''}
+                    onChange={(e) => setField('site_logo_url', e.target.value)}
+                    placeholder="/logo.svg"
+                    className={inputClass()}
+                  />
+                </Field>
+                <Field
+                  label="Favicon (URL)"
+                  hint="По умолчанию используется иконка проекта (/favicon.svg). Чтобы заменить — укажи URL. Рекомендуемые размеры: SVG 64×64 (любой квадрат) или PNG 32×32 / 48×48. Для iOS home-screen — 180×180."
+                >
+                  <input
+                    value={form.site_favicon_url || ''}
+                    onChange={(e) => setField('site_favicon_url', e.target.value)}
+                    placeholder="/favicon.svg"
+                    className={inputClass()}
+                  />
+                </Field>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Email поддержки"><input value={form.support_email || ''} onChange={(e) => setField('support_email', e.target.value)} className={inputClass()} /></Field>

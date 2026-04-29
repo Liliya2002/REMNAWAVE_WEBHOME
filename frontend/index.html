@@ -3,7 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <meta name="theme-color" content="#06b6d4" />
     <title>VPN Webhome</title>
+    <script>
+      // Применяем тему ДО загрузки React, чтобы избежать FOUC.
+      // ThemeContext дальше использует ту же логику и localStorage-ключ.
+      (function () {
+        try {
+          var pref = localStorage.getItem('vpn_theme') || 'system';
+          var dark = pref === 'dark' ||
+            (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

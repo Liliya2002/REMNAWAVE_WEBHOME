@@ -135,4 +135,39 @@ async function sendPasswordResetEmail(email, token, frontendUrl) {
   return { ok: true }
 }
 
-module.exports = { sendVerificationCode, verifyCode, sendPasswordResetEmail }
+/**
+ * Универсальная отправка письма с заголовком + сообщением.
+ * Используется системой Traffic Guard и т.п. для системных уведомлений.
+ */
+async function sendNotificationEmail(toEmail, { subject, heading, body, ctaText, ctaUrl, accent = '#38bdf8' }) {
+  if (!toEmail) return { ok: false, error: 'No recipient' }
+  const html = `
+    <div style="font-family: Arial, sans-serif; max-width: 540px; margin: 0 auto; padding: 32px; background: #0f172a; color: #e2e8f0; border-radius: 16px;">
+      <h2 style="color: #60a5fa; margin: 0 0 8px 0;">Guard VPN</h2>
+      <h3 style="color: ${accent}; margin: 16px 0;">${heading}</h3>
+      <div style="margin: 16px 0; line-height: 1.6; color: #cbd5e1;">${body}</div>
+      ${ctaUrl && ctaText ? `
+        <div style="text-align: center; padding: 20px;">
+          <a href="${ctaUrl}" style="display: inline-block; padding: 12px 28px; background: linear-gradient(90deg, #3b82f6, #06b6d4); color: #fff; font-weight: bold; font-size: 15px; border-radius: 12px; text-decoration: none;">
+            ${ctaText}
+          </a>
+        </div>` : ''}
+      <p style="margin-top: 24px; font-size: 13px; color: #64748b; border-top: 1px solid #1e293b; padding-top: 16px;">
+        Это автоматическое уведомление. Если у вас вопросы — свяжитесь с поддержкой.
+      </p>
+    </div>
+  `
+  try {
+    await transporter.sendMail({
+      from: `"Guard VPN" <${FROM_EMAIL}>`,
+      to: toEmail,
+      subject,
+      html,
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
+}
+
+module.exports = { sendVerificationCode, verifyCode, sendPasswordResetEmail, sendNotificationEmail }

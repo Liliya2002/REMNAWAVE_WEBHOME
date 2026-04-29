@@ -83,3 +83,66 @@ body {
 .landing-content th, .landing-preview th { font-weight: 600; background: rgba(148,163,184,0.08); }
 .landing-content img, .landing-preview img { max-width: 100%; height: auto; border-radius: 0.5rem; }
 .landing-content iframe, .landing-preview iframe { max-width: 100%; border-radius: 0.5rem; }
+
+/* === Admin instructions: markdown-рендер на тёмном фоне === */
+.prose-admin { color: #cbd5e1; line-height: 1.65; font-size: 0.9375rem; }
+.prose-admin h1 { font-size: 1.875rem; font-weight: 700; color: #f1f5f9; margin: 1.5rem 0 1rem; line-height: 1.2; padding-bottom: 0.5rem; border-bottom: 1px solid rgba(148,163,184,0.2); }
+.prose-admin h1:first-child { margin-top: 0; }
+.prose-admin h2 { font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin: 1.75rem 0 0.875rem; line-height: 1.25; }
+.prose-admin h3 { font-size: 1.25rem; font-weight: 600; color: #e2e8f0; margin: 1.5rem 0 0.75rem; }
+.prose-admin h4 { font-size: 1.0625rem; font-weight: 600; color: #e2e8f0; margin: 1.25rem 0 0.5rem; }
+.prose-admin h5, .prose-admin h6 { font-size: 1rem; font-weight: 600; color: #e2e8f0; margin: 1rem 0 0.5rem; }
+.prose-admin p { margin: 0.75rem 0; }
+.prose-admin strong { color: #f1f5f9; font-weight: 600; }
+.prose-admin em { color: #e2e8f0; font-style: italic; }
+.prose-admin ul { list-style: disc; padding-left: 1.5rem; margin: 0.75rem 0; }
+.prose-admin ol { list-style: decimal; padding-left: 1.5rem; margin: 0.75rem 0; }
+.prose-admin li { margin: 0.25rem 0; }
+.prose-admin li > p { margin: 0.25rem 0; }
+.prose-admin a { color: #38bdf8; text-decoration: none; border-bottom: 1px dashed rgba(56,189,248,0.4); transition: all 0.15s; }
+.prose-admin a:hover { color: #7dd3fc; border-bottom-style: solid; }
+.prose-admin blockquote {
+  border-left: 4px solid #38bdf8;
+  background: rgba(56,189,248,0.08);
+  padding: 0.5rem 1rem;
+  margin: 1rem 0;
+  border-radius: 0.5rem;
+  color: #e0f2fe;
+}
+.prose-admin blockquote p { margin: 0.25rem 0; }
+.prose-admin code {
+  background: rgba(148,163,184,0.15);
+  color: #fbbf24;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.3rem;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.85em;
+  border: 1px solid rgba(148,163,184,0.15);
+}
+.prose-admin pre {
+  background: #020617;
+  border: 1px solid rgba(148,163,184,0.2);
+  padding: 1rem;
+  border-radius: 0.625rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.prose-admin pre code { background: transparent; color: #e2e8f0; padding: 0; border: 0; font-size: inherit; }
+.prose-admin hr { border: 0; border-top: 1px solid rgba(148,163,184,0.2); margin: 2rem 0; }
+.prose-admin table { border-collapse: collapse; margin: 1rem 0; width: 100%; font-size: 0.875rem; display: block; overflow-x: auto; }
+.prose-admin th, .prose-admin td { border: 1px solid rgba(148,163,184,0.2); padding: 0.5rem 0.75rem; text-align: left; }
+.prose-admin th { font-weight: 600; background: rgba(148,163,184,0.08); color: #f1f5f9; }
+.prose-admin img { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid rgba(148,163,184,0.15); }
+.prose-admin input[type="checkbox"] { margin-right: 0.5rem; accent-color: #38bdf8; }
+.prose-admin .task-list-item { list-style: none; margin-left: -1.5rem; }
+.prose-admin kbd {
+  background: rgba(148,163,184,0.15);
+  border: 1px solid rgba(148,163,184,0.3);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8em;
+  color: #e2e8f0;
+}
