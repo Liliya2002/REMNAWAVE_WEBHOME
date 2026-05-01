@@ -45,7 +45,7 @@ node index.js
    ```
 3. Перезапустите backend
 
-Параметр `REMNWAVE_SECRET_KEY` используется для cookie-авторизации (формат `key:value`).
+Параметр `REMNWAVE_SECRET_KEY` от eGames установщика RemnaWave, используется для cookie-авторизации (формат `key:value`).
 
 ## Страницы
 
