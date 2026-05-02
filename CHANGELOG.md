@@ -4,6 +4,14 @@
 
 ---
 
+## v0.1.7 — Hotfix: legacy UPDATE users.remnwave_uuid в /activate
+
+После v0.1.6 fallback на A019 сработал, но `/activate` пытался обновить
+`users.remnwave_uuid` — колонки больше нет (UUID хранится только в
+`subscriptions.remnwave_user_uuid`). Убран мёртвый UPDATE.
+
+---
+
 ## v0.1.6 — Hotfix: Free Trial activation для existing RW юзеров
 
 > Изначально планировался как `v0.1.5.1`, но `docker/metadata-action` в CI

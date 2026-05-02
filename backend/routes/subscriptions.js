@@ -269,15 +269,10 @@ router.post('/activate', verifyToken, verifyActive, async (req, res) => {
     const userUuid = remnwaveUser.uuid || remnwaveUser.id
     const shortUuid = remnwaveUser.shortUuid
     
-    // Сохраняем remnwave_uuid в таблицу users для дальнейшего поиска
-    if (userUuid) {
-      await pool.query(
-        'UPDATE users SET remnwave_uuid = $1 WHERE id = $2',
-        [userUuid, userId]
-      )
-      console.log(`[Subscriptions] Saved remnwave_uuid=${userUuid} to users table`)
-    }
-    
+    // UUID юзера в Remnwave хранится только в subscriptions.remnwave_user_uuid
+    // (раньше была колонка users.remnwave_uuid, но она удалена — UPDATE убран).
+
+
     // subscriptionUrl берётся прямо из ответа создания пользователя
     let subscriptionUrl = remnwaveUser.subscriptionUrl || null
     
