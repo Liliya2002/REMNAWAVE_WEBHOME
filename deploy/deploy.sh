@@ -235,11 +235,21 @@ DEPLOY_STARTED=1
 docker compose up -d backend frontend
 ok "Контейнеры перезапущены"
 
+# Restart nginx чтобы он переподключился к свежим IP backend/frontend.
+# Иначе nginx-кеш resolver'а держит старые (мёртвые) адреса → 502 Bad Gateway.
+# Делаем только если nginx уже работает (если нет — запускать его — не задача deploy.sh).
+if docker compose ps nginx 2>/dev/null | grep -q "Up\|running"; then
+  log "Перезапускаю nginx для обновления upstream IP…"
+  docker compose restart nginx 2>&1 | sed 's/^/  /' || warn "nginx restart упал"
+  ok "nginx перезапущен"
+fi
+
 # ─── Smoke test ───────────────────────────────────────────────────────────────
 step "Smoke test"
 
-# Ждём пока backend поднимется (макс 60 сек)
-MAX_WAIT=60
+# Ждём пока backend поднимется (макс 120 сек — после рестарта nginx
+# нужно время + первый getNodes() в squadQuota cron'е может тормозить)
+MAX_WAIT=120
 WAITED=0
 HEALTH_URL="http://127.0.0.1/api/health"
 
