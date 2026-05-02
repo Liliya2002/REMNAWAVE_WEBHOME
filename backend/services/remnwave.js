@@ -182,7 +182,10 @@ async function createRemnwaveUser(userData) {
     ...(userData.hwidDeviceLimit != null ? { hwidDeviceLimit: userData.hwidDeviceLimit } : {}),
   }
 
-  const user = await apiRequest('POST', '/api/users', payload)
+  const user = await apiRequest('POST', '/api/users', payload, undefined)
+  if (!user || !user.uuid) {
+    throw new Error('RemnaWave не создал юзера (apiRequest вернул пустой ответ — проверьте логи RW и валидность payload)')
+  }
   console.log(`[Remnwave] User created: uuid=${user.uuid}, shortUuid=${user.shortUuid}`)
   invalidateUsersCache()
   return user

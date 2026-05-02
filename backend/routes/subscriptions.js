@@ -229,19 +229,40 @@ router.post('/activate', verifyToken, verifyActive, async (req, res) => {
       trafficLimitBytes
     })
 
-    // Создаем пользователя в Remnwave с привязкой к сквадам из тарифа
-    const remnwaveUser = await createRemnwaveUser({
-      username,
-      trafficLimitBytes,
-      expireAt: expirationDate,
-      activeInternalSquads: squadUuids,
-      ...userMeta,
-      ...(planHwid != null ? { hwidDeviceLimit: Number(planHwid) } : {}),
-    })
-    
-    if (!remnwaveUser) {
-      return res.status(500).json({ 
-        error: 'Не удалось создать VPN пользователя в системе Remnwave' 
+    // Создаём юзера в Remnwave. Если уже существует (legacy от прошлой подписки) —
+    // получаем его и обновляем squads/expire/traffic вместо create.
+    let remnwaveUser
+    try {
+      remnwaveUser = await createRemnwaveUser({
+        username,
+        trafficLimitBytes,
+        expireAt: expirationDate,
+        activeInternalSquads: squadUuids,
+        ...userMeta,
+        ...(planHwid != null ? { hwidDeviceLimit: Number(planHwid) } : {}),
+      })
+    } catch (err) {
+      console.warn(`[Subscriptions] createRemnwaveUser failed for ${username}: ${err.message}. Trying fetch-by-username fallback.`)
+      const existing = await remnwaveSvc.getRemnwaveUserByUsername(username).catch(() => null)
+      if (!existing?.uuid) throw err
+      // Обновляем существующего юзера под новую подписку
+      remnwaveUser = await remnwaveSvc.updateRemnwaveUser(existing.uuid, {
+        expireAt: expirationDate,
+        trafficLimitBytes,
+        status: 'ACTIVE',
+        activeInternalSquads: squadUuids,
+        ...userMeta,
+        ...(planHwid != null ? { hwidDeviceLimit: Number(planHwid) } : {}),
+      })
+      // updateRemnwaveUser может вернуть partial response без shortUuid/subscriptionUrl —
+      // подмержим из existing
+      remnwaveUser = { ...existing, ...(remnwaveUser || {}) }
+      console.log(`[Subscriptions] Reused existing RW user ${existing.uuid}`)
+    }
+
+    if (!remnwaveUser || !remnwaveUser.uuid) {
+      return res.status(500).json({
+        error: 'Не удалось создать VPN пользователя в системе Remnwave'
       })
     }
     
