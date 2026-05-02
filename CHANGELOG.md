@@ -4,7 +4,10 @@
 
 ---
 
-## v0.1.5.1 — Hotfix: Free Trial activation для existing RW юзеров
+## v0.1.6 — Hotfix: Free Trial activation для existing RW юзеров
+
+> Изначально планировался как `v0.1.5.1`, но `docker/metadata-action` в CI
+> поддерживает только строгий semver `X.Y.Z`. Перевыпущено как `0.1.6`.
 
 **Bugfix:** `POST /api/subscriptions/activate` (Free Trial) падал с **HTTP 500**
 если юзер уже существовал в RemnaWave (например, от прошлой подписки или
