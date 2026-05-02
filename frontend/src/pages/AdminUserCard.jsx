@@ -4,7 +4,10 @@ import {
   ArrowLeft, User, Mail, Shield, ShieldOff, Calendar, Wallet,
   Clock, CreditCard, Save, Plus, RefreshCw, Trash2, Crown, Ban, CheckCircle,
   Info, Database, Server, AlertTriangle, Activity, Unlock, AlertCircle, TrendingUp,
+  ArrowUpDown,
 } from 'lucide-react'
+import ChangePlanModal from '../components/ChangePlanModal'
+import AdminSquadQuotaSection from '../components/AdminSquadQuotaSection'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -74,6 +77,10 @@ export default function AdminUserCard() {
   // Sync Remnwave
   const [syncingSubId, setSyncingSubId] = useState(null)
 
+  // Change plan / Delete subscription
+  const [changePlanSub, setChangePlanSub] = useState(null)  // sub-объект если открыта модалка
+  const [deletingSubId, setDeletingSubId] = useState(null)
+
   // Remnwave info tab
   const [remnwaveInfo, setRemnwaveInfo] = useState(null)
   const [remnwaveLoading, setRemnwaveLoading] = useState(false)
@@ -86,6 +93,9 @@ export default function AdminUserCard() {
   const [trafficPeriod, setTrafficPeriod] = useState('7d')
   const [violations, setViolations] = useState([])
   const [violationsLoading, setViolationsLoading] = useState(false)
+  const [liveIps, setLiveIps] = useState(null)         // { ips, host, hours, fetchedAt } | null
+  const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupError, setLookupError] = useState(null)
 
   // Active tab
   const [tab, setTab] = useState('info')
@@ -277,6 +287,51 @@ export default function AdminUserCard() {
       loadViolations()
     } catch (err) {
       setError(err.message)
+    }
+  }
+
+  // Live SSH-lookup настоящего IP
+  async function handleLookupRealIp() {
+    const sub = subscriptions.find(s => s.remnwave_user_uuid)
+    if (!sub) { setLookupError('У пользователя нет подписки RemnaWave'); return }
+    setLookupLoading(true); setLookupError(null); setLiveIps(null)
+    try {
+      const res = await apiFetch('/api/admin/traffic-guard/ssh/lookup', {
+        method: 'POST',
+        body: JSON.stringify({ user_uuid: sub.remnwave_user_uuid, hours: 24 }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        if (data.code === 'NOT_CONFIGURED') {
+          throw new Error('SSH-агент не настроен. Включите в /admin/traffic-guard → Настройки → SSH-агент.')
+        }
+        throw new Error(data.error || `HTTP ${res.status}`)
+      }
+      setLiveIps({ ...data, fetchedAt: new Date().toISOString() })
+    } catch (err) {
+      setLookupError(err.message)
+    } finally {
+      setLookupLoading(false)
+    }
+  }
+
+  // Delete subscription (soft + disable RemnaWave)
+  async function handleDeleteSub(sub) {
+    if (!confirm(`Удалить подписку «${sub.plan_name}» (id ${sub.id})?\nПодписка деактивируется + юзер отключится в RemnaWave.`)) return
+    try {
+      setDeletingSubId(sub.id)
+      setError(null)
+      const res = await apiFetch(`/api/admin/users/${id}/subscription/${sub.id}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Ошибка удаления')
+      showSuccess(data.rw?.applied
+        ? 'Подписка удалена. Пользователь отключён в RemnaWave.'
+        : 'Подписка удалена в БД. RemnaWave: ' + (data.rw?.error || 'не отключено'))
+      loadUser()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeletingSubId(null)
     }
   }
 
@@ -493,6 +548,52 @@ export default function AdminUserCard() {
               </label>
             </div>
 
+            {/* Email confirmation toggle (применяется мгновенно) */}
+            <div className={`flex items-center justify-between gap-3 p-4 rounded-xl border transition ${
+              userData.email_confirmed
+                ? 'bg-emerald-500/5 border-emerald-500/30'
+                : 'bg-amber-500/5 border-amber-500/40'
+            }`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <Mail className={`w-5 h-5 shrink-0 ${userData.email_confirmed ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <div className="min-w-0">
+                  <div className="text-sm text-white font-medium">
+                    Email {userData.email_confirmed ? 'подтверждён' : 'не подтверждён'}
+                  </div>
+                  <div className="text-xs text-slate-400 truncate">
+                    {userData.email_confirmed
+                      ? 'Юзер подтвердил адрес — кнопка ниже сбрасывает'
+                      : 'Если юзер потерял доступ к почте — можно подтвердить вручную'}
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={async () => {
+                  const newVal = !userData.email_confirmed
+                  if (!confirm(newVal ? 'Подтвердить email вручную?' : 'Сбросить подтверждение email?')) return
+                  try {
+                    const res = await apiFetch(`/api/admin/users/${id}/email-confirmed`, {
+                      method: 'PUT',
+                      body: JSON.stringify({ confirmed: newVal }),
+                    })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data.error || 'Ошибка')
+                    showSuccess(newVal ? 'Email подтверждён' : 'Подтверждение email сброшено')
+                    loadUser()
+                  } catch (err) {
+                    setError(err.message)
+                  }
+                }}
+                className={`px-3 py-2 text-xs font-medium rounded-lg border transition shrink-0 ${
+                  userData.email_confirmed
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'
+                    : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25'
+                }`}
+              >
+                {userData.email_confirmed ? 'Сбросить' : 'Подтвердить вручную'}
+              </button>
+            </div>
+
             <div className="flex justify-end">
               <button
                 onClick={handleSaveUser}
@@ -575,6 +676,25 @@ export default function AdminUserCard() {
                             <RefreshCw className={`w-3 h-3 ${syncingSubId === sub.id ? 'animate-spin' : ''}`} />
                             {syncingSubId === sub.id ? '...' : 'Синхронизировать с Remnwave'}
                           </button>
+                          {sub.is_active && (
+                            <button
+                              onClick={() => setChangePlanSub(sub)}
+                              title="Сменить тариф (бесплатно от админа)"
+                              className="px-3 py-1.5 text-sm bg-violet-500/15 border border-violet-500/40 text-violet-300 rounded-lg hover:bg-violet-500/25 transition flex items-center gap-1"
+                            >
+                              <ArrowUpDown className="w-3 h-3" />
+                              Сменить тариф
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteSub(sub)}
+                            disabled={deletingSubId === sub.id}
+                            title="Удалить подписку (soft) и отключить в RemnaWave"
+                            className="px-3 py-1.5 text-sm bg-red-500/15 border border-red-500/40 text-red-300 rounded-lg hover:bg-red-500/25 transition disabled:opacity-50 flex items-center gap-1"
+                          >
+                            <Trash2 className={`w-3 h-3 ${deletingSubId === sub.id ? 'animate-pulse' : ''}`} />
+                            {deletingSubId === sub.id ? '...' : 'Удалить'}
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -624,6 +744,18 @@ export default function AdminUserCard() {
               </div>
               <p className="text-[10px] text-slate-500 mt-2">Подписка будет создана бесплатно (от имени админа). Пользователь сразу получит доступ.</p>
             </div>
+
+            {/* Модалка смены тарифа в админ-режиме */}
+            {changePlanSub && (
+              <ChangePlanModal
+                subscription={changePlanSub}
+                currentPlan={{ name: changePlanSub.plan_name, id: changePlanSub.plan_id }}
+                adminMode={true}
+                userId={id}
+                onClose={() => setChangePlanSub(null)}
+                onSuccess={() => { setChangePlanSub(null); loadUser(); showSuccess('Тариф успешно изменён') }}
+              />
+            )}
           </div>
         )}
 
@@ -706,7 +838,18 @@ export default function AdminUserCard() {
               loading={violationsLoading}
               onRefresh={loadViolations}
               onUnblock={handleUnblockViolation}
+              onLookupIp={handleLookupRealIp}
+              liveIps={liveIps}
+              lookupLoading={lookupLoading}
+              lookupError={lookupError}
             />
+
+            {/* Squad Quotas */}
+            {(() => {
+              const activeSub = subscriptions.find(s => s.is_active && s.plan_id) || subscriptions.find(s => s.plan_id)
+              if (!activeSub) return null
+              return <AdminSquadQuotaSection userId={id} subscription={activeSub} />
+            })()}
 
             {/* Traffic by-node card */}
             <UserTrafficByNode
@@ -983,7 +1126,7 @@ function fmtBytes(bytes) {
   return `${(n / Math.pow(k, i)).toFixed(i === 0 ? 0 : 2)} ${units[i]}`
 }
 
-function TrafficGuardSection({ violations, loading, onRefresh, onUnblock }) {
+function TrafficGuardSection({ violations, loading, onRefresh, onUnblock, onLookupIp, liveIps, lookupLoading, lookupError }) {
   const active = violations.filter(v => !v.resolved_at)
   const blocked = active.filter(v => v.level === 'blocked')
   const warnings = active.filter(v => v.level === 'warning')
@@ -1006,10 +1149,55 @@ function TrafficGuardSection({ violations, loading, onRefresh, onUnblock }) {
             </p>
           </div>
         </div>
-        <button onClick={onRefresh} disabled={loading} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition disabled:opacity-50">
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {onLookupIp && (
+            <button
+              onClick={onLookupIp}
+              disabled={lookupLoading}
+              title="Получить реальный IP с ноды через SSH-агент"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-cyan-200 hover:text-white bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/40 disabled:opacity-50 transition"
+            >
+              {lookupLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">Получить IP</span>
+            </button>
+          )}
+          <button onClick={onRefresh} disabled={loading} className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 transition disabled:opacity-50">
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
+
+      {/* Live SSH-lookup result */}
+      {(liveIps || lookupError) && (
+        <div className="px-5 py-3 border-b border-slate-700/40">
+          {lookupError && (
+            <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-xs text-red-300 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-medium">SSH-lookup не удался</div>
+                <div className="text-red-300/70 mt-0.5 font-mono break-all">{lookupError}</div>
+              </div>
+            </div>
+          )}
+          {liveIps && (
+            <div className="px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-xs text-cyan-200">
+              <div className="font-medium mb-1">Live IP с ноды (за последние 24ч):</div>
+              {liveIps.ips?.length === 0 ? (
+                <div className="text-slate-400">Никаких IP не найдено в access.log</div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {liveIps.ips.map((ip, i) => (
+                    <code key={i} className="font-mono px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40">{ip}</code>
+                  ))}
+                </div>
+              )}
+              <div className="text-[10px] text-slate-500 mt-1">
+                Нода: {liveIps.host} · Получено: {new Date(liveIps.fetchedAt).toLocaleTimeString('ru-RU')}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="p-5 space-y-3">
         {loading && violations.length === 0 ? (

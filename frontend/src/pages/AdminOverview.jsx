@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   // top stats
-  Clock, Cpu, Users as UsersIcon, Layers,
+  Clock, Cpu, Users as UsersIcon, Layers, MailWarning,
   // groups
   BarChart3, Users, CreditCard, History,
   Gift, Bell,
@@ -198,7 +198,7 @@ export default function AdminOverview() {
   return (
     <div className="space-y-6">
       {/* ─── Top stats row ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatPill
           icon={Clock}
           accent="blue"
@@ -223,6 +223,12 @@ export default function AdminOverview() {
           accent="amber"
           label="Активные подписки"
           value={loading ? '…' : (stats?.activeSubscriptions ?? '—')}
+        />
+        <StatPill
+          icon={MailWarning}
+          accent={stats?.unconfirmedEmails > 0 ? 'amber' : 'emerald'}
+          label="Без подтверждения email"
+          value={loading ? '…' : (stats?.unconfirmedEmails ?? 0)}
         />
       </div>
 

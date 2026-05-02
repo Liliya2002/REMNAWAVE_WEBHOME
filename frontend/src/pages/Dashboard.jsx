@@ -7,6 +7,7 @@ import SubscriptionsSection from './dashboard/SubscriptionsSection'
 import ReferralsSection from './dashboard/ReferralsSection'
 import BalanceSection from './dashboard/BalanceSection'
 import InboxSection from './dashboard/InboxSection'
+import EmailConfirmBanner from '../components/EmailConfirmBanner'
 
 export default function Dashboard() {
   const [user, setUser] = useState(null)
@@ -117,6 +118,11 @@ export default function Dashboard() {
 
   return (
     <div className="w-full">
+      {/* Email confirmation banner */}
+      <div className="px-4 sm:px-6 lg:px-8 pt-6 max-w-7xl mx-auto">
+        <EmailConfirmBanner />
+      </div>
+
       {/* Hero раздел */}
       <div className="relative mb-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">

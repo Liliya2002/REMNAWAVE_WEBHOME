@@ -17,9 +17,16 @@ export async function authFetch(path, options = {}, { maxRetries = 2, retryDelay
     }
 
     try {
+      // Авто-добавление Content-Type: application/json если в body есть строка JSON
+      // (без этого Express body-parser не парсит и req.body = {})
+      const autoHeaders = {}
+      if (options.body && typeof options.body === 'string' && !options.headers?.['Content-Type']) {
+        autoHeaders['Content-Type'] = 'application/json'
+      }
       const res = await fetch(url, {
         ...options,
         headers: {
+          ...autoHeaders,
           ...options.headers,
           'Authorization': `Bearer ${token}`,
         }

@@ -35,7 +35,8 @@ async function snapshotAll() {
       const rwUser = await getRemnwaveUserByUuid(sub.remnwave_user_uuid)
       if (!rwUser) { fail++; continue }
 
-      const used = num(rwUser.usedTrafficBytes)
+      // RemnaWave 2.7+ кладёт usedTrafficBytes внутрь userTraffic, оставляем fallback на старый формат
+      const used = num(rwUser.userTraffic?.usedTrafficBytes ?? rwUser.usedTrafficBytes)
       const limit = num(rwUser.trafficLimitBytes) || (sub.traffic_limit_gb * 1024 * 1024 * 1024)
 
       await db.query(
@@ -46,6 +47,14 @@ async function snapshotAll() {
                        limit_bytes = EXCLUDED.limit_bytes,
                        recorded_at = NOW()`,
         [sub.id, sub.user_id, used, limit]
+      )
+
+      // Также обновляем поле в subscriptions, чтобы Dashboard и /my endpoint
+      // видели актуальный трафик без задержки до следующего snapshot.
+      const usedGb = +(used / (1024 ** 3)).toFixed(2)
+      await db.query(
+        `UPDATE subscriptions SET traffic_used_gb = $1, updated_at = NOW() WHERE id = $2`,
+        [usedGb, sub.id]
       )
       ok++
     } catch (e) {

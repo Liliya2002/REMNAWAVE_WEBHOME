@@ -87,9 +87,14 @@ export default function TrafficChart() {
   const currentUsedBytes = lastPoint?.total ?? (data?.subscription
     ? Number(data.subscription.trafficUsedGb || 0) * 1024 * 1024 * 1024
     : 0)
-  const usedPercent = limitBytes > 0
-    ? Math.min(100, Math.round((currentUsedBytes / limitBytes) * 100))
+  // Точный процент (без округления) для ширины бара,
+  // и человекочитаемый текст («<1%» если меньше единицы)
+  const usedPercentRaw = limitBytes > 0
+    ? Math.min(100, (currentUsedBytes / limitBytes) * 100)
     : 0
+  const usedPercent = usedPercentRaw >= 1
+    ? Math.round(usedPercentRaw)
+    : (usedPercentRaw > 0 ? '<1' : 0)
   const projectedExhaustionDays = useMemo(() => {
     if (!buckets.length || limitBytes <= 0) return null
     const avgDaily = totalInPeriod / Math.max(1, buckets.length)
@@ -97,6 +102,30 @@ export default function TrafficChart() {
     if (avgDaily <= 0 || remaining <= 0) return null
     return Math.ceil(remaining / avgDaily)
   }, [buckets, totalInPeriod, limitBytes, currentUsedBytes])
+
+  // Дней до окончания подписки — для сравнения с прогнозом
+  const subscriptionDaysLeft = useMemo(() => {
+    if (!data?.subscription?.expiresAt) return null
+    const ms = new Date(data.subscription.expiresAt).getTime() - Date.now()
+    return ms > 0 ? Math.ceil(ms / (24 * 60 * 60 * 1000)) : 0
+  }, [data?.subscription?.expiresAt])
+
+  // Решаем что показать: предупреждение / "хватит" / ничего
+  const projectionInfo = useMemo(() => {
+    if (subscriptionDaysLeft == null || subscriptionDaysLeft <= 0) return null
+    if (projectedExhaustionDays == null) {
+      return { tone: 'neutral', text: 'Расходы стабильно низкие' }
+    }
+    // Прогноз больше срока подписки → лимита хватит, но юзеру это бесполезно знать в днях
+    if (projectedExhaustionDays >= subscriptionDaysLeft) {
+      return { tone: 'ok', text: `Лимита хватит до конца подписки (${subscriptionDaysLeft} дн.)` }
+    }
+    // Прогноз меньше срока подписки → реальная угроза, показываем дни
+    return {
+      tone: 'warn',
+      text: `При текущем темпе лимит закончится через ~${projectedExhaustionDays} дн. (раньше окончания подписки)`,
+    }
+  }, [projectedExhaustionDays, subscriptionDaysLeft])
 
   return (
     <div className="p-4 sm:p-6 bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-900/60 dark:to-slate-950/50 border border-sky-200 dark:border-slate-700/50 rounded-2xl">
@@ -154,22 +183,31 @@ export default function TrafficChart() {
       {/* Limit bar */}
       {limitBytes > 0 && (
         <div className="mb-5">
-          <div className="flex items-center justify-between mb-1.5 text-xs">
-            <span className="text-sky-700 dark:text-slate-400 dark:text-slate-400">{usedPercent}% от лимита</span>
-            {projectedExhaustionDays != null && (
-              <span className="text-sky-700 dark:text-slate-400">
-                При текущем темпе хватит на ~{projectedExhaustionDays} дн.
+          <div className="flex items-center justify-between mb-1.5 text-xs gap-2">
+            <span className="text-sky-700 dark:text-slate-400">{usedPercent}% от лимита</span>
+            {projectionInfo && (
+              <span className={
+                projectionInfo.tone === 'warn'
+                  ? 'text-amber-600 dark:text-amber-400 font-medium text-right'
+                  : projectionInfo.tone === 'ok'
+                  ? 'text-emerald-600 dark:text-emerald-400 text-right'
+                  : 'text-sky-700 dark:text-slate-400 text-right'
+              }>
+                {projectionInfo.text}
               </span>
             )}
           </div>
           <div className="w-full h-2.5 bg-sky-200 dark:bg-slate-800 rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${
-                usedPercent > 80 ? 'bg-gradient-to-r from-red-500 to-orange-500'
-                : usedPercent > 50 ? 'bg-gradient-to-r from-amber-500 to-yellow-500'
+                usedPercentRaw > 80 ? 'bg-gradient-to-r from-red-500 to-orange-500'
+                : usedPercentRaw > 50 ? 'bg-gradient-to-r from-amber-500 to-yellow-500'
                 : 'bg-gradient-to-r from-violet-500 to-fuchsia-500'
               }`}
-              style={{ width: `${usedPercent}%` }}
+              style={{
+                width: `${usedPercentRaw}%`,
+                minWidth: usedPercentRaw > 0 ? '4px' : 0,
+              }}
             />
           </div>
         </div>

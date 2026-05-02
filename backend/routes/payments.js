@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { createPayment, verifyWebhookSignature } = require('../services/platega');
 const { verifyToken, verifyActive } = require('../middleware');
-const { activateSubscription } = require('../services/payment');
+const { activateSubscription, activateSubscriptionChange, activateSquadTrafficTopup } = require('../services/payment');
 
 const pgPool = db.pool;
 let schemaEnsured = false;
@@ -571,7 +571,14 @@ router.post('/webhook', async (req, res) => {
     // покрывается отдельным пунктом аудита #6).
     if (result.outcome === 'applied' && result.activateSubscription) {
       try {
-        await activateSubscription(result.payment);
+        // subscription_change — отдельный flow (применяет смену тарифа по metadata)
+        if (result.payment.payment_type === 'subscription_change') {
+          await activateSubscriptionChange(result.payment);
+        } else if (result.payment.payment_type === 'squad_traffic_topup') {
+          await activateSquadTrafficTopup(result.payment);
+        } else {
+          await activateSubscription(result.payment);
+        }
       } catch (err) {
         console.error('Failed to activate subscription after payment:', err);
       }
