@@ -4,6 +4,30 @@
 
 ---
 
+## v0.1.5.1 — Hotfix: Free Trial activation для existing RW юзеров
+
+**Bugfix:** `POST /api/subscriptions/activate` (Free Trial) падал с **HTTP 500**
+если юзер уже существовал в RemnaWave (например, от прошлой подписки или
+Free Trial был активирован ранее, потом удалена запись из нашей БД).
+
+RW отвечал `400 A019: User username already exists` → `apiRequest` проглатывал
+ошибку и возвращал `null` → `createRemnwaveUser` падал с
+`TypeError: Cannot read properties of null (reading 'uuid')` → 500.
+
+**Фикс:**
+- В `/activate` добавлен fallback (как в `payment.js`): на ошибке create →
+  `getRemnwaveUserByUsername` → `updateRemnwaveUser` с новыми expire/traffic/
+  squads/metadata. Существующий RW-юзер переиспользуется для новой подписки.
+- `createRemnwaveUser` теперь явно проверяет `user.uuid` и кидает
+  осмысленную ошибку вместо `TypeError`.
+
+Также фикс в `deploy/deploy.sh`:
+- `docker compose restart nginx` после перезапуска backend/frontend (без
+  этого nginx кеширует старый IP backend → 502 Bad Gateway после деплоя)
+- `MAX_WAIT` smoke-теста 60 → 120 сек
+
+---
+
 ## v0.1.5 — Traffic Guard 2.0 + Plan Tiers + Squad Quotas
 
 Большое расширение Traffic Guard — теперь система не только следит за лимитами трафика,
