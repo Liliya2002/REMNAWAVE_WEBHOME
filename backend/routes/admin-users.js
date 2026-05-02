@@ -689,4 +689,345 @@ router.put('/:id/toggle-active', verifyToken, verifyAdmin, async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/admin/users/:id/email-confirmed
+ * Admin toggle: вручную подтвердить email юзера или сбросить подтверждение.
+ * body: { confirmed: boolean }
+ */
+router.put('/:id/email-confirmed', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const { confirmed } = req.body || {};
+    if (typeof confirmed !== 'boolean') {
+      return res.status(400).json({ error: 'confirmed (boolean) required' });
+    }
+    const r = await db.query(
+      'UPDATE users SET email_confirmed=$1, updated_at=NOW() WHERE id=$2 RETURNING id, email, email_confirmed',
+      [confirmed, userId]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    await audit.write(req, 'user.email_confirmed_toggle', { type: 'user', id: userId }, {
+      confirmed,
+    });
+    res.json({ user: r.rows[0] });
+  } catch (err) {
+    console.error('email-confirmed toggle:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/subscription/:subId/calculate-change
+ * Preview расчёта смены тарифа для конкретной подписки юзера. Без побочных эффектов.
+ * body: { target_plan_id, period }
+ */
+router.post('/:id/subscription/:subId/calculate-change', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const subId  = parseInt(req.params.subId);
+    const { target_plan_id, period = 'remaining' } = req.body || {};
+    if (!target_plan_id) return res.status(400).json({ error: 'Missing target_plan_id' });
+
+    const subQ = await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subId, userId]);
+    const sub = subQ.rows[0];
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+
+    let currentPlan = null;
+    if (sub.plan_id) {
+      const r = await db.query('SELECT * FROM plans WHERE id=$1', [sub.plan_id]);
+      currentPlan = r.rows[0] || null;
+    }
+    if (!currentPlan && sub.plan_name) {
+      const r = await db.query('SELECT * FROM plans WHERE name=$1 LIMIT 1', [sub.plan_name]);
+      currentPlan = r.rows[0] || null;
+    }
+
+    const tgtQ = await db.query('SELECT * FROM plans WHERE id=$1', [target_plan_id]);
+    const targetPlan = tgtQ.rows[0];
+    if (!targetPlan) return res.status(404).json({ error: 'Target plan not found' });
+
+    const planChange = require('../services/planChange');
+    const calc = planChange.calculateChange({ subscription: sub, currentPlan, targetPlan, period });
+    if (!calc.ok) return res.status(400).json(calc);
+
+    res.json({
+      ...calc,
+      adminMode: true,
+      subscription: {
+        id: sub.id,
+        plan_name: sub.plan_name,
+        expires_at: sub.expires_at,
+        traffic_used_gb: sub.traffic_used_gb,
+        traffic_limit_gb: sub.traffic_limit_gb,
+      },
+    });
+  } catch (err) {
+    console.error('[admin-users change preview]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/subscription/:subId/change
+ * Применить смену тарифа от имени админа — БЕСПЛАТНО, без оплаты.
+ * body: { target_plan_id, period }
+ *
+ * Использует applyPlanChange() (обновляет БД + RemnaWave).
+ * Audit логирует операцию.
+ */
+router.post('/:id/subscription/:subId/change', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const subId  = parseInt(req.params.subId);
+    const { target_plan_id, period = 'remaining' } = req.body || {};
+    if (!target_plan_id) return res.status(400).json({ error: 'Missing target_plan_id' });
+
+    const subQ = await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subId, userId]);
+    const sub = subQ.rows[0];
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+
+    let currentPlan = null;
+    if (sub.plan_id) {
+      const r = await db.query('SELECT * FROM plans WHERE id=$1', [sub.plan_id]);
+      currentPlan = r.rows[0] || null;
+    }
+    const tgtQ = await db.query('SELECT * FROM plans WHERE id=$1', [target_plan_id]);
+    const targetPlan = tgtQ.rows[0];
+    if (!targetPlan) return res.status(404).json({ error: 'Target plan not found' });
+
+    const planChange = require('../services/planChange');
+    const calc = planChange.calculateChange({ subscription: sub, currentPlan, targetPlan, period });
+    if (!calc.ok) return res.status(400).json(calc);
+
+    const paymentService = require('../services/payment');
+    const result = await paymentService.applyPlanChange({
+      subscriptionId: sub.id,
+      targetPlanId: targetPlan.id,
+      newExpiresAt: calc.newExpiresAt,
+      period,
+      amount: 0,
+    });
+
+    await audit.write(req, 'subscription.admin_change', { type: 'subscription', id: subId }, {
+      user_id: userId,
+      from_plan: currentPlan?.name || sub.plan_name,
+      to_plan: targetPlan.name,
+      period,
+      payDifference_skipped: calc.payDifference,
+      newExpiresAt: calc.newExpiresAt,
+    });
+
+    res.json({ ok: true, calc, result });
+  } catch (err) {
+    console.error('[admin-users change apply]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/admin/users/:id/subscription/:subId
+ * Удалить (soft) подписку юзера: is_active=false + опц. отключить юзера в RemnaWave.
+ * Query: ?disable_remnwave=true (опционально, по умолчанию true)
+ */
+router.delete('/:id/subscription/:subId', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const subId  = parseInt(req.params.subId);
+    const disableRw = req.query.disable_remnwave !== 'false';
+
+    const subQ = await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subId, userId]);
+    const sub = subQ.rows[0];
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+
+    let rwResult = { applied: false };
+    if (disableRw && sub.remnwave_user_uuid) {
+      try {
+        const remnwave = require('../services/remnwave');
+        await remnwave.disableRemnwaveUser(sub.remnwave_user_uuid);
+        rwResult = { applied: true };
+      } catch (err) {
+        rwResult = { applied: false, error: err.message };
+      }
+    }
+
+    await db.query(
+      `UPDATE subscriptions SET is_active=false, expires_at=COALESCE(expires_at, NOW()), updated_at=NOW() WHERE id=$1`,
+      [subId]
+    );
+
+    await audit.write(req, 'subscription.admin_delete', { type: 'subscription', id: subId }, {
+      user_id: userId,
+      plan_name: sub.plan_name,
+      remnwave_disabled: rwResult.applied,
+      remnwave_error: rwResult.error,
+    });
+
+    res.json({ ok: true, rw: rwResult });
+  } catch (err) {
+    console.error('[admin-users subscription delete]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Squad Quotas (admin actions) ────────────────────────────────────────────
+
+/**
+ * GET /api/admin/users/:id/subscription/:subId/squad-states
+ * Возвращает все subscription_squad_state для подписки в текущем периоде +
+ * историю покупок trafic.
+ */
+router.get('/:id/subscription/:subId/squad-states', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const subId = parseInt(req.params.subId);
+    const userId = parseInt(req.params.id);
+    const subQ = await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subId, userId]);
+    const sub = subQ.rows[0];
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+
+    const squadQuota = require('../services/squadQuota');
+    const settingsQ = await db.query('SELECT * FROM traffic_guard_settings WHERE id=1');
+    const settings = settingsQ.rows[0];
+    const periodKey = squadQuota.getCurrentPeriodKey(settings.squad_period_strategy, sub);
+
+    const states = (await db.query(
+      `SELECT * FROM subscription_squad_state
+       WHERE subscription_id=$1 AND period_key=$2`,
+      [sub.id, periodKey]
+    )).rows;
+
+    const purchases = (await db.query(
+      `SELECT p.*, u.login AS granted_by_login
+       FROM squad_traffic_purchases p
+       LEFT JOIN users u ON u.id = p.granted_by
+       WHERE p.subscription_id=$1 AND p.period_key=$2
+       ORDER BY p.created_at DESC LIMIT 50`,
+      [sub.id, periodKey]
+    )).rows;
+
+    res.json({ subscription_id: sub.id, period_key: periodKey, states, purchases });
+  } catch (err) {
+    console.error('[admin squad-states]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/subscription/:subId/squad/:squadUuid/reactivate
+ * Manual reactivate squad'а (вернуть в RemnaWave) даже если usage > limit.
+ */
+router.post('/:id/subscription/:subId/squad/:squadUuid/reactivate', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const subId = parseInt(req.params.subId);
+    const { squadUuid } = req.params;
+
+    const subQ = await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subId, userId]);
+    const sub = subQ.rows[0];
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+
+    const squadQuota = require('../services/squadQuota');
+    const settingsQ = await db.query('SELECT * FROM traffic_guard_settings WHERE id=1');
+    const periodKey = squadQuota.getCurrentPeriodKey(settingsQ.rows[0].squad_period_strategy, sub);
+
+    const stateR = await db.query(
+      `SELECT * FROM subscription_squad_state
+       WHERE subscription_id=$1 AND squad_uuid=$2 AND period_key=$3`,
+      [sub.id, squadUuid, periodKey]
+    );
+    if (!stateR.rows[0]) return res.status(404).json({ error: 'Squad state not found' });
+
+    await squadQuota.reactivateSquad(sub, stateR.rows[0]);
+
+    await audit.write(req, 'squad.admin_reactivate', { type: 'subscription_squad', id: stateR.rows[0].id }, {
+      user_id: userId, subscription_id: sub.id, squad_uuid: squadUuid,
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/subscription/:subId/squad/:squadUuid/reset
+ * Сбросить used_bytes (admin override): начать счёт заново в текущем периоде.
+ * Также реактивирует squad если был disabled.
+ */
+router.post('/:id/subscription/:subId/squad/:squadUuid/reset', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const subId = parseInt(req.params.subId);
+    const { squadUuid } = req.params;
+
+    const subQ = await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subId, userId]);
+    const sub = subQ.rows[0];
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+
+    const squadQuota = require('../services/squadQuota');
+    const settingsQ = await db.query('SELECT * FROM traffic_guard_settings WHERE id=1');
+    const periodKey = squadQuota.getCurrentPeriodKey(settingsQ.rows[0].squad_period_strategy, sub);
+
+    const stateR = await db.query(
+      `UPDATE subscription_squad_state
+       SET used_bytes = 0, warned_80_at = NULL, updated_at = NOW()
+       WHERE subscription_id=$1 AND squad_uuid=$2 AND period_key=$3
+       RETURNING *`,
+      [sub.id, squadUuid, periodKey]
+    );
+    const state = stateR.rows[0];
+    if (!state) return res.status(404).json({ error: 'Squad state not found' });
+
+    // Если был disabled — реактивируем (т.к. usage обнулён)
+    if (state.is_disabled) {
+      await squadQuota.reactivateSquad(sub, state);
+    }
+
+    await audit.write(req, 'squad.admin_reset_usage', { type: 'subscription_squad', id: state.id }, {
+      user_id: userId, subscription_id: sub.id, squad_uuid: squadUuid,
+    });
+    res.json({ ok: true, state });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/users/:id/subscription/:subId/squad/:squadUuid/gift
+ * Подарить N ГБ extra на squad (бесплатно, от админа).
+ * body: { gb_amount, notes }
+ */
+router.post('/:id/subscription/:subId/squad/:squadUuid/gift', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const subId = parseInt(req.params.subId);
+    const { squadUuid } = req.params;
+    const { gb_amount, notes } = req.body || {};
+    const gb = Number(gb_amount);
+    if (!gb || gb <= 0) return res.status(400).json({ error: 'Invalid gb_amount' });
+
+    const subQ = await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subId, userId]);
+    const sub = subQ.rows[0];
+    if (!sub) return res.status(404).json({ error: 'Subscription not found' });
+
+    const squadQuota = require('../services/squadQuota');
+    const result = await squadQuota.addExtraTraffic({
+      subscription: sub,
+      squadUuid,
+      gbAmount: gb,
+      source: 'admin_gift',
+      amountPaid: 0,
+      paymentId: null,
+      grantedBy: req.user.id,
+      notes: notes || null,
+    });
+
+    await audit.write(req, 'squad.admin_gift_traffic', { type: 'subscription_squad', id: result.id }, {
+      user_id: userId, subscription_id: sub.id, squad_uuid: squadUuid, gb_amount: gb,
+    });
+    res.json({ ok: true, state: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

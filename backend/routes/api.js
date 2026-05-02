@@ -11,7 +11,7 @@ router.get('/status', (req,res)=>{
 
 router.get('/me', verifyToken, verifyActive, async (req,res)=>{
   try {
-    const userResult = await db.query('SELECT id, login, email, is_admin, telegram_id, telegram_username, created_at FROM users WHERE id=$1', [req.userId])
+    const userResult = await db.query('SELECT id, login, email, is_admin, telegram_id, telegram_username, email_confirmed, created_at FROM users WHERE id=$1', [req.userId])
     if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' })
     
     const user = userResult.rows[0]
@@ -57,8 +57,9 @@ router.put('/profile/email', verifyToken, verifyActive, async (req, res) => {
     const exists = await db.query('SELECT 1 FROM users WHERE email=$1 AND id!=$2', [email, req.userId])
     if (exists.rows.length > 0) return res.status(409).json({ error: 'Email already in use' })
     
-    await db.query('UPDATE users SET email=$1, updated_at=NOW() WHERE id=$2', [email, req.userId])
-    res.json({ ok: true, message: 'Email updated' })
+    // При смене email — сбрасываем подтверждение, юзер должен подтвердить заново
+    await db.query('UPDATE users SET email=$1, email_confirmed=false, updated_at=NOW() WHERE id=$2', [email, req.userId])
+    res.json({ ok: true, message: 'Email updated. Подтвердите новый адрес повторно.' })
   } catch (e) {
     console.error('Error updating email:', e)
     res.status(500).json({ error: 'Internal server error' })

@@ -7,6 +7,7 @@ const referralService = require('../services/referral')
 const { notifyWelcome } = require('../services/notifications')
 const emailService = require('../services/email')
 const { createSession } = require('./sessions')
+const { checkBannedIp } = require('../middleware/ipBan')
 
 const router = express.Router()
 
@@ -82,8 +83,67 @@ router.post('/send-code', async (req, res) => {
   }
 })
 
+// ─── Re-confirmation flow (для уже зарегистрированных юзеров) ───────────────
+// POST /auth/send-confirmation-code — отправить код на email текущего юзера
+router.post('/send-confirmation-code', require('../middleware').verifyToken, async (req, res) => {
+  try {
+    const r = await db.query('SELECT email, email_confirmed FROM users WHERE id=$1', [req.userId])
+    const u = r.rows[0]
+    if (!u) return res.status(404).json({ error: 'User not found' })
+    if (u.email_confirmed) return res.status(400).json({ error: 'Email уже подтверждён' })
+
+    const result = await emailService.sendVerificationCode(u.email)
+    if (!result.ok) return res.status(429).json({ error: result.error })
+    res.json({ ok: true, message: 'Код отправлен на email' })
+  } catch (e) {
+    console.error('send-confirmation-code error:', e)
+    res.status(500).json({ error: 'Не удалось отправить код' })
+  }
+})
+
+// POST /auth/confirm-email — подтвердить email кодом для уже зарегистрированного юзера
+router.post('/confirm-email', require('../middleware').verifyToken, async (req, res) => {
+  try {
+    const { code } = req.body || {}
+    if (!code || !/^\d{6}$/.test(String(code))) {
+      return res.status(400).json({ error: 'Введите 6-значный код' })
+    }
+
+    const r = await db.query('SELECT email, email_confirmed FROM users WHERE id=$1', [req.userId])
+    const u = r.rows[0]
+    if (!u) return res.status(404).json({ error: 'User not found' })
+    if (u.email_confirmed) return res.status(400).json({ error: 'Email уже подтверждён' })
+
+    const check = await emailService.verifyCode(u.email, String(code))
+    if (!check.ok) return res.status(400).json({ error: check.error })
+
+    await db.query('UPDATE users SET email_confirmed=true, updated_at=NOW() WHERE id=$1', [req.userId])
+
+    // Синхронизируем email во все активные подписки юзера в RemnaWave
+    try {
+      const subs = await db.query(
+        `SELECT remnwave_user_uuid FROM subscriptions
+         WHERE user_id = $1 AND is_active = true AND remnwave_user_uuid IS NOT NULL`,
+        [req.userId]
+      )
+      if (subs.rows.length > 0) {
+        const remnwave = require('../services/remnwave')
+        for (const s of subs.rows) {
+          remnwave.updateRemnwaveUser(s.remnwave_user_uuid, { email: u.email })
+            .catch(err => console.error('[confirm-email] RW sync failed:', err.message))
+        }
+      }
+    } catch {}
+
+    res.json({ ok: true, message: 'Email подтверждён' })
+  } catch (e) {
+    console.error('confirm-email error:', e)
+    res.status(500).json({ error: 'Не удалось подтвердить email' })
+  }
+})
+
 // Регистрация пользователя
-router.post('/register', async (req, res) => {
+router.post('/register', checkBannedIp, async (req, res) => {
   const { login, email, password, emailCode, referralCode } = req.body
   if (!login || !email || !password) return res.status(400).json({ error: 'Missing fields' })
 
@@ -127,8 +187,8 @@ router.post('/register', async (req, res) => {
     
     const hash = await bcrypt.hash(password, 12)
     const result = await db.query(
-      'INSERT INTO users (login, email, password_hash, email_confirmed) VALUES ($1, $2, $3, $4) RETURNING id',
-      [login, email, hash, emailConfirmed]
+      'INSERT INTO users (login, email, password_hash, email_confirmed, registration_ip) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      [login, email, hash, emailConfirmed, req.ip || null]
     )
     
     const newUserId = result.rows[0].id
@@ -354,6 +414,23 @@ router.post('/telegram/link', async (req, res) => {
     }
 
     await db.query('UPDATE users SET telegram_id = $1, telegram_username = $2 WHERE id = $3', [telegramId, tgUsername, decoded.id])
+
+    // Синхронизируем telegramId во все активные подписки юзера в RemnaWave
+    try {
+      const subs = await db.query(
+        `SELECT remnwave_user_uuid FROM subscriptions
+         WHERE user_id = $1 AND is_active = true AND remnwave_user_uuid IS NOT NULL`,
+        [decoded.id]
+      )
+      if (subs.rows.length > 0) {
+        const remnwave = require('../services/remnwave')
+        for (const s of subs.rows) {
+          remnwave.updateRemnwaveUser(s.remnwave_user_uuid, { telegramId })
+            .catch(err => console.error('[telegram-link] RW sync failed:', err.message))
+        }
+      }
+    } catch {}
+
     res.json({ ok: true })
   } catch (e) {
     console.error('Telegram link error:', e)

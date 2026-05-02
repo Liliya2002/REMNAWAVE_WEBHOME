@@ -144,11 +144,19 @@ async function getSubscriptionConfig(userId, nodeId) {
 }
 
 /**
- * Получить список Internal Squads
+ * Получить список Internal Squads (краткая версия с inbounds-info)
  */
 async function getInternalSquads() {
   const data = await apiRequest('GET', '/api/internal-squads', null, [])
   return data.internalSquads || data || []
+}
+
+/**
+ * Получить один Internal Squad с полным списком inbounds.
+ * Нужно для mapping squad↔nodes (через intersect inbound UUIDs).
+ */
+async function getInternalSquad(uuid) {
+  return apiRequest('GET', `/api/internal-squads/${uuid}`, null, null)
 }
 
 /**
@@ -493,6 +501,7 @@ module.exports = {
   deleteAllRemnwaveUserHwid,
   getUserSubscriptionUrl,
   getInternalSquads,
+  getInternalSquad,
   updateRemnwaveUserSquads,
   getSystemStats,
   updateNode,

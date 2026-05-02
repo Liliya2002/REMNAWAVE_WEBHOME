@@ -81,7 +81,7 @@ const authLimiter = rateLimit({
 // Rate limiting — платежи
 const paymentLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: 300,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many payment requests, please try again later' }
@@ -186,6 +186,12 @@ require('./cron/trafficSnapshots').start()
 
 // Cron: Traffic Guard — проверка превышений per-node лимитов и автоблокировка
 require('./cron/trafficGuard').start()
+
+// Cron: P2P/Torrent детекция через SSH-агент на нодах
+require('./cron/p2pDetector').start()
+
+// Cron: Squad Quotas — per-squad traffic limits
+require('./cron/squadQuota').start()
 
 const PORT = process.env.PORT || 4000
 app.listen(PORT, ()=> console.log(`Backend running on port ${PORT}`))

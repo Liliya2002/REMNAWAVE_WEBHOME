@@ -1,38 +1,17 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Gift, Zap, MailOpen, Ban, Clipboard, ClipboardCheck, Link2, Smartphone, Server } from 'lucide-react'
+import { Gift, Zap, MailOpen, Ban, Clipboard, ClipboardCheck, Link2, Smartphone, ArrowUpDown } from 'lucide-react'
 import { authFetch } from '../../services/api'
 import TrafficChart from '../../components/TrafficChart'
+import ChangePlanModal from '../../components/ChangePlanModal'
+import SquadUsageSection from '../../components/SquadUsageSection'
+import DevicesSection from '../../components/DevicesSection'
 
 export default function SubscriptionsSection({ subscriptions, copySuccess, setCopySuccess, pendingBonusDays, onBonusActivated }) {
-  const API_URL = import.meta.env.VITE_API_URL || ''
-  const [squads, setSquads] = useState([])
   const [activatingBonus, setActivatingBonus] = useState(false)
   const [bonusResult, setBonusResult] = useState(null)
   const [bonusError, setBonusError] = useState(null)
-
-  useEffect(() => {
-    if (subscriptions.filter(s => s.is_active).length > 0) {
-      fetchSquads()
-    }
-  }, [subscriptions])
-
-  const fetchSquads = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/subscriptions/squads`)
-      if (res.ok) {
-        const data = await res.json()
-        setSquads(data.squads || [])
-      }
-    } catch (err) {
-      console.error('Error fetching squads:', err)
-    }
-  }
-
-  const getSquadName = (uuid) => {
-    const squad = squads.find(s => s.uuid === uuid)
-    return squad ? squad.name : uuid || 'Не назначена'
-  }
+  const [changePlanFor, setChangePlanFor] = useState(null) // { subscription, currentPlan }
 
   async function handleActivateBonus() {
     setActivatingBonus(true)
@@ -91,11 +70,6 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
         </div>
       )}
 
-      {/* График трафика — показываем если есть хотя бы одна подписка */}
-      {subscriptions.length > 0 && subscriptions.some(s => s.is_active) && (
-        <TrafficChart />
-      )}
-
       {subscriptions.length === 0 ? (
         <div className="p-6 sm:p-12 bg-sky-50 dark:bg-slate-900 dark:bg-gradient-to-br dark:from-slate-800/40 dark:to-slate-900/50 border border-sky-200 dark:border-slate-700/50 rounded-2xl text-center">
           <div className="text-5xl sm:text-6xl mb-4"><MailOpen className="w-14 h-14 sm:w-16 sm:h-16 text-sky-700 dark:text-slate-400 mx-auto" /></div>
@@ -107,9 +81,13 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
         </div>
       ) : (
         subscriptions.map(sub => {
-          const trafficPercent = sub.traffic_limit_gb > 0 
-            ? Math.round((sub.traffic_used_gb / sub.traffic_limit_gb) * 100)
+          // Точный процент для ширины бара + текст («<1%» если меньше 1)
+          const trafficPercentRaw = sub.traffic_limit_gb > 0
+            ? Math.min(100, (Number(sub.traffic_used_gb || 0) / Number(sub.traffic_limit_gb)) * 100)
             : 0
+          const trafficPercent = trafficPercentRaw >= 1
+            ? Math.round(trafficPercentRaw)
+            : (trafficPercentRaw > 0 ? '<1' : 0)
           const daysLeft = sub.expires_at 
             ? Math.ceil((new Date(sub.expires_at) - new Date()) / (1000 * 60 * 60 * 24))
             : null
@@ -197,13 +175,16 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                       </span>
                     </div>
                     <div className="w-full h-4 bg-sky-100 dark:bg-slate-900 rounded-full overflow-hidden border border-sky-300 dark:border-slate-700">
-                      <div 
+                      <div
                         className={`h-full transition-all rounded-full ${
-                          trafficPercent > 80 ? 'bg-gradient-to-r from-red-500 to-red-400' : 
-                          trafficPercent > 50 ? 'bg-gradient-to-r from-yellow-500 to-yellow-400' : 
+                          trafficPercentRaw > 80 ? 'bg-gradient-to-r from-red-500 to-red-400' :
+                          trafficPercentRaw > 50 ? 'bg-gradient-to-r from-yellow-500 to-yellow-400' :
                           'bg-gradient-to-r from-blue-500 to-cyan-400'
                         }`}
-                        style={{ width: `${Math.min(trafficPercent, 100)}%` }}
+                        style={{
+                          width: `${trafficPercentRaw}%`,
+                          minWidth: trafficPercentRaw > 0 ? '6px' : 0,
+                        }}
                       />
                     </div>
                     <div className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400">
@@ -211,9 +192,31 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                     </div>
                   </div>
                 )}
+
+                {/* Сменить тариф */}
+                {sub.is_active && sub.plan_name !== 'FREE_TRIAL' && (
+                  <button
+                    onClick={() => setChangePlanFor({ subscription: sub })}
+                    className="mt-4 w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-cyan-500/50 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-500/10 transition"
+                  >
+                    <ArrowUpDown className="w-4 h-4" />
+                    Сменить тариф
+                  </button>
+                )}
+
+                {/* Squad Quotas — лимиты по серверам */}
+                {sub.is_active && sub.plan_name !== 'FREE_TRIAL' && (
+                  <SquadUsageSection subscription={sub} />
+                )}
               </div>
 
-              {/* Subscription URL + Connect button */}
+              {/* 2. Подключённые устройства */}
+              {sub.is_active && <DevicesSection />}
+
+              {/* 3. Потребление трафика */}
+              {sub.is_active && <TrafficChart />}
+
+              {/* 4. Ссылка подписки + кнопка подключения */}
               {sub.subscription_url && sub.is_active && (
                 <div className="p-4 sm:p-6 bg-sky-50 dark:bg-slate-900/50 border border-sky-200 dark:border-slate-700/50 rounded-xl">
                   <div className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 mb-3 sm:mb-4 font-medium flex items-center gap-1.5"><Link2 className="w-4 h-4" /> Ссылка подписки для клиента VPN</div>
@@ -243,19 +246,20 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                   </Link>
                 </div>
               )}
-
-              {/* Серверная группа (только отображение) */}
-              {sub.is_active && sub.squad_uuid && (
-                <div className="p-4 sm:p-6 bg-sky-50 dark:bg-slate-900/50 border border-sky-200 dark:border-slate-700/50 rounded-xl">
-                  <h4 className="text-base sm:text-lg font-bold text-sky-900 dark:text-white flex items-center gap-1.5"><Server className="w-4 h-4" /> Серверная группа</h4>
-                  <p className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 mt-2">
-                    Текущая: <span className="text-blue-600 dark:text-blue-400 font-semibold">{getSquadName(sub.squad_uuid)}</span>
-                  </p>
-                </div>
-              )}
             </div>
           )
         })
+      )}
+
+      {changePlanFor && (
+        <ChangePlanModal
+          subscription={changePlanFor.subscription}
+          currentPlan={changePlanFor.subscription.plan
+            ? changePlanFor.subscription.plan
+            : { id: changePlanFor.subscription.plan_id, name: changePlanFor.subscription.plan_name }}
+          onClose={() => setChangePlanFor(null)}
+          onSuccess={() => { setChangePlanFor(null); window.location.reload() }}
+        />
       )}
     </div>
   )

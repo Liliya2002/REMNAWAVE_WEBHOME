@@ -22,6 +22,8 @@ const db = require('../db')
 const remnwave = require('./remnwave')
 const notifications = require('./notifications')
 const { sendNotificationEmail } = require('./email')
+const ipBan = require('./ipBan')
+const sshAgent = require('./sshAgent')
 
 const CONCURRENCY = 5
 
@@ -80,6 +82,30 @@ async function pmap(items, mapper, concurrency = CONCURRENCY) {
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()))
   return results
+}
+
+// ─── Node host resolver (с кешем) ────────────────────────────────────────────
+// RemnaWave отдает массив нод с полем `address`. Кешируем на 5 минут.
+let nodeHostCache = null
+let nodeHostCachedAt = 0
+
+async function resolveNodeHost(nodeUuid) {
+  if (!nodeUuid) return null
+  const now = Date.now()
+  if (!nodeHostCache || (now - nodeHostCachedAt) > 5 * 60 * 1000) {
+    try {
+      const nodes = await remnwave.getNodes()
+      nodeHostCache = new Map()
+      for (const n of nodes) {
+        if (n.uuid && n.address) nodeHostCache.set(n.uuid, n.address)
+      }
+      nodeHostCachedAt = now
+    } catch (err) {
+      console.error('[trafficGuard] resolveNodeHost: getNodes failed:', err.message)
+      return null
+    }
+  }
+  return nodeHostCache.get(nodeUuid) || null
 }
 
 // ─── Settings ────────────────────────────────────────────────────────────────
@@ -192,7 +218,8 @@ async function runCheck() {
       s.remnwave_username AS username,
       s.plan_name,
       s.user_id,
-      u.email
+      u.email,
+      u.registration_ip
     FROM subscriptions s
     LEFT JOIN users u ON u.id = s.user_id
     WHERE s.remnwave_user_uuid IS NOT NULL
@@ -274,6 +301,44 @@ async function runCheck() {
                JSON.stringify({ resolveOrigin: limit.origin, applyResult: result }),
                inserted.id]
             )
+            // IP-collection: registration_ip (Phase 1) + SSH-lookup настоящих IP с ноды (Phase 2)
+            const collectedIps = new Set()
+            if (user.registration_ip) collectedIps.add(user.registration_ip)
+
+            if (settings.ssh_lookup_enabled && sshAgent.isConfigured()) {
+              try {
+                const nodeHost = node.address || node.uuid // RemnaWave series отдаёт name+uuid, host придётся резолвить отдельно
+                const realHost = await resolveNodeHost(node.uuid)
+                if (realHost) {
+                  const liveIps = await sshAgent.lookupIp(realHost, user.username, 1)
+                  for (const ip of liveIps) collectedIps.add(ip)
+                }
+              } catch (err) {
+                console.error('[trafficGuard] SSH lookup failed for', user.username, '@', node.uuid, ':', err.message)
+              }
+            }
+
+            const ipsArr = [...collectedIps]
+            if (ipsArr.length > 0) {
+              // Запишем IP в client_ips для UI
+              await db.query(
+                `UPDATE traffic_violations SET client_ips = $1::jsonb WHERE id = $2`,
+                [JSON.stringify(ipsArr), inserted.id]
+              )
+              // Авто-бан всех собранных IP (если включено)
+              if (settings.ip_ban_enabled) {
+                for (const ip of ipsArr) {
+                  await ipBan.addAutoBan({
+                    ip,
+                    violationId: inserted.id,
+                    userId: user.user_id,
+                    userUuid: user.uuid,
+                    durationHours: settings.ip_ban_duration_hours,
+                    reason: `Превышение лимита на ноде ${node.name}`,
+                  })
+                }
+              }
+            }
             // Notify user
             const usedGb = (usedBytes / 1024 / 1024 / 1024).toFixed(2)
             if (settings.inapp_enabled && user.user_id) {
@@ -355,6 +420,8 @@ async function runCheck() {
           `UPDATE traffic_violations SET resolved_at=NOW(), action_taken='auto_unblock' WHERE id=$1`,
           [v.id]
         )
+        // Снимаем связанные IP-баны (только source='auto_violation')
+        await ipBan.removeBansByViolation(v.id)
         if (settings.inapp_enabled && v.user_id) {
           await notifications.notifyTrafficUnblocked(v.user_id, { nodeName: v.node_name })
         }
@@ -365,7 +432,10 @@ async function runCheck() {
     }
   }
 
-  const summary = `users:${ourUsers.length} warn:${totalWarnings} block:${totalBlocks} unblock:${autoUnblocked} err:${totalErrors}`
+  // 5. Cleanup expired IP-bans (TTL прошёл)
+  const expiredBans = await ipBan.cleanupExpired()
+
+  const summary = `users:${ourUsers.length} warn:${totalWarnings} block:${totalBlocks} unblock:${autoUnblocked} ip-expired:${expiredBans} err:${totalErrors}`
   await db.query(
     `UPDATE traffic_guard_settings
      SET last_check_at=NOW(), last_check_status='ok', last_check_summary=$1
@@ -380,6 +450,7 @@ async function runCheck() {
     usersWithViolations,
     warnings: totalWarnings,
     blocks: totalBlocks,
+    expiredBans,
     autoUnblocked,
     errors: totalErrors,
   }
@@ -404,4 +475,4 @@ async function tryInsertViolation(v) {
   }
 }
 
-module.exports = { runCheck, getSettings, periodRange }
+module.exports = { runCheck, getSettings, periodRange, resolveNodeHost }

@@ -24,6 +24,8 @@ const db = require('../db')
 const { verifyToken, verifyAdmin } = require('../middleware')
 const remnwave = require('../services/remnwave')
 const trafficGuard = require('../services/trafficGuard')
+const ipBan = require('../services/ipBan')
+const sshAgent = require('../services/sshAgent')
 
 router.use(verifyToken, verifyAdmin)
 
@@ -42,6 +44,11 @@ router.put('/settings', async (req, res) => {
   const allowed = [
     'enabled', 'default_period', 'default_action', 'limit_source',
     'warn_threshold_percent', 'cron_interval_minutes', 'email_enabled', 'inapp_enabled',
+    'ip_ban_enabled', 'ip_ban_duration_hours',
+    'ssh_lookup_enabled',
+    'p2p_detect_enabled', 'p2p_scan_interval_minutes', 'torrent_attempts_threshold', 'torrent_action',
+    'squad_quota_enabled', 'squad_quota_interval_minutes', 'squad_quota_warn_percent',
+    'squad_topup_default_price', 'squad_topup_mode', 'squad_period_strategy',
   ]
   const sets = []
   const params = []
@@ -86,21 +93,23 @@ router.get('/limits/nodes', async (req, res) => {
 
 router.put('/limits/nodes/:uuid', async (req, res) => {
   const uuid = req.params.uuid
-  const { node_name, limit_gb, period, action, enabled, notes } = req.body
+  const { node_name, limit_gb, period, action, enabled, notes, block_torrents } = req.body
   try {
     const r = await db.query(
-      `INSERT INTO node_traffic_limits (node_uuid, node_name, limit_gb, period, action, enabled, notes)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), $7)
+      `INSERT INTO node_traffic_limits (node_uuid, node_name, limit_gb, period, action, enabled, notes, block_torrents)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, true), $7, COALESCE($8, false))
        ON CONFLICT (node_uuid) DO UPDATE SET
-         node_name = COALESCE(EXCLUDED.node_name, node_traffic_limits.node_name),
-         limit_gb  = EXCLUDED.limit_gb,
-         period    = EXCLUDED.period,
-         action    = EXCLUDED.action,
-         enabled   = EXCLUDED.enabled,
-         notes     = EXCLUDED.notes,
-         updated_at = NOW()
+         node_name      = COALESCE(EXCLUDED.node_name, node_traffic_limits.node_name),
+         limit_gb       = EXCLUDED.limit_gb,
+         period         = EXCLUDED.period,
+         action         = EXCLUDED.action,
+         enabled        = EXCLUDED.enabled,
+         notes          = EXCLUDED.notes,
+         block_torrents = EXCLUDED.block_torrents,
+         updated_at     = NOW()
        RETURNING *`,
-      [uuid, node_name || null, Number(limit_gb || 0), period || null, action || null, enabled, notes || null]
+      [uuid, node_name || null, Number(limit_gb || 0), period || null, action || null,
+       enabled, notes || null, block_torrents]
     )
     res.json(r.rows[0])
   } catch (err) {
@@ -223,7 +232,11 @@ router.post('/violations/:id/unblock', async (req, res) => {
       `UPDATE traffic_violations SET resolved_at=NOW(), action_taken='manual_unblock', resolved_by=$1, notes=$2 WHERE id=$3`,
       [req.user?.id || null, JSON.stringify({ ...rwResult, manual: true }), id]
     )
-    res.json({ ok: true, rw: rwResult })
+
+    // Снимаем связанные IP-баны (auto_violation), manual-баны не трогаем
+    const removedIpBans = await ipBan.removeBansByViolation(id)
+
+    res.json({ ok: true, rw: rwResult, removedIpBans })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -246,6 +259,72 @@ router.get('/blocked', async (req, res) => {
   }
 })
 
+// ─── SSH-агент: проверка и lookup ────────────────────────────────────────────
+
+/**
+ * GET /api/admin/traffic-guard/ssh/health-check
+ * Возвращает статус SSH-настройки + результат health() для всех нод RemnaWave.
+ */
+router.get('/ssh/health-check', async (req, res) => {
+  if (!sshAgent.isConfigured()) {
+    return res.json({ configured: false, results: [] })
+  }
+  try {
+    const nodes = await remnwave.getNodes()
+    const results = await Promise.all(
+      nodes.map(async (n) => {
+        if (!n.address) return { uuid: n.uuid, name: n.name, ok: false, error: 'no_address' }
+        try {
+          const ok = await sshAgent.health(n.address)
+          return { uuid: n.uuid, name: n.name, address: n.address, ok }
+        } catch (err) {
+          return { uuid: n.uuid, name: n.name, address: n.address, ok: false, error: err.message }
+        }
+      })
+    )
+    res.json({ configured: true, results })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * POST /api/admin/traffic-guard/ssh/lookup
+ * body: { user_uuid (или username), node_uuid (опционально — иначе lastConnectedNodeUuid из RW), hours }
+ * Возвращает live-IP юзера на ноде через SSH-агент.
+ */
+router.post('/ssh/lookup', async (req, res) => {
+  const { user_uuid, username: usernameRaw, node_uuid, hours } = req.body || {}
+  if (!user_uuid && !usernameRaw) return res.status(400).json({ error: 'Missing user_uuid or username' })
+
+  if (!sshAgent.isConfigured()) {
+    return res.status(503).json({ error: 'SSH agent not configured', code: 'NOT_CONFIGURED' })
+  }
+  try {
+    let username = usernameRaw
+    let resolvedNodeUuid = node_uuid
+
+    // Если username не передан — резолвим через RemnaWave
+    if (!username && user_uuid) {
+      const u = await remnwave.getRemnwaveUserByUuid(user_uuid).catch(() => null)
+      if (u) {
+        username = u.username
+        if (!resolvedNodeUuid) resolvedNodeUuid = u.userTraffic?.lastConnectedNodeUuid
+      }
+    }
+    if (!username) return res.status(404).json({ error: 'User not found in RemnaWave' })
+    if (!resolvedNodeUuid) return res.status(400).json({ error: 'No node specified and user has no last-connected node' })
+
+    const host = await trafficGuard.resolveNodeHost(resolvedNodeUuid)
+    if (!host) return res.status(404).json({ error: 'Node host not resolved' })
+
+    const ips = await sshAgent.lookupIp(host, username, hours || 1)
+    res.json({ ok: true, username, nodeUuid: resolvedNodeUuid, host, hours: hours || 1, ips })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ─── Check now ───────────────────────────────────────────────────────────────
 
 router.post('/check-now', async (req, res) => {
@@ -257,7 +336,106 @@ router.post('/check-now', async (req, res) => {
   }
 })
 
+router.post('/p2p-scan-now', async (req, res) => {
+  try {
+    const { runScan } = require('../services/p2pDetector')
+    const result = await runScan()
+    res.json(result)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ─── Ручное управление банами ────────────────────────────────────────────────
+
+// ─── Banned IPs ──────────────────────────────────────────────────────────────
+
+router.get('/banned-ips', async (req, res) => {
+  const active = req.query.active // 'true' | 'false' | undefined
+  const search = req.query.search || ''
+  const limit  = Math.min(parseInt(req.query.limit  || '100', 10), 500)
+  const offset = parseInt(req.query.offset || '0', 10)
+  try {
+    const data = await ipBan.listBans({
+      activeOnly: active === 'true' ? true : (active === 'false' ? false : undefined),
+      search: search.trim() || null,
+      limit, offset,
+    })
+    res.json(data)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.post('/banned-ips', async (req, res) => {
+  const { ip, reason, expires_at, expires_in_hours, notes } = req.body || {}
+  if (!ip) return res.status(400).json({ error: 'Missing ip' })
+
+  // Простая IPv4/IPv6 валидация
+  const valid = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip) || /^[0-9a-fA-F:]+$/.test(ip)
+  if (!valid) return res.status(400).json({ error: 'Invalid IP format' })
+
+  let exp = null
+  if (expires_at) exp = new Date(expires_at)
+  else if (expires_in_hours && Number(expires_in_hours) > 0) {
+    exp = new Date(Date.now() + Number(expires_in_hours) * 3600 * 1000)
+  }
+
+  try {
+    const row = await ipBan.addManualBan({
+      ip,
+      reason: reason || null,
+      expiresAt: exp,
+      createdBy: req.user?.id || null,
+      notes: notes || null,
+    })
+    res.json(row)
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+router.put('/banned-ips/:id', async (req, res) => {
+  const id = parseInt(req.params.id, 10)
+  const { reason, expires_at, expires_in_hours, notes } = req.body || {}
+
+  let exp = expires_at !== undefined ? (expires_at ? new Date(expires_at) : null) : undefined
+  if (exp === undefined && expires_in_hours !== undefined) {
+    exp = Number(expires_in_hours) > 0
+      ? new Date(Date.now() + Number(expires_in_hours) * 3600 * 1000)
+      : null
+  }
+
+  const sets = []
+  const params = []
+  let idx = 1
+  if (reason !== undefined) { sets.push(`reason = $${idx++}`); params.push(reason) }
+  if (notes  !== undefined) { sets.push(`notes  = $${idx++}`); params.push(notes) }
+  if (exp    !== undefined) { sets.push(`expires_at = $${idx++}`); params.push(exp) }
+
+  if (!sets.length) return res.status(400).json({ error: 'No fields to update' })
+  params.push(id)
+
+  try {
+    const r = await db.query(
+      `UPDATE banned_ips SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
+      params
+    )
+    if (!r.rows[0]) return res.status(404).json({ error: 'Not found' })
+    res.json(r.rows[0])
+  } catch (err) {
+    res.status(400).json({ error: err.message })
+  }
+})
+
+router.delete('/banned-ips/:id', async (req, res) => {
+  try {
+    await ipBan.removeBan(parseInt(req.params.id, 10))
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
 
 /**
  * GET /api/admin/traffic-guard/users-for-block

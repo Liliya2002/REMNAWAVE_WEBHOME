@@ -4,6 +4,154 @@
 
 ---
 
+## v0.1.5 — Traffic Guard 2.0 + Plan Tiers + Squad Quotas
+
+Большое расширение Traffic Guard — теперь система не только следит за лимитами трафика,
+но и автоматически банит IP нарушителей (защита от ре-регистрации) и детектит P2P/torrent.
+
+### 🌐 IP-баны (Phase 1)
+
+| Что | Где |
+|---|---|
+| `users.registration_ip` — IP при регистрации | Migration `0003_ip_ban` |
+| `traffic_violations.client_ips JSONB` — массив IP нарушителя | Migration `0003` |
+| Таблица `banned_ips` с source/expires_at/reason/notes | Migration `0003` |
+| Auto-ban при создании blocked-violation | [`backend/services/trafficGuard.js`] |
+| Middleware `checkBannedIp` на `/auth/register` | [`backend/middleware/ipBan.js`] |
+| Сервис `services/ipBan.js` — addManual/Auto, list, remove, cleanup | [`backend/services/ipBan.js`] |
+| CRUD `/api/admin/traffic-guard/banned-ips` | [`backend/routes/admin-traffic-guard.js`] |
+| Settings: `ip_ban_enabled` + `ip_ban_duration_hours` (0 = пока активна блокировка) | UI + DB |
+| Новый таб «Бан по IP» в /admin/traffic-guard | [`frontend/src/pages/AdminTrafficGuard.jsx`] |
+| Показ `client_ips` в карточках violations | UI |
+
+Auto-unblock и manual unblock через `/violations/:id/unblock` снимают связанные **авто-баны**.
+Manual-баны живут пока админ сам не снимет.
+
+### 🔑 SSH-агент для нод (Phase 2)
+
+On-demand lookup настоящего IP клиента из access.log на ноде RemnaWave, без массового логирования.
+
+| Что | Где |
+|---|---|
+| Migration: `ssh_lookup_enabled` + торрент/P2P-поля | Migration `0004_traffic_guard_ssh` |
+| Узкий sh-скрипт для ноды (whitelist-команды) | [`infra/node-agent/access-log-query.sh`] |
+| Полная инструкция по установке агента на ноду | [`infra/node-agent/README.md`] |
+| SSH-клиент на бэкенде (через `ssh2`, command-restriction) | [`backend/services/sshAgent.js`] |
+| Интеграция в Traffic Guard: при blocked-violation тянет реальный IP | [`backend/services/trafficGuard.js`] |
+| Endpoint `/ssh/health-check` — проверка SSH на всех нодах | [`backend/routes/admin-traffic-guard.js`] |
+| Endpoint `/ssh/lookup` — на лету IP юзера на ноде | UI карточки юзера |
+| Раздел «SSH-агент» в Settings + кнопка «Проверить» | UI |
+| Кнопка «Получить реальный IP» в карточке юзера → таб «Трафик» | [`frontend/src/pages/AdminUserCard.jsx`] |
+
+ENV-параметры: `TRAFFIC_AGENT_SSH_USER` / `_PORT` / `_PRIVATE_KEY` / `_PRIVATE_KEY_PATH` / `_TIMEOUT_MS`.
+
+### 🚫 P2P/Torrent детекция (Phase 3)
+
+Периодически парсит access.log на нодах через SSH-агент, ищет записи с `[torrent-block]` и
+создаёт violations при превышении порога попыток.
+
+| Что | Где |
+|---|---|
+| `node_traffic_limits.block_torrents` (per-node toggle) | Migration `0004` |
+| Расширение `level` enum: `torrent_warning` / `torrent_blocked` | Migration `0004` |
+| Расширение `period` enum: `p2p` | Migration `0004` |
+| Settings: `p2p_detect_enabled`, `p2p_scan_interval_minutes`, `torrent_attempts_threshold`, `torrent_action` | DB + UI |
+| Сервис P2P-детектора: `runScan()` параллельно по нодам, логика warning → blocked | [`backend/services/p2pDetector.js`] |
+| Cron: `cron/p2pDetector.js` (default 5 мин, динамическое расписание) | [`backend/cron/p2pDetector.js`] |
+| Endpoint `/p2p-scan-now` — ручной запуск скана | [`backend/routes/admin-traffic-guard.js`] |
+| Раздел «P2P / Torrent детекция» в Settings + помощник с готовым Xray-конфигом | UI |
+| Per-node toggle «P2P scan» в табе «Лимиты по нодам» | UI |
+| Расширение фильтров и цветовой индикации в табе «Нарушения» | UI |
+| Кнопка «Запустить P2P-скан» в Settings (видна когда enabled) | UI |
+
+**Архитектура:** блокировка торрентов настраивается **админом руками** в RemnaWave-панели
+(routing-rule + sniffing). Наш сервис только парсит access.log и применяет санкции.
+В UI приведён готовый JSON-снипет для копирования.
+
+При срабатывании `torrent_blocked`:
+- Действие из settings (`warn_only` / `disable_user` / `ip_ban`)
+- Если `ip_ban` или `ip_ban_enabled` — забанит IP с торрент-попыток
+- Email + in-app нотификация юзеру
+
+### 📋 Прочее
+
+- `docs/privacy-policy-draft.md` — draft Privacy Policy и текст согласия для register-checkbox
+- `backend/.env.example` дополнен SSH/SMTP/FRONTEND_URL переменными
+- `services/email.js` уже имел `sendNotificationEmail` — переиспользуется в P2P-нотификациях
+
+### 🎚️ Plan Tiers + Change-plan (новое в v0.1.5)
+
+Добавлены **уровни тарифов** и **возможность менять тариф** прямо из личного кабинета.
+
+| Что | Где |
+|---|---|
+| `plans.tier` (INT), `tier_label`, `sort_order`, `color` | Migration `0005_plan_tiers` |
+| `subscriptions.plan_id` FK + backfill | Migration `0005` |
+| `payments.provider_metadata JSONB` (для gateway-flow смены тарифа) | Migration `0005` |
+| Сервис расчёта `calculateChange()` (upgrade/downgrade/swap/renew) | [`backend/services/planChange.js`] |
+| `POST /api/subscriptions/calculate-change` — preview | [`backend/routes/subscriptions.js`] |
+| `POST /api/subscriptions/change` — apply (balance/gateway) | [`backend/routes/subscriptions.js`] |
+| `applyPlanChange`, `payChangeFromBalance`, `createChangeGatewayPayment`, `activateSubscriptionChange` | [`backend/services/payment.js`] |
+| Webhook поддерживает `payment_type='subscription_change'` | [`backend/routes/payments.js`] |
+| `POST /api/plans/reorder` — bulk drag-and-drop | [`backend/routes/plans.js`] |
+| Поля tier/sort_order/tier_label/color в plans CRUD | [`backend/routes/plans.js`] |
+| `ChangePlanModal.jsx` — 3-шаговая модалка (план → период → оплата) | [`frontend/src/components/ChangePlanModal.jsx`] |
+| Кнопка «Сменить тариф» в Dashboard `SubscriptionsSection` | [`frontend/src/pages/dashboard/SubscriptionsSection.jsx`] |
+| Новый дизайн `AdminPlans` — карточки группированные по tier с drag-and-drop | [`frontend/src/pages/AdminPlans.jsx`] |
+| Новый дизайн `PlanForm` — двухколоночный с live-preview + tier-presets | [`frontend/src/components/PlanForm.jsx`] |
+
+**Бизнес-правила:**
+- **Upgrade** — доплата разницы за оставшийся срок (`payDifference = newCost − refund`); опционально доп. период (30/91/365 дн)
+- **Downgrade** — без возврата на баланс, но **больше дней** (конвертация виртуального кредита в дни нового, более дешёвого тарифа)
+- **Swap** (тот же tier, другие планы) — пересчёт по тем же правилам в зависимости от изменения цены
+- **Traffic_used сохраняется** при смене тарифа (только лимит обновляется)
+- **squad_uuids** обновляются в RemnaWave автоматически
+
+**UI новый дизайн:**
+- Карточки тарифов в админке с цветным акцентом по tier и группировкой
+- Drag-and-drop для изменения tier/sort_order
+- В форме редактирования — 5 пресетов tier (Trial/Basic/Pro/Premium/Ultimate) + кастомизация цвета
+- Live-preview карточки тарифа в правой колонке формы
+
+### 🎚️ Squad Quotas — per-server лимиты с авто-отключением (новое в v0.1.5)
+
+RemnaWave не умеет лимиты per-squad — мы добавили **второй контур** контроля. Каждый
+тариф может задать лимит ГБ на каждый из своих squad'ов отдельно. Cron мониторит
+потребление, отключает squad при превышении (удаляет из `activeInternalSquads` юзера),
+автоматически восстанавливает в новом периоде или при покупке доп. трафика.
+
+| Что | Где |
+|---|---|
+| `plan_squad_limits` (per-plan-per-squad: limit_gb, topup_price, topup_enabled) | Migration `0006_squad_quotas` |
+| `subscription_squad_state` (used/extra/disabled snapshot per period) | Migration `0006` |
+| `squad_traffic_purchases` (журнал покупок и подарков от админа) | Migration `0006` |
+| `traffic_guard_settings`: новые поля squad_quota_* + topup defaults | Migration `0006` |
+| Сервис `services/squadQuota.js`: sync, enforce, disable, reactivate, addExtraTraffic | [`backend/services/squadQuota.js`] |
+| Mapping squad↔nodes через intersect inbound UUIDs (с кешем 10 мин) | `resolveSquadNodeMap()` |
+| Cron `cron/squadQuota.js` (default 10 мин, динамический rescheduling) | [`backend/cron/squadQuota.js`] |
+| `GET /api/subscriptions/:id/squad-usage` — usage per-squad | [`backend/routes/subscriptions.js`] |
+| `POST /api/subscriptions/:id/squad-topup` — покупка доп. ГБ (balance/gateway) | [`backend/routes/subscriptions.js`] |
+| `PUT /api/plans/:id/squad-limits` — bulk-обновление лимитов плана | [`backend/routes/plans.js`] |
+| Admin endpoints: reactivate/reset/gift squad-traffic | [`backend/routes/admin-users.js`] |
+| Webhook `payment_type='squad_traffic_topup'` | [`backend/services/payment.js`] |
+| `SquadUsageSection.jsx` — карточки серверов в Dashboard с прогресс-барами | [`frontend/src/components/SquadUsageSection.jsx`] |
+| `TopupTrafficModal.jsx` — модалка покупки (slider/packs + balance/gateway) | [`frontend/src/components/TopupTrafficModal.jsx`] |
+| `AdminSquadQuotaSection.jsx` — управление в админке (reactivate/reset/gift) | [`frontend/src/components/AdminSquadQuotaSection.jsx`] |
+| `PlanForm` — секция «Лимиты per-squad» в форме тарифа | [`frontend/src/components/PlanForm.jsx`] |
+| `AdminTrafficGuard` Settings — раздел «Squad Quotas» с тумблерами и параметрами | [`frontend/src/pages/AdminTrafficGuard.jsx`] |
+
+**Бизнес-правила:**
+- **Период**: настраивается — `calendar_month` (1 числа) или `subscription_period` (30 дней с активации)
+- **Доп. трафик** сгорает в конце периода (стандарт)
+- **Цена ₽/ГБ**: глобальная в settings + override per-squad-per-plan
+- **Покупка** — произвольный объём (slider) ИЛИ фиксированные пакеты (выбирается в settings)
+- **При 100%** — мгновенное отключение squad'а (`activeInternalSquads` обновляется в RemnaWave)
+- **При 80%** — warning (in-app + email, по флагу `warned_80_at` чтоб не спамить)
+- **Все squad'ы отключены** → подписка считается «эффективно отключённой», UI показывает alert
+- **Admin gift** — админ может бесплатно подарить ГБ (audit log)
+
+---
+
 ## v0.1.4 — Тёмная/светлая тема, Traffic Guard, Admin Instructions
 
 ### 🎨 Светлая/тёмная тема (sky-blue палитра)

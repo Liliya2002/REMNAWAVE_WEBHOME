@@ -53,6 +53,12 @@ router.get('/', verifyToken, verifyAdmin, async (req, res) => {
     );
     const avgSubscriptionPrice = parseFloat(avgPriceResult.rows[0].avg_price) || 0;
 
+    // Юзеров без подтверждённого email
+    const unconfirmedR = await db.query(
+      `SELECT COUNT(*)::int AS n FROM users WHERE email_confirmed = false AND is_active = true`
+    );
+    const unconfirmedEmails = unconfirmedR.rows[0].n || 0;
+
     const payload = {
       totalUsers,
       activeSubscriptions,
@@ -62,7 +68,8 @@ router.get('/', verifyToken, verifyAdmin, async (req, res) => {
       totalAmount,
       monthlyRevenue,
       newUsersThisMonth,
-      avgSubscriptionPrice
+      avgSubscriptionPrice,
+      unconfirmedEmails,
     }
 
     // Поддерживаем одновременно старый и новый формат ответа.
