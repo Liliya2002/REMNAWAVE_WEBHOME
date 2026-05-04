@@ -7,6 +7,7 @@ const remnwave = require('../services/remnwave')
 const net = require('net')
 const { encrypt, decrypt } = require('../services/encryption')
 const audit = require('../services/auditLog')
+const trafficAgent = require('../services/trafficAgentInstaller')
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || ''
@@ -1055,5 +1056,182 @@ if (TG_CRON_ENABLED) {
   }, 5 * 60 * 1000) // проверка каждые 5 минут
   console.log(`[VPS Cron] Авто-уведомления включены, час отправки: ${TG_CRON_HOUR}:00 UTC`)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Traffic Agent — автоматическая установка SSH-агента на ноду
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/admin/vps/traffic-agent/public-key
+ * Возвращает публичный ключ панели — на случай ручной установки.
+ * Генерирует keypair при первом вызове.
+ */
+router.get('/traffic-agent/public-key', async (req, res) => {
+  try {
+    const { publicKey } = await trafficAgent.ensurePanelKeyPair()
+    res.json({ publicKey })
+  } catch (err) {
+    console.error('[TrafficAgent] public-key error:', err.message)
+    res.status(500).json({ error: 'Не удалось получить публичный ключ' })
+  }
+})
+
+/**
+ * POST /api/admin/vps/:id/traffic-agent/install
+ * Запускает идемпотентный install-скрипт на ноде через root SSH.
+ * Сохраняет статус (installed_at, last_health, last_check) в vps_servers.
+ */
+router.post('/:id/traffic-agent/install', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM vps_servers WHERE id = $1', [req.params.id])
+    if (rows.length === 0) return res.status(404).json({ error: 'VPS не найден' })
+    const vps = rows[0]
+
+    if (!vps.ip_address) return res.status(400).json({ error: 'У VPS не задан ip_address' })
+
+    const r = await trafficAgent.installOnVps(vps)
+
+    // Статус для записи: ok/health_failed/failed/partial
+    const status = r.ok && r.healthOk ? 'ok'
+                 : r.ok && !r.healthOk ? 'health_failed'
+                 : (r.steps && r.steps.length > 0) ? 'partial'
+                 : 'failed'
+
+    const logId = await trafficAgent.logAttempt({
+      vpsId: vps.id, adminId: req.userId,
+      action: 'install', status,
+      errorCode: r.error?.code || null,
+      errorHint: r.error?.hint || null,
+      steps: r.steps || [],
+      healthOk: r.healthOk, healthMsg: r.healthMessage,
+      stdout: r.raw?.stdout, stderr: r.raw?.stderr,
+      durationMs: r.durationMs,
+    })
+
+    // Состояние ноды на карточке: traffic_agent_installed_at ставим только если scripts отработал
+    const installedAt = r.ok ? new Date() : null
+    await db.query(
+      `UPDATE vps_servers
+         SET traffic_agent_installed_at = COALESCE($1, traffic_agent_installed_at),
+             traffic_agent_last_health  = $2,
+             traffic_agent_last_check   = NOW()
+       WHERE id = $3`,
+      [installedAt, (r.healthOk ? 'ok' : (r.healthMessage || 'unknown')).slice(0, 64), req.params.id]
+    )
+
+    audit.write(req, 'vps.traffic_agent_install',
+      { type: 'vps', id: vps.id },
+      { ok: r.ok, healthOk: r.healthOk, status, errorCode: r.error?.code }
+    ).catch(() => {})
+
+    res.json({ ...r, logId, status })
+  } catch (err) {
+    console.error('[TrafficAgent] install error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * POST /api/admin/vps/:id/traffic-agent/check
+ * Health-check агента: SSH под traffic-agent + команда `health`.
+ */
+router.post('/:id/traffic-agent/check', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM vps_servers WHERE id = $1', [req.params.id])
+    if (rows.length === 0) return res.status(404).json({ error: 'VPS не найден' })
+    const vps = rows[0]
+
+    const h = await trafficAgent.checkVps(vps).catch(e => ({ ok: false, message: e.message }))
+
+    await trafficAgent.logAttempt({
+      vpsId: vps.id, adminId: req.userId,
+      action: 'check',
+      status: h.ok ? 'ok' : 'health_failed',
+      errorCode: h.error?.code || null,
+      errorHint: h.error?.hint || null,
+      healthOk: h.ok, healthMsg: h.message,
+      durationMs: h.durationMs,
+    })
+
+    await db.query(
+      `UPDATE vps_servers
+         SET traffic_agent_last_health = $1, traffic_agent_last_check = NOW()
+       WHERE id = $2`,
+      [(h.ok ? 'ok' : (h.message || 'unknown')).slice(0, 64), req.params.id]
+    )
+    res.json(h)
+  } catch (err) {
+    console.error('[TrafficAgent] check error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * DELETE /api/admin/vps/:id/traffic-agent
+ * Удаляет агент с ноды (userdel + удаление скрипта).
+ */
+router.delete('/:id/traffic-agent', async (req, res) => {
+  try {
+    const { rows } = await db.query('SELECT * FROM vps_servers WHERE id = $1', [req.params.id])
+    if (rows.length === 0) return res.status(404).json({ error: 'VPS не найден' })
+    const vps = rows[0]
+
+    const r = await trafficAgent.uninstallOnVps(vps)
+
+    await trafficAgent.logAttempt({
+      vpsId: vps.id, adminId: req.userId,
+      action: 'uninstall',
+      status: r.ok ? 'ok' : 'failed',
+      errorCode: r.error?.code || null,
+      errorHint: r.error?.hint || null,
+      stdout: r.raw?.stdout, stderr: r.raw?.stderr,
+      durationMs: r.durationMs,
+    })
+
+    await db.query(
+      `UPDATE vps_servers
+         SET traffic_agent_installed_at = NULL,
+             traffic_agent_last_health = NULL,
+             traffic_agent_last_check = NOW()
+       WHERE id = $1`,
+      [req.params.id]
+    )
+    audit.write(req, 'vps.traffic_agent_uninstall',
+      { type: 'vps', id: vps.id },
+      { ok: r.ok }
+    ).catch(() => {})
+    res.json(r)
+  } catch (err) {
+    console.error('[TrafficAgent] uninstall error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * GET /api/admin/vps/:id/traffic-agent/log?limit=20
+ * Возвращает последние попытки для конкретной ноды.
+ */
+router.get('/:id/traffic-agent/log', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100)
+    const r = await db.query(
+      `SELECT l.id, l.action, l.status, l.error_code, l.error_hint,
+              l.steps, l.health_ok, l.health_msg,
+              l.stdout_tail, l.stderr_tail,
+              l.duration_ms, l.started_at, l.finished_at,
+              u.login AS admin_login
+         FROM traffic_agent_install_log l
+         LEFT JOIN users u ON u.id = l.admin_id
+        WHERE l.vps_id = $1
+        ORDER BY l.started_at DESC
+        LIMIT $2`,
+      [req.params.id, limit]
+    )
+    res.json({ entries: r.rows })
+  } catch (err) {
+    console.error('[TrafficAgent] log error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
 
 module.exports = router

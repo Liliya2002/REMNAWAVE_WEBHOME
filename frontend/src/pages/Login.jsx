@@ -8,7 +8,15 @@ export default function Login(){
   const [password, setPassword] = useState('')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [capsLockOn, setCapsLockOn] = useState(false)
   const navigate = useNavigate()
+
+  // CapsLock detect для пароля — показывает warning под полем
+  function detectCapsLock(e) {
+    if (typeof e.getModifierState === 'function') {
+      setCapsLockOn(e.getModifierState('CapsLock'))
+    }
+  }
 
   async function handleLogin(e){
     e.preventDefault()
@@ -57,12 +65,17 @@ export default function Login(){
               <input
                 id="login"
                 value={loginField}
-                onChange={e => setLoginField(e.target.value)}
+                onChange={e => setLoginField(e.target.value.toLowerCase())}
                 type="text"
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="username"
+                spellCheck="false"
                 className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                 placeholder="your_login"
                 required
               />
+              <p className="text-[11px] text-sky-700/60 dark:text-slate-500 mt-1.5">Регистр не важен — Vasya и vasya это одно и то же</p>
             </div>
 
             <div>
@@ -73,11 +86,20 @@ export default function Login(){
                 id="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
+                onKeyUp={detectCapsLock}
+                onKeyDown={detectCapsLock}
+                onBlur={() => setCapsLockOn(false)}
                 type="password"
+                autoComplete="current-password"
                 className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                 placeholder="••••••••"
                 required
               />
+              {capsLockOn && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5 font-semibold flex items-center gap-1">
+                  <span aria-hidden>⚠️</span> Включён CapsLock — пароль учитывает регистр
+                </p>
+              )}
             </div>
 
             <button

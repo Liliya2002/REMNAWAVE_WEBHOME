@@ -4,6 +4,52 @@
 
 ---
 
+## v0.1.8 — Yandex Cloud, Traffic Agent, главная как лендинг, case-insensitive auth
+
+Большой релиз: 7 миграций сжаты в одну (`0004_release_v0.1.8`).
+
+### Новое
+
+- **Раздел Yandex Cloud в админке** (`/admin/yandex-cloud`):
+  - Мульти-аккаунты — поддержка OAuth-токена и Service Account JSON-ключа, опциональный SOCKS5 per account
+  - Test connection: DNS+TCP probe всех IP, IPv4-приоритет, retry на ETIMEDOUT
+  - **VM** — list / create / start / stop / restart / delete с цветовой статус-плашкой и подсказками
+  - Создание VM: пресеты CPU/RAM, выбор образа из 9 семейств, статический или ephemeral IP, SSH-ключ из сохранённых / paste / файл
+  - **Публичные IP** — alloc / reserve (static) / release / attach
+  - **Биллинг** — баланс, статус автоплатежа, deep-link на пополнение в YC-консоль с предзаполненной суммой
+  - **Поиск IP в CIDR** — background-job с прогрессом, hard-cap 50 попыток, поддержка нескольких CIDR (textarea + загрузка из `.txt`), классификация ошибок (`permission_denied` / `quota` / `unauthorized`) — runner сразу останавливается при них с конкретной подсказкой
+  - **Сохранённые списки CIDR** per account
+  - **Сохранённые SSH-ключи** per account с дедупом по fingerprint
+  - **Privacy mode** — toggle в header, замазывает все IP / ID / CIDR / имена через CSS blur (для записи видео)
+
+- **Traffic Agent** для нод RemnaWave (Phase 2/3 Traffic Guard):
+  - Автоматическая установка по SSH из админки (`/admin/vps`)
+  - Журнал попыток install / check / uninstall с шагами и stderr/stdout
+  - Классификация ошибок (`ssh_auth_denied`, `no_node_found`, `log_not_readable`, etc) с подсказками
+  - История попыток с раскрывающимися деталями
+
+- **Главная страница как лендинг** — можно сделать любой лендинг главной (`/admin/landings` → toggle «Сделать главной»). Если ничего не назначено — показывается дефолтный `<Landing />`. Кнопка «Импорт текущей главной» создаёт черновик с готовой HTML-копией.
+
+- **Mobile bottom-nav** на Dashboard — фиксированная панель снизу с подсветкой активной вкладки, safe-area-inset для iOS.
+
+- **Case-insensitive auth** — `Vasya` / `VASYA` / `vasya` теперь один и тот же пользователь. Email — то же. UNIQUE-индексы по `LOWER()` исключают дубликаты. На фронте — авто-lowercase в полях и CapsLock-warning на пароле.
+
+### Качество
+
+- **`pg numeric → number`** — глобально через `pg.types.setTypeParser(1700, parseFloat)`. Лечит белый экран на странице подписки у новых юзеров (`"0.00".toFixed()` → TypeError).
+- **AdminReferrals** — обновлён дизайн (icons, превью выплаты, sticky save bar, top-referrers).
+- **Bigint (OID 20)** также конвертируется в number с fallback на string при выходе за `Number.MAX_SAFE_INTEGER`.
+
+### Миграция
+
+Объединена `0004_release_v0.1.8.up.sql`. На прод-БД нужно:
+1. `git pull`
+2. Удалить из `schema_migrations` старые записи `0004_home_landing` … `0010_users_lowercase`
+3. Зарегистрировать `0004_release_v0.1.8` с правильной checksum
+4. `npm run migrate:status` должен показать всё `applied`
+
+---
+
 ## v0.1.7 — Hotfix: legacy UPDATE users.remnwave_uuid в /activate
 
 После v0.1.6 fallback на A019 сработал, но `/activate` пытался обновить

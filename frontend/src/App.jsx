@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useSiteConfig } from './contexts/SiteConfigContext'
-import Landing from './pages/Landing'
+import Home from './pages/Home'
 import Pricing from './pages/Pricing'
 import Dashboard from './pages/Dashboard'
 import Servers from './pages/Servers'
@@ -31,6 +31,7 @@ import AdminSystem from './pages/AdminSystem'
 import AdminInstructions from './pages/AdminInstructions'
 import AdminTrafficTracking from './pages/AdminTrafficTracking'
 import AdminTrafficGuard from './pages/AdminTrafficGuard'
+import AdminYandexCloud from './pages/AdminYandexCloud'
 import LandingPage from './pages/LandingPage'
 import PaymentHistory from './pages/PaymentHistory'
 import AdminNotifications from './components/AdminNotifications'
@@ -222,7 +223,7 @@ export default function App(){
         {/* Main Content */}
         <main className="w-full">
           <Routes>
-            <Route path="/" element={<Landing />} />
+            <Route path="/" element={<Home />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/servers" element={<Servers />} />
             <Route path="/auth" element={<Navigate to="/login" replace />} />
@@ -242,6 +243,7 @@ export default function App(){
               <Route path="referrals" element={<AdminReferrals />} />
               <Route path="servers" element={<AdminServers />} />
               <Route path="vps" element={<AdminVPS />} />
+              <Route path="yandex-cloud" element={<AdminYandexCloud />} />
               <Route path="hosting-order" element={<AdminHostingOrder />} />
               <Route path="landings" element={<AdminLandings />} />
               <Route path="landings/:id" element={<AdminLandingEdit />} />

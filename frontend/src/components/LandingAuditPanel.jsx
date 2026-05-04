@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { History, RefreshCw, Plus, Edit2, Trash2, Eye, EyeOff } from 'lucide-react'
+import { History, RefreshCw, Plus, Edit2, Trash2, Eye, EyeOff, Home as HomeIcon } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -9,6 +9,8 @@ const ACTION_META = {
   delete:    { label: 'Удалён',         badge: 'bg-red-500/20 border-red-500/40',         icon: 'text-red-300',     Icon: Trash2 },
   publish:   { label: 'Опубликован',    badge: 'bg-emerald-500/20 border-emerald-500/40', icon: 'text-emerald-300', Icon: Eye },
   unpublish: { label: 'Снят с публ.',   badge: 'bg-amber-500/20 border-amber-500/40',     icon: 'text-amber-300',   Icon: EyeOff },
+  set_as_home: { label: 'Назначен главной', badge: 'bg-amber-500/20 border-amber-500/40', icon: 'text-amber-300',   Icon: HomeIcon },
+  clear_home:  { label: 'Снят с главной',   badge: 'bg-slate-700/40 border-slate-600/40', icon: 'text-slate-300',   Icon: HomeIcon },
 }
 
 const FIELD_LABELS = {

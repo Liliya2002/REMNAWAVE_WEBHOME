@@ -209,13 +209,20 @@ export default function Register(){
               <form onSubmit={requireEmail ? handleSendCode : handleDirectRegister} className="space-y-4 mb-6">
                 <div>
                   <label htmlFor="login" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Логин</label>
-                  <input id="login" value={loginField} onChange={e => setLoginField(e.target.value)} type="text"
+                  <input id="login" value={loginField}
+                    onChange={e => setLoginField(e.target.value.toLowerCase())}
+                    type="text"
+                    autoCapitalize="none" autoCorrect="off" autoComplete="username" spellCheck="false"
                     className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="your_login" disabled={loading} required />
+                  <p className="text-[11px] text-sky-700/60 dark:text-slate-500 mt-1.5">3-30 символов, латиница / цифры / _ / - . Регистр не учитывается.</p>
                 </div>
                 <div>
                   <label htmlFor="email" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Email</label>
-                  <input id="email" value={email} onChange={e => setEmail(e.target.value)} type="email"
+                  <input id="email" value={email}
+                    onChange={e => setEmail(e.target.value.toLowerCase())}
+                    type="email"
+                    autoCapitalize="none" autoCorrect="off" autoComplete="email" spellCheck="false"
                     className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="your@email.com" disabled={loading} required />
                 </div>

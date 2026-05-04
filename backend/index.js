@@ -110,12 +110,13 @@ const adminSystemRoutes = require('./routes/admin-system')
 const adminDocsRoutes = require('./routes/admin-docs')
 const adminTrafficRoutes = require('./routes/admin-traffic')
 const adminTrafficGuardRoutes = require('./routes/admin-traffic-guard')
+const adminYandexCloudRoutes = require('./routes/admin-yandex-cloud')
 const healthRoutes = require('./routes/health')
 const maintenanceRoutes = require('./routes/maintenance')
 const maintenanceGuard = require('./middleware/maintenance')
 const landingsRoutes = require('./routes/landings')
 const seoRoutes = require('./routes/seo')
-const { landingSsrMiddleware } = require('./middleware/landingSsr')
+const { landingSsrMiddleware, homeLandingSsrMiddleware } = require('./middleware/landingSsr')
 const path = require('path')
 const notificationsRoutes = require('./routes/notifications')
 const sessionsRoutes = require('./routes/sessions')
@@ -158,6 +159,7 @@ app.use('/api/admin/system', adminLimiter, adminSystemRoutes)
 app.use('/api/admin/docs', adminLimiter, adminDocsRoutes)
 app.use('/api/admin/traffic', adminLimiter, adminTrafficRoutes)
 app.use('/api/admin/traffic-guard', adminLimiter, adminTrafficGuardRoutes)
+app.use('/api/admin/yandex-cloud', adminLimiter, adminYandexCloudRoutes)
 // /api/health — публичный, без auth/limiter (для health-check'ов)
 app.use('/api/health', healthRoutes)
 app.use('/api/landings', landingsRoutes)
@@ -178,6 +180,11 @@ app.use('/', seoRoutes)
 // SSR-lite для /p/:slug — подмена meta-тегов в production-сборке + CSP для лендингов
 app.get('/p/:slug', landingSsrMiddleware)
 
+// SSR-lite для главной — подмешиваем meta-теги назначенного home-лендинга.
+// Активируется только если nginx проксирует `/` на бэкенд (по умолчанию `/` идёт на frontend);
+// без проксирования middleware просто не вызывается — это безопасно.
+app.get('/', homeLandingSsrMiddleware)
+
 // Cron: деактивация истёкших подписок и уведомления "скоро истечёт"
 require('./cron/expireSubscriptions').start()
 
@@ -192,6 +199,9 @@ require('./cron/p2pDetector').start()
 
 // Cron: Squad Quotas — per-squad traffic limits
 require('./cron/squadQuota').start()
+
+// YC: при рестарте помечаем зависшие IP-search job'ы как failed
+require('./services/yandexCloud/ipRangeSearch').recoverOrphanedJobs().catch(() => {})
 
 const PORT = process.env.PORT || 4000
 app.listen(PORT, ()=> console.log(`Backend running on port ${PORT}`))

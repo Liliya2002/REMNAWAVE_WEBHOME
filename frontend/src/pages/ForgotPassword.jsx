@@ -88,7 +88,8 @@ export default function ForgotPassword() {
                     id="email"
                     type="email"
                     value={email}
-                    onChange={e => setEmail(e.target.value)}
+                    onChange={e => setEmail(e.target.value.toLowerCase())}
+                    autoCapitalize="none" autoCorrect="off" autoComplete="email" spellCheck="false"
                     className="w-full pl-11 pr-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="your@email.com"
                     required

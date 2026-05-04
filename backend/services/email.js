@@ -26,10 +26,16 @@ function generateCode() {
  * Отправка кода подтверждения на email
  * Rate-limit: 1 код / 60 сек на один email
  */
-async function sendVerificationCode(email) {
+// Нормализатор email — нижний регистр, обрезанные пробелы.
+// Используется во всех функциях этого модуля чтобы caller-ы не могли передать
+// разные регистры и поломать сравнение кодов / поиск юзеров.
+function normEmail(s) { return String(s || '').trim().toLowerCase() }
+
+async function sendVerificationCode(rawEmail) {
+  const email = normEmail(rawEmail)
   // Проверяем rate-limit: не отправлять чаще раза в минуту
   const recent = await db.query(
-    `SELECT id FROM email_verifications 
+    `SELECT id FROM email_verifications
      WHERE email = $1 AND created_at > NOW() - INTERVAL '60 seconds'`,
     [email]
   )
@@ -74,9 +80,10 @@ async function sendVerificationCode(email) {
  * Проверка кода
  * Макс. 5 попыток, после — код аннулируется
  */
-async function verifyCode(email, code) {
+async function verifyCode(rawEmail, code) {
+  const email = normEmail(rawEmail)
   const result = await db.query(
-    `SELECT id, code, attempts FROM email_verifications 
+    `SELECT id, code, attempts FROM email_verifications
      WHERE email = $1 AND expires_at > NOW()
      ORDER BY created_at DESC LIMIT 1`,
     [email]

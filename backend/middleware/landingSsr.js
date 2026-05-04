@@ -29,11 +29,11 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-function buildMeta(landing, origin) {
+function buildMeta(landing, origin, { isHome = false } = {}) {
   const title = landing.meta_title || landing.title;
   const desc = landing.meta_description || '';
   const ogImage = landing.og_image || '';
-  const canonical = landing.canonical_url || `${origin}/p/${landing.slug}`;
+  const canonical = landing.canonical_url || (isHome ? `${origin}/` : `${origin}/p/${landing.slug}`);
   const lines = [];
   lines.push(`<title>${escapeHtml(title)}</title>`);
   if (desc) lines.push(`<meta name="description" content="${escapeHtml(desc)}">`);
@@ -137,4 +137,50 @@ function landingSsrMiddleware(req, res, next) {
   });
 }
 
-module.exports = { landingSsrMiddleware };
+/**
+ * Middleware для GET /.
+ * Если в site_config.home_landing_id назначен опубликованный лендинг — подмешиваем его meta-теги.
+ * Если назначения нет / лендинг снят с публикации — пропускаем дальше: SPA отрисует дефолтный <Landing />.
+ */
+function homeLandingSsrMiddleware(req, res, next) {
+  // Не трогаем не-HTML запросы (assets, api и т.д.) — на них этот middleware не должен попасть,
+  // но на всякий случай отфильтруем по Accept.
+  const accept = String(req.headers.accept || '');
+  if (accept && !accept.includes('text/html') && !accept.includes('*/*')) return next();
+
+  const tpl = getIndexHtml();
+  if (!tpl) return next(); // dev-режим — пусть Vite разрулит
+
+  db.query(
+    `SELECT lp.slug, lp.title,
+            lp.meta_title, lp.meta_description, lp.meta_keywords, lp.og_image, lp.canonical_url,
+            lp.schema_type, lp.published_at, lp.updated_at
+       FROM site_config sc
+       JOIN landing_pages lp ON lp.id = sc.home_landing_id
+      WHERE lp.is_published = true
+      LIMIT 1`
+  ).then(r => {
+    res.setHeader('Content-Security-Policy', buildCsp());
+
+    if (r.rows.length === 0) {
+      // Нет назначенного home-лендинга — отдаём шаблон без подмены, фронт покажет <Landing />
+      return res.type('html').send(tpl);
+    }
+
+    const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0];
+    const origin = process.env.FRONTEND_URL?.replace(/\/$/, '') || `${proto}://${req.get('host')}`;
+    const meta = buildMeta(r.rows[0], origin, { isHome: true });
+
+    let html = tpl
+      .replace(/<title>[^<]*<\/title>/i, '')
+      .replace(/<meta\s+name=["']description["'][^>]*>/gi, '')
+      .replace('</head>', `    ${meta}\n  </head>`);
+
+    res.type('html').send(html);
+  }).catch(err => {
+    console.error('Home landing SSR error:', err);
+    res.type('html').send(tpl);
+  });
+}
+
+module.exports = { landingSsrMiddleware, homeLandingSsrMiddleware };

@@ -7,7 +7,7 @@ import {
   BarChart3, AlertTriangle, Send, Activity, RefreshCcw, ChevronDown,
   Copy, Radio, Trash2, Search, FileCode2, RotateCw, Square, Zap,
   PauseCircle, PlayCircle, History, Filter, Database, Coins, Rocket,
-  ShieldCheck, Wifi, WifiOff
+  ShieldCheck, Wifi, WifiOff, Shield, FileText
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || ''
@@ -121,6 +121,12 @@ export default function AdminVPS() {
   const [installForm, setInstallForm] = useState({ projectDir: '/opt/remnanode', installDocker: true, composeContent: '' })
   const [installState, setInstallState] = useState({}) // { [vpsId]: { loading, output, error } }
   const [installProgress, setInstallProgress] = useState({}) // { [vpsId]: 0..100 }
+  // Traffic Agent
+  const [taState, setTaState] = useState({}) // { [vpsId]: { loading, error, message, healthOk, steps } }
+  const [taManualOpen, setTaManualOpen] = useState(null) // { vpsId, name, healthMessage }
+  const [taResultOpen, setTaResultOpen] = useState(null) // { vpsId, name, action, result }
+  const [taHistoryOpen, setTaHistoryOpen] = useState(null) // { vpsId, name, entries, loading }
+  const [panelPublicKey, setPanelPublicKey] = useState('')
   const [syncNodeState, setSyncNodeState] = useState({}) // { [vpsId]: { loading, message, error } }
   const [composeEditor, setComposeEditor] = useState(null) // { vpsId, name, path }
   const [composeContent, setComposeContent] = useState('')
@@ -336,6 +342,119 @@ export default function AdminVPS() {
   function openInstallWizard(vps) {
     setInstallModal({ vpsId: vps.id, name: vps.name })
     setInstallForm({ projectDir: '/opt/remnanode', installDocker: true, composeContent: '' })
+  }
+
+  // ─── Traffic Agent handlers ────────────────────────────────────────────────
+  async function installTrafficAgent(vps) {
+    if (!confirm(
+      `Установить traffic-agent на «${vps.name}»?\n\n` +
+      `На ноде будет:\n` +
+      `• создан системный пользователь traffic-agent\n` +
+      `• положен скрипт /usr/local/bin/access-log-query.sh\n` +
+      `• docker-compose ноды получит volume для xray-логов (с бэкапом)\n` +
+      `• нода будет ненадолго перезапущена для применения volume\n\n` +
+      `Продолжить?`
+    )) return
+
+    setTaState(prev => ({ ...prev, [vps.id]: { loading: true } }))
+    try {
+      const res = await fetch(`${API}/api/admin/vps/${vps.id}/traffic-agent/install`, {
+        method: 'POST', headers,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Ошибка установки')
+
+      setTaState(prev => ({
+        ...prev,
+        [vps.id]: {
+          loading: false,
+          ok: data.ok,
+          healthOk: data.healthOk,
+          message: data.healthMessage,
+          steps: data.steps,
+        }
+      }))
+
+      // Перезагрузим список чтобы увидеть свежий traffic_agent_installed_at
+      fetchData()
+
+      // Всегда показываем модалку с результатом — там видны все шаги и ошибки
+      setTaResultOpen({ vpsId: vps.id, name: vps.name, action: 'install', result: data })
+    } catch (e) {
+      setTaState(prev => ({ ...prev, [vps.id]: { loading: false, error: e.message } }))
+      setTaResultOpen({
+        vpsId: vps.id, name: vps.name, action: 'install',
+        result: { ok: false, error: { code: 'network_error', hint: 'Не удалось связаться с backend. Проверь что бекенд запущен.' }, healthMessage: e.message },
+      })
+    }
+  }
+
+  async function openTrafficAgentHistory(vps) {
+    setTaHistoryOpen({ vpsId: vps.id, name: vps.name, entries: [], loading: true })
+    try {
+      const res = await fetch(`${API}/api/admin/vps/${vps.id}/traffic-agent/log?limit=20`, { headers })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Ошибка загрузки')
+      setTaHistoryOpen(prev => prev && prev.vpsId === vps.id
+        ? { ...prev, entries: data.entries || [], loading: false }
+        : prev
+      )
+    } catch (e) {
+      setTaHistoryOpen(prev => prev && prev.vpsId === vps.id
+        ? { ...prev, entries: [], loading: false, error: e.message }
+        : prev
+      )
+    }
+  }
+
+  async function checkTrafficAgent(vpsId) {
+    setTaState(prev => ({ ...prev, [vpsId]: { ...(prev[vpsId] || {}), loading: true } }))
+    try {
+      const res = await fetch(`${API}/api/admin/vps/${vpsId}/traffic-agent/check`, {
+        method: 'POST', headers,
+      })
+      const data = await res.json()
+      setTaState(prev => ({
+        ...prev,
+        [vpsId]: { loading: false, healthOk: data.ok, message: data.message }
+      }))
+      fetchData()
+    } catch (e) {
+      setTaState(prev => ({ ...prev, [vpsId]: { loading: false, error: e.message } }))
+    }
+  }
+
+  async function uninstallTrafficAgent(vps) {
+    if (!confirm(`Удалить traffic-agent с «${vps.name}»? На ноде будут удалены пользователь traffic-agent, его SSH-ключи и agent-скрипт.`)) return
+    setTaState(prev => ({ ...prev, [vps.id]: { loading: true } }))
+    try {
+      const res = await fetch(`${API}/api/admin/vps/${vps.id}/traffic-agent`, {
+        method: 'DELETE', headers,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Ошибка удаления')
+      setTaState(prev => {
+        const next = { ...prev }
+        delete next[vps.id]
+        return next
+      })
+      fetchData()
+    } catch (e) {
+      setTaState(prev => ({ ...prev, [vps.id]: { loading: false, error: e.message } }))
+    }
+  }
+
+  async function loadPanelKey() {
+    if (panelPublicKey) return panelPublicKey
+    try {
+      const res = await fetch(`${API}/api/admin/vps/traffic-agent/public-key`, { headers })
+      const data = await res.json()
+      if (res.ok && data.publicKey) {
+        setPanelPublicKey(data.publicKey)
+        return data.publicKey
+      }
+    } catch {}
+    return ''
   }
 
   function startInstallProgress(vpsId) {
@@ -1065,6 +1184,21 @@ export default function AdminVPS() {
                             <CheckCircle2 className="w-3.5 h-3.5" /> Нода установлена
                           </button>
                         )}
+                        {vps.service_type === 'node' && (
+                          <TrafficAgentButton
+                            vps={vps}
+                            state={taState[vps.id]}
+                            onInstall={(e) => { e.stopPropagation(); installTrafficAgent(vps) }}
+                            onCheck={(e) => { e.stopPropagation(); checkTrafficAgent(vps.id) }}
+                            onUninstall={(e) => { e.stopPropagation(); uninstallTrafficAgent(vps) }}
+                            onHistory={(e) => { e.stopPropagation(); openTrafficAgentHistory(vps) }}
+                            onShowManual={async (e) => {
+                              e.stopPropagation()
+                              await loadPanelKey()
+                              setTaManualOpen({ vpsId: vps.id, name: vps.name, healthMessage: vps.traffic_agent_last_health })
+                            }}
+                          />
+                        )}
                         {(vps.service_type === '' || vps.service_type === 'other') && (
                           <button onClick={(e) => { e.stopPropagation(); openInstallWizard(vps) }}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all border bg-cyan-500/10 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20">
@@ -1585,6 +1719,49 @@ export default function AdminVPS() {
           onSave={handleSave}
         />
       )}
+
+      {/* Traffic Agent — manual step modal */}
+      {taManualOpen && (
+        <TrafficAgentManualModal
+          vpsName={taManualOpen.name}
+          healthMessage={taManualOpen.healthMessage}
+          publicKey={panelPublicKey}
+          onClose={() => setTaManualOpen(null)}
+          onRecheck={async () => {
+            await checkTrafficAgent(taManualOpen.vpsId)
+          }}
+        />
+      )}
+
+      {/* Traffic Agent — result modal */}
+      {taResultOpen && (
+        <TrafficAgentResultModal
+          vpsName={taResultOpen.name}
+          action={taResultOpen.action}
+          result={taResultOpen.result}
+          onClose={() => setTaResultOpen(null)}
+          onShowManual={async () => {
+            await loadPanelKey()
+            setTaResultOpen(null)
+            setTaManualOpen({
+              vpsId: taResultOpen.vpsId,
+              name: taResultOpen.name,
+              healthMessage: taResultOpen.result?.healthMessage,
+            })
+          }}
+        />
+      )}
+
+      {/* Traffic Agent — history modal */}
+      {taHistoryOpen && (
+        <TrafficAgentHistoryModal
+          vpsName={taHistoryOpen.name}
+          entries={taHistoryOpen.entries}
+          loading={taHistoryOpen.loading}
+          error={taHistoryOpen.error}
+          onClose={() => setTaHistoryOpen(null)}
+        />
+      )}
     </div>
   )
 }
@@ -2066,6 +2243,507 @@ function VpsFormModal({ editId, form, setField, setSpec, customProvider, setCust
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Traffic Agent UI ───────────────────────────────────────────────────────
+
+function TrafficAgentButton({ vps, state, onInstall, onCheck, onUninstall, onShowManual, onHistory }) {
+  const installed = !!vps.traffic_agent_installed_at
+  const lastHealth = vps.traffic_agent_last_health
+  const isOk = lastHealth === 'ok'
+  const loading = state?.loading
+
+  if (!installed) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={onInstall}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all border bg-blue-500/10 border-blue-500/30 text-blue-300 hover:bg-blue-500/20 disabled:opacity-50"
+          title="Установить traffic-agent для Traffic Guard и P2P-детекции"
+        >
+          {loading ? (
+            <span className="w-3.5 h-3.5 border-2 border-blue-300/40 border-t-blue-300 rounded-full animate-spin" />
+          ) : (
+            <Shield className="w-3.5 h-3.5" />
+          )}
+          {loading ? 'Установка...' : 'Установить traffic-agent'}
+        </button>
+        <button
+          onClick={onHistory}
+          title="История попыток установки"
+          className="flex items-center justify-center w-8 h-8 rounded-xl border bg-slate-800/60 border-slate-700/50 text-slate-400 hover:text-blue-300 hover:border-blue-500/40 transition-all"
+        >
+          <History className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <button
+        onClick={isOk ? onCheck : onShowManual}
+        disabled={loading}
+        title={isOk ? 'Перепроверить агент' : `Последняя проверка: ${lastHealth || 'не пройдена'}. Открыть инструкцию по последнему шагу`}
+        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-all ${
+          isOk
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+            : 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+        } disabled:opacity-50`}
+      >
+        {loading ? (
+          <span className={`w-3.5 h-3.5 border-2 ${isOk ? 'border-emerald-300/40 border-t-emerald-300' : 'border-amber-300/40 border-t-amber-300'} rounded-full animate-spin`} />
+        ) : (
+          <Shield className="w-3.5 h-3.5" />
+        )}
+        {isOk ? 'Агент: ok' : 'Агент: требует настройки'}
+      </button>
+      <button
+        onClick={onHistory}
+        title="История попыток установки и проверок"
+        className="flex items-center justify-center w-8 h-8 rounded-xl border bg-slate-800/60 border-slate-700/50 text-slate-400 hover:text-blue-300 hover:border-blue-500/40 transition-all"
+      >
+        <History className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={onUninstall}
+        disabled={loading}
+        title="Удалить traffic-agent с ноды"
+        className="flex items-center justify-center w-8 h-8 rounded-xl text-xs border bg-slate-800/60 border-slate-700/50 text-slate-400 hover:text-red-300 hover:border-red-500/40 transition-all"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  )
+}
+
+function TrafficAgentManualModal({ vpsName, healthMessage, publicKey, onClose, onRecheck }) {
+  const [copied, setCopied] = useState(null)
+  const [rechecking, setRechecking] = useState(false)
+
+  const xrayBlock = `"log": {
+  "loglevel": "warning",
+  "access": "/var/log/xray/access.log",
+  "error": "/var/log/xray/error.log"
+}`
+
+  function copy(text, key) {
+    navigator.clipboard.writeText(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 1500)
+  }
+
+  async function handleRecheck() {
+    setRechecking(true)
+    try { await onRecheck() } finally { setRechecking(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 px-6 py-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center">
+            <FileText className="w-4 h-4 text-amber-300" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Последний шаг — настройка Xray на «{vpsName}»</div>
+            <div className="text-[11px] text-slate-500">Агент установлен, но access.log пока недоступен</div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {healthMessage && healthMessage !== 'ok' && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span><span className="font-mono">{healthMessage}</span> — это нормально на этом шаге</span>
+            </div>
+          )}
+
+          <div>
+            <div className="text-sm font-semibold text-white mb-2">1. Открой RemnaWave-панель</div>
+            <p className="text-xs text-slate-400">
+              Зайди в админку RemnaWave → <span className="text-slate-200">Config Profiles</span> →
+              открой профиль, который прикреплён к этой ноде.
+            </p>
+          </div>
+
+          <div>
+            <div className="text-sm font-semibold text-white mb-2">
+              2. Добавь блок <code className="text-cyan-300 font-mono text-xs bg-slate-800 px-1.5 py-0.5 rounded">"log"</code> в JSON-конфиг
+            </div>
+            <p className="text-xs text-slate-400 mb-2">
+              Если блок <code className="text-cyan-300 font-mono">"log"</code> уже есть — добавь только поле <code className="text-cyan-300 font-mono">"access"</code>.
+            </p>
+            <div className="relative">
+              <pre className="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs font-mono text-emerald-300 overflow-x-auto">{xrayBlock}</pre>
+              <button
+                onClick={() => copy(xrayBlock, 'log')}
+                className="absolute top-2 right-2 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[11px] font-medium text-slate-300 flex items-center gap-1.5"
+              >
+                <Copy className="w-3 h-3" />
+                {copied === 'log' ? 'Скопировано!' : 'Копировать'}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-sm font-semibold text-white mb-2">3. Сохрани профиль</div>
+            <p className="text-xs text-slate-400">
+              RemnaWave автоматически перезальёт config на ноду — Xray начнёт писать{' '}
+              <code className="text-cyan-300 font-mono">/var/log/xray/access.log</code> в течение нескольких секунд.
+            </p>
+          </div>
+
+          <div>
+            <div className="text-sm font-semibold text-white mb-2">4. Нажми «Перепроверить» ниже</div>
+            <p className="text-xs text-slate-400">
+              Если health-check вернёт <code className="text-emerald-300 font-mono">ok</code> — агент готов к работе.
+            </p>
+          </div>
+
+          {publicKey && (
+            <details className="bg-slate-900/60 border border-slate-800 rounded-xl">
+              <summary className="px-4 py-2.5 text-xs text-slate-400 hover:text-slate-200 cursor-pointer">
+                Публичный ключ панели (на случай ручной установки)
+              </summary>
+              <div className="border-t border-slate-800 p-3 relative">
+                <pre className="text-[10px] font-mono text-slate-300 break-all whitespace-pre-wrap">{publicKey}</pre>
+                <button
+                  onClick={() => copy(publicKey, 'pub')}
+                  className="absolute top-2 right-2 px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded text-[10px] text-slate-300 flex items-center gap-1"
+                >
+                  <Copy className="w-3 h-3" />
+                  {copied === 'pub' ? '✓' : 'Copy'}
+                </button>
+              </div>
+            </details>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 px-6 py-4 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg"
+          >
+            Закрыть
+          </button>
+          <button
+            onClick={handleRecheck}
+            disabled={rechecking}
+            className="px-5 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-xs font-bold rounded-lg hover:shadow-lg hover:shadow-blue-500/30 disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {rechecking ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Проверка...
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="w-3.5 h-3.5" /> Перепроверить
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Метки шагов установки — синхронизированы с backend STEP_LABELS
+const TA_STEP_LABELS = {
+  node_dir:                    'Найдена установка ноды',
+  no_node_found:               'Нода не найдена в стандартных путях',
+  compose_patched:             'Volume xray-логов добавлен в docker-compose',
+  compose_already_has_volume:  'Volume xray-логов уже был в docker-compose',
+  key_added:                   'SSH-ключ панели добавлен в authorized_keys',
+  key_already_present:         'SSH-ключ панели уже был в authorized_keys',
+  log_readable_by_agent:       'Доступ к access.log из под traffic-agent',
+  log_NOT_readable_by_agent:   'Нет доступа к access.log (нужен последний шаг)',
+}
+
+const TA_ACTION_LABELS = {
+  install: 'Установка',
+  check: 'Проверка',
+  uninstall: 'Удаление',
+}
+
+const TA_STATUS_META = {
+  ok:             { label: 'Успех',                    color: 'emerald', icon: CheckCircle2 },
+  health_failed:  { label: 'Установлено, но health не ok', color: 'amber',   icon: AlertCircle },
+  partial:        { label: 'Частично',                  color: 'amber',   icon: AlertCircle },
+  failed:         { label: 'Ошибка',                    color: 'red',     icon: AlertCircle },
+}
+
+function TrafficAgentResultModal({ vpsName, action, result, onClose, onShowManual }) {
+  const status = result.ok && result.healthOk ? 'ok'
+               : result.ok && !result.healthOk ? 'health_failed'
+               : (result.steps && result.steps.length > 0) ? 'partial'
+               : 'failed'
+  const meta = TA_STATUS_META[status]
+  const StatusIcon = meta.icon
+  const colorClasses = {
+    emerald: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300',
+    amber:   'bg-amber-500/10 border-amber-500/30 text-amber-300',
+    red:     'bg-red-500/10 border-red-500/30 text-red-300',
+  }[meta.color]
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 px-6 py-4 flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${colorClasses}`}>
+            <StatusIcon className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-white truncate">
+              {TA_ACTION_LABELS[action] || action} • {vpsName}
+            </div>
+            <div className="text-[11px] text-slate-500">
+              {meta.label}
+              {result.durationMs != null && ` • ${(result.durationMs / 1000).toFixed(1)}s`}
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Error / hint */}
+          {result.error && (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+              <div className="flex items-center gap-2 text-amber-200 text-sm font-semibold mb-1">
+                <AlertCircle className="w-4 h-4" />
+                {result.error.code}
+              </div>
+              <div className="text-xs text-amber-100/90 leading-relaxed">{result.error.hint}</div>
+            </div>
+          )}
+          {!result.error && result.healthOk && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-sm flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              Агент полностью установлен и отвечает <span className="font-mono">ok</span> — Traffic Guard готов к работе на этой ноде.
+            </div>
+          )}
+
+          {/* Steps */}
+          {result.steps && result.steps.length > 0 && (
+            <div>
+              <div className="text-[11px] font-bold text-slate-400 uppercase mb-2">Шаги установки</div>
+              <div className="space-y-1.5">
+                {result.steps.map((s, i) => {
+                  const label = TA_STEP_LABELS[s.key] || s.label || s.key
+                  return (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      {s.ok ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <span className={s.ok ? 'text-slate-200' : 'text-amber-200'}>{label}</span>
+                        {s.detail && <span className="text-slate-500 font-mono ml-2">{s.detail}</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Health message */}
+          {result.healthMessage && !result.healthOk && (
+            <div>
+              <div className="text-[11px] font-bold text-slate-400 uppercase mb-2">Сообщение от агента</div>
+              <div className="text-xs font-mono text-slate-300 bg-slate-950 border border-slate-800 rounded-lg p-3 break-all">
+                {result.healthMessage}
+              </div>
+            </div>
+          )}
+
+          {/* Raw output — collapsible */}
+          {(result.raw?.stdout || result.raw?.stderr) && (
+            <details className="bg-slate-900/60 border border-slate-800 rounded-xl">
+              <summary className="px-4 py-2.5 text-xs font-medium text-slate-400 hover:text-slate-200 cursor-pointer flex items-center gap-2">
+                <Terminal className="w-3.5 h-3.5" />
+                Подробности (raw stdout/stderr)
+              </summary>
+              <div className="border-t border-slate-800">
+                {result.raw.stdout && (
+                  <div className="p-3 border-b border-slate-800">
+                    <div className="text-[10px] font-bold text-emerald-500 uppercase mb-1">stdout</div>
+                    <pre className="text-[11px] font-mono text-slate-300 whitespace-pre-wrap break-all max-h-60 overflow-y-auto">{result.raw.stdout}</pre>
+                  </div>
+                )}
+                {result.raw.stderr && (
+                  <div className="p-3">
+                    <div className="text-[10px] font-bold text-red-500 uppercase mb-1">stderr</div>
+                    <pre className="text-[11px] font-mono text-red-300/80 whitespace-pre-wrap break-all max-h-60 overflow-y-auto">{result.raw.stderr}</pre>
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 px-6 py-4 flex items-center justify-end gap-2">
+          {status === 'health_failed' && (
+            <button
+              onClick={onShowManual}
+              className="px-4 py-2 bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5"
+            >
+              <FileText className="w-3.5 h-3.5" /> Открыть инструкцию
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-slate-800 border border-slate-700 text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-700"
+          >
+            Закрыть
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TrafficAgentHistoryModal({ vpsName, entries, loading, error, onClose }) {
+  const [expanded, setExpanded] = useState(null)
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 px-6 py-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 border border-blue-500/30 flex items-center justify-center">
+            <History className="w-4 h-4 text-blue-300" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-white truncate">История traffic-agent — {vpsName}</div>
+            <div className="text-[11px] text-slate-500">Последние 20 попыток установки/проверки</div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4">
+          {loading && (
+            <div className="flex items-center justify-center py-12 text-slate-500">
+              <RefreshCcw className="w-5 h-5 animate-spin mr-2" />
+              Загрузка истории...
+            </div>
+          )}
+          {error && (
+            <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm">{error}</div>
+          )}
+          {!loading && !error && entries.length === 0 && (
+            <div className="text-center py-12 text-slate-500 text-sm">Истории пока нет — установка ещё не запускалась</div>
+          )}
+          {!loading && !error && entries.length > 0 && (
+            <div className="space-y-2">
+              {entries.map(e => {
+                const meta = TA_STATUS_META[e.status] || { label: e.status, color: 'slate', icon: AlertCircle }
+                const StatusIcon = meta.icon
+                const colorClasses = {
+                  emerald: 'border-emerald-500/30 bg-emerald-500/5',
+                  amber:   'border-amber-500/30 bg-amber-500/5',
+                  red:     'border-red-500/30 bg-red-500/5',
+                  slate:   'border-slate-700 bg-slate-900/40',
+                }[meta.color]
+                const iconColor = {
+                  emerald: 'text-emerald-400',
+                  amber: 'text-amber-400',
+                  red: 'text-red-400',
+                  slate: 'text-slate-400',
+                }[meta.color]
+                const isExpanded = expanded === e.id
+
+                return (
+                  <div key={e.id} className={`rounded-xl border ${colorClasses} overflow-hidden`}>
+                    <button
+                      onClick={() => setExpanded(isExpanded ? null : e.id)}
+                      className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-slate-800/30 transition"
+                    >
+                      <StatusIcon className={`w-4 h-4 shrink-0 ${iconColor}`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-white font-semibold flex items-center gap-2">
+                          {TA_ACTION_LABELS[e.action] || e.action}
+                          <span className="text-[11px] font-normal text-slate-400">{meta.label}</span>
+                          {e.error_code && (
+                            <span className="text-[10px] font-mono text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">{e.error_code}</span>
+                          )}
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                          <span>{new Date(e.started_at).toLocaleString('ru-RU')}</span>
+                          {e.duration_ms != null && <span>• {(e.duration_ms / 1000).toFixed(1)}s</span>}
+                          {e.admin_login && <span>• {e.admin_login}</span>}
+                        </div>
+                      </div>
+                      <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isExpanded && (
+                      <div className="border-t border-slate-800 bg-slate-950/60 p-4 space-y-3">
+                        {e.error_hint && (
+                          <div className="text-xs text-amber-200/90 leading-relaxed">
+                            <span className="font-semibold">💡 Подсказка:</span> {e.error_hint}
+                          </div>
+                        )}
+                        {e.health_msg && (
+                          <div>
+                            <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Health</div>
+                            <div className="text-xs font-mono text-slate-300 break-all">{e.health_msg}</div>
+                          </div>
+                        )}
+                        {Array.isArray(e.steps) && e.steps.length > 0 && (
+                          <div>
+                            <div className="text-[10px] font-bold text-slate-500 uppercase mb-1">Шаги</div>
+                            <div className="space-y-1">
+                              {e.steps.map((s, i) => (
+                                <div key={i} className="flex items-start gap-2 text-[11px]">
+                                  {s.ok ? <CheckCircle2 className="w-3 h-3 text-emerald-400 mt-0.5 shrink-0" /> : <AlertCircle className="w-3 h-3 text-amber-400 mt-0.5 shrink-0" />}
+                                  <div className="flex-1">
+                                    <span className={s.ok ? 'text-slate-300' : 'text-amber-200'}>{TA_STEP_LABELS[s.key] || s.label || s.key}</span>
+                                    {s.detail && <span className="text-slate-500 font-mono ml-2">{s.detail}</span>}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {e.stderr_tail && (
+                          <details>
+                            <summary className="text-[10px] font-bold text-red-400 uppercase cursor-pointer">stderr ({e.stderr_tail.length} симв.)</summary>
+                            <pre className="text-[10px] font-mono text-red-300/80 whitespace-pre-wrap break-all mt-1 max-h-40 overflow-y-auto">{e.stderr_tail}</pre>
+                          </details>
+                        )}
+                        {e.stdout_tail && (
+                          <details>
+                            <summary className="text-[10px] font-bold text-emerald-500 uppercase cursor-pointer">stdout ({e.stdout_tail.length} симв.)</summary>
+                            <pre className="text-[10px] font-mono text-slate-400 whitespace-pre-wrap break-all mt-1 max-h-40 overflow-y-auto">{e.stdout_tail}</pre>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 px-6 py-4 flex justify-end">
+          <button onClick={onClose} className="px-5 py-2 bg-slate-800 border border-slate-700 text-slate-200 rounded-lg text-xs font-bold hover:bg-slate-700">
+            Закрыть
+          </button>
         </div>
       </div>
     </div>

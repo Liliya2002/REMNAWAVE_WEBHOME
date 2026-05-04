@@ -7,7 +7,7 @@ import {
   BarChart3, Users, CreditCard, History,
   Gift, Bell,
   Sparkles, FileText,
-  Globe, Server, ShoppingCart,
+  Globe, Server, ShoppingCart, Cloud,
   Settings, Activity, Palette, ShieldCheck, BookOpen, TrendingUp, Shield,
   // ui
   Search, Circle,
@@ -52,6 +52,7 @@ const GROUPS = [
     items: [
       { to: '/admin/servers',       Icon: Globe,         label: 'RemnaWave' },
       { to: '/admin/vps',           Icon: Server,        label: 'Управление VPS' },
+      { to: '/admin/yandex-cloud',  Icon: Cloud,         label: 'Yandex Cloud' },
       { to: '/admin/hosting-order', Icon: ShoppingCart,  label: 'Заказать хостинг' },
     ],
   },

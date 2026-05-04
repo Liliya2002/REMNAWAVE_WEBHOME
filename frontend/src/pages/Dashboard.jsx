@@ -117,7 +117,7 @@ export default function Dashboard() {
   ]
 
   return (
-    <div className="w-full">
+    <div className="w-full pb-24 lg:pb-0">
       {/* Email confirmation banner */}
       <div className="px-4 sm:px-6 lg:px-8 pt-6 max-w-7xl mx-auto">
         <EmailConfirmBanner />
@@ -174,31 +174,6 @@ export default function Dashboard() {
       )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Мобильная горизонтальная навигация */}
-        <div className="lg:hidden mb-6 -mx-4 sm:-mx-6 px-4 sm:px-6">
-          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide">
-            {menuItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => setActiveSection(item.id)}
-                className={`relative shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-1.5 ${
-                  activeSection === item.id
-                    ? 'bg-blue-500/20 border border-blue-500/50 text-blue-700 dark:text-blue-300'
-                    : 'bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 text-sky-700 dark:text-slate-400 dark:text-slate-400'
-                }`}
-              >
-                <item.Icon className="w-4 h-4 shrink-0" />
-                <span>{item.label}</span>
-                {item.badge > 0 && (
-                  <span className="ml-1 min-w-[18px] h-[18px] px-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold">
-                    {item.badge > 99 ? '99+' : item.badge}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Боковая навигация (десктоп) */}
           <div className="hidden lg:block lg:col-span-1">
@@ -331,6 +306,60 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
+      {/* Мобильная нижняя навигация — фиксированная, скрыта на десктопе */}
+      <nav
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-sky-200 dark:border-slate-800/60 bg-sky-50/90 dark:bg-slate-950/90 backdrop-blur-xl"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        aria-label="Разделы личного кабинета"
+      >
+        <div className="flex overflow-x-auto scrollbar-hide px-2 py-2 gap-1">
+          {menuItems.map(item => {
+            const active = activeSection === item.id
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveSection(item.id)
+                  // плавно к началу контента — иначе пользователь видит ту же область
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
+                aria-current={active ? 'page' : undefined}
+                className={`relative flex-1 min-w-[68px] flex flex-col items-center justify-center gap-1 px-2 py-2 rounded-xl transition-all ${
+                  active
+                    ? 'bg-gradient-to-br from-blue-500/25 to-cyan-500/15 border border-blue-500/40 shadow-lg shadow-blue-500/20'
+                    : 'border border-transparent'
+                }`}
+              >
+                <div className="relative">
+                  <item.Icon
+                    className={`w-6 h-6 transition-colors ${
+                      active
+                        ? 'text-blue-600 dark:text-blue-300'
+                        : 'text-sky-700 dark:text-slate-400'
+                    }`}
+                    strokeWidth={active ? 2.25 : 1.75}
+                  />
+                  {item.badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 inline-flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold ring-2 ring-sky-50 dark:ring-slate-950">
+                      {item.badge > 9 ? '9+' : item.badge}
+                    </span>
+                  )}
+                </div>
+                <span
+                  className={`text-[10px] leading-tight font-medium truncate max-w-full ${
+                    active
+                      ? 'text-blue-700 dark:text-blue-300'
+                      : 'text-sky-700 dark:text-slate-400'
+                  }`}
+                >
+                  {item.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </nav>
     </div>
   )
 }

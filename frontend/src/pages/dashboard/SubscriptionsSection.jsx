@@ -81,9 +81,12 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
         </div>
       ) : (
         subscriptions.map(sub => {
+          // PG numeric может прийти строкой ("0.00") — оборачиваем в Number() везде.
+          const usedGb  = Number(sub.traffic_used_gb)  || 0
+          const limitGb = Number(sub.traffic_limit_gb) || 0
           // Точный процент для ширины бара + текст («<1%» если меньше 1)
-          const trafficPercentRaw = sub.traffic_limit_gb > 0
-            ? Math.min(100, (Number(sub.traffic_used_gb || 0) / Number(sub.traffic_limit_gb)) * 100)
+          const trafficPercentRaw = limitGb > 0
+            ? Math.min(100, (usedGb / limitGb) * 100)
             : 0
           const trafficPercent = trafficPercentRaw >= 1
             ? Math.round(trafficPercentRaw)
@@ -171,7 +174,7 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
                     <div className="flex items-center justify-between">
                       <label className="text-sm font-medium text-sky-700 dark:text-slate-300">Использование трафика</label>
                       <span className="text-sm font-mono text-sky-700 dark:text-slate-400 dark:text-slate-400">
-                        {(sub.traffic_used_gb || 0).toFixed(2)} / {sub.traffic_limit_gb} GB
+                        {usedGb.toFixed(2)} / {limitGb} GB
                       </span>
                     </div>
                     <div className="w-full h-4 bg-sky-100 dark:bg-slate-900 rounded-full overflow-hidden border border-sky-300 dark:border-slate-700">

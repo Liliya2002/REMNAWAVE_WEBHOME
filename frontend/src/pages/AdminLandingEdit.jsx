@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Save, Eye, Code, Search, ExternalLink,
   CheckCircle, Ban, FileText, RefreshCw, Image as ImageIcon, History,
-  BarChart2
+  BarChart2, Home as HomeIcon
 } from 'lucide-react'
 import CodeMirror from '@uiw/react-codemirror'
 import { html as cmHtml } from '@codemirror/lang-html'
@@ -80,6 +80,8 @@ export default function AdminLandingEdit() {
     og_image: '',
     canonical_url: '',
   })
+  const [isHome, setIsHome] = useState(false)
+  const [homeBusy, setHomeBusy] = useState(false)
 
   useEffect(() => {
     if (isNew) return
@@ -103,6 +105,7 @@ export default function AdminLandingEdit() {
           og_image: data.landing.og_image || '',
           canonical_url: data.landing.canonical_url || '',
         })
+        setIsHome(!!data.landing.is_home)
         setAutoSlug(false)
       } catch (e) {
         setError(e.message)
@@ -139,6 +142,32 @@ export default function AdminLandingEdit() {
       setError(e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function toggleHome() {
+    if (isNew) {
+      setError('Сначала сохраните лендинг — назначить его главной можно только после создания')
+      return
+    }
+    if (!form.is_published && !isHome) {
+      setError('Сначала опубликуйте лендинг — иначе на главной покажется дефолтная страница')
+      return
+    }
+    try {
+      setHomeBusy(true)
+      setError(null)
+      const url = isHome ? '/api/admin/landings/clear-home' : `/api/admin/landings/${id}/set-as-home`
+      const res = await apiFetch(url, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Не удалось обновить главную')
+      setIsHome(!isHome)
+      setSuccess(isHome ? 'Снят с главной' : 'Назначен главной страницей')
+      setTimeout(() => setSuccess(null), 2500)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setHomeBusy(false)
     }
   }
 
@@ -353,6 +382,38 @@ export default function AdminLandingEdit() {
             />
             <div className="text-[10px] text-slate-500 mt-1">Меньше — левее. При равных — по дате создания.</div>
           </div>
+        </div>
+
+        {/* Homepage toggle */}
+        <div className="grid grid-cols-1 gap-3 mt-4 pt-4 border-t border-slate-700/40">
+          <button
+            type="button"
+            onClick={toggleHome}
+            disabled={homeBusy || isNew}
+            className={`flex items-start gap-3 px-3 py-2.5 w-full rounded-lg border text-left transition disabled:opacity-50 disabled:cursor-not-allowed ${
+              isHome
+                ? 'bg-amber-500/10 border-amber-500/40 hover:bg-amber-500/15'
+                : 'bg-slate-900/40 border-slate-700/50 hover:border-amber-500/40'
+            }`}
+            title={isNew ? 'Сначала сохраните лендинг' : isHome ? 'Снять с главной' : 'Назначить главной'}
+          >
+            <HomeIcon className={`w-5 h-5 mt-0.5 ${isHome ? 'text-amber-300' : 'text-slate-400'}`} />
+            <div className="flex-1">
+              <div className={`text-sm font-medium ${isHome ? 'text-amber-200' : 'text-white'}`}>
+                {isHome ? 'Этот лендинг — главная страница сайта' : 'Сделать главной страницей сайта'}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                {isHome
+                  ? 'Открывается по адресу «/». Нажмите, чтобы снять — главная вернётся к стандартной.'
+                  : isNew
+                    ? 'Доступно после первого сохранения'
+                    : !form.is_published
+                      ? 'Сначала опубликуйте лендинг'
+                      : 'Заменит стандартную главную страницу — посетители увидят содержимое этого лендинга'}
+              </div>
+            </div>
+            {homeBusy && <RefreshCw className="w-4 h-4 text-amber-300 animate-spin" />}
+          </button>
         </div>
       </div>
 

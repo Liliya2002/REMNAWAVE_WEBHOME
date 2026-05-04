@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { verifyToken, verifyAdmin } = require('../middleware');
 const { sanitizeLandingHtml } = require('../services/landingSanitizer');
+const { DEFAULT_HOME_HTML, DEFAULT_HOME_META } = require('../services/defaultHomeTemplate');
 
 const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -82,13 +83,15 @@ router.get('/', verifyToken, verifyAdmin, async (req, res) => {
       `SELECT lp.id, lp.slug, lp.title, lp.is_published, lp.show_in_menu, lp.menu_order,
               lp.meta_title, lp.meta_description,
               lp.created_at, lp.updated_at, lp.published_at,
-              COALESCE(v30.views30, 0) AS views_30d
+              COALESCE(v30.views30, 0) AS views_30d,
+              (sc.home_landing_id = lp.id) AS is_home
        FROM landing_pages lp
        LEFT JOIN LATERAL (
          SELECT COUNT(*)::int AS views30
          FROM landing_page_visits
          WHERE landing_id = lp.id AND visited_at > NOW() - INTERVAL '30 days'
        ) v30 ON true
+       LEFT JOIN site_config sc ON true
        ${where}
        ORDER BY lp.updated_at DESC`,
       params
@@ -108,7 +111,13 @@ router.get('/:id', verifyToken, verifyAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (!id) return res.status(400).json({ error: 'Invalid id' });
-    const r = await db.query('SELECT * FROM landing_pages WHERE id = $1', [id]);
+    const r = await db.query(
+      `SELECT lp.*, (sc.home_landing_id = lp.id) AS is_home
+         FROM landing_pages lp
+         LEFT JOIN site_config sc ON true
+        WHERE lp.id = $1`,
+      [id]
+    );
     if (r.rows.length === 0) return res.status(404).json({ error: 'Not found' });
     res.json({ landing: r.rows[0] });
   } catch (err) {
@@ -277,6 +286,94 @@ router.post('/:id/toggle-publish', verifyToken, verifyAdmin, async (req, res) =>
   } catch (err) {
     console.error('Landing toggle-publish error:', err);
     res.status(500).json({ error: 'Failed to toggle publish' });
+  }
+});
+
+/**
+ * POST /api/admin/landings/import-default-home
+ * Создаёт лендинг, заполненный HTML-снимком текущего <Landing /> компонента.
+ * Дальше админ редактирует тексты в визуальном редакторе и при желании
+ * назначает его главной (set-as-home).
+ *
+ * Идемпотентность: если slug "home" свободен — занимаем его. Иначе пробуем
+ * home-2, home-3, ... до 99. Возвращаем созданный (или ранее созданный) лендинг.
+ */
+router.post('/import-default-home', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    // Подбираем свободный slug
+    let slug = 'home';
+    for (let i = 2; i <= 99; i++) {
+      const r = await db.query('SELECT id FROM landing_pages WHERE slug = $1 LIMIT 1', [slug]);
+      if (r.rows.length === 0) break;
+      slug = `home-${i}`;
+    }
+
+    const safeContent = sanitizeLandingHtml(DEFAULT_HOME_HTML);
+
+    const r = await db.query(
+      `INSERT INTO landing_pages
+        (slug, title, content, is_published, show_in_menu, menu_order,
+         meta_title, meta_description, meta_keywords, schema_type, created_by)
+       VALUES ($1,$2,$3,false,false,0,$4,$5,$6,$7,$8)
+       RETURNING *`,
+      [
+        slug, DEFAULT_HOME_META.title, safeContent,
+        DEFAULT_HOME_META.meta_title, DEFAULT_HOME_META.meta_description,
+        DEFAULT_HOME_META.meta_keywords, DEFAULT_HOME_META.schema_type,
+        req.userId,
+      ]
+    );
+    const created = r.rows[0];
+    writeAudit(created.id, req.userId, 'create', { source: 'import-default-home' });
+    res.json({ landing: created });
+  } catch (err) {
+    console.error('Import-default-home error:', err);
+    res.status(500).json({ error: 'Failed to import default home' });
+  }
+});
+
+/**
+ * POST /api/admin/landings/:id/set-as-home
+ * Назначить лендинг главной страницей (site_config.home_landing_id).
+ * Лендинг должен быть опубликован — иначе посетители увидят 404 от /api/landings/home.
+ */
+router.post('/:id/set-as-home', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid id' });
+
+    const r = await db.query('SELECT id, is_published FROM landing_pages WHERE id = $1', [id]);
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Not found' });
+    if (!r.rows[0].is_published) {
+      return res.status(400).json({ error: 'Сначала опубликуйте лендинг — иначе главная отдаст 404 и покажется дефолтная страница' });
+    }
+
+    await db.query(
+      'UPDATE site_config SET home_landing_id = $1 WHERE id = (SELECT id FROM site_config LIMIT 1)',
+      [id]
+    );
+    writeAudit(id, req.userId, 'set_as_home', null);
+    res.json({ ok: true, home_landing_id: id });
+  } catch (err) {
+    console.error('Set-as-home error:', err);
+    res.status(500).json({ error: 'Failed to set home landing' });
+  }
+});
+
+/**
+ * POST /api/admin/landings/clear-home
+ * Снять любой назначенный лендинг с главной — главная вернётся к дефолтной странице.
+ */
+router.post('/clear-home', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const before = await db.query('SELECT home_landing_id FROM site_config LIMIT 1');
+    const prevId = before.rows[0]?.home_landing_id || null;
+    await db.query('UPDATE site_config SET home_landing_id = NULL WHERE id = (SELECT id FROM site_config LIMIT 1)');
+    if (prevId) writeAudit(prevId, req.userId, 'clear_home', null);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Clear-home error:', err);
+    res.status(500).json({ error: 'Failed to clear home landing' });
   }
 });
 

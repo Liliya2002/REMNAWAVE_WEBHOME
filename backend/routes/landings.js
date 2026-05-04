@@ -3,6 +3,46 @@ const router = express.Router();
 const db = require('../db');
 
 /**
+ * GET /api/landings/home
+ * Лендинг, назначенный главной страницей (site_config.home_landing_id).
+ * Возвращает 404, если ничего не назначено или назначенный лендинг не опубликован —
+ * фронт в этом случае отрисует дефолтный <Landing /> как fallback.
+ * ВАЖНО: должен идти ПЕРЕД маршрутом /:slug, иначе слово "home" попадёт туда.
+ */
+router.get('/home', async (req, res) => {
+  try {
+    const r = await db.query(
+      `SELECT lp.slug, lp.title, lp.content,
+              lp.meta_title, lp.meta_description, lp.meta_keywords, lp.og_image, lp.canonical_url,
+              lp.schema_type, lp.published_at, lp.updated_at
+         FROM site_config sc
+         JOIN landing_pages lp ON lp.id = sc.home_landing_id
+        WHERE lp.is_published = true
+        LIMIT 1`
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'No home landing' });
+    const landing = r.rows[0];
+
+    // Учёт просмотра — fire-and-forget, без ботов
+    const ua = String(req.headers['user-agent'] || '').slice(0, 255);
+    const referer = String(req.headers['referer'] || '').slice(0, 500);
+    const isBot = /bot|crawler|spider|crawling|preview|fetch/i.test(ua);
+    if (!isBot) {
+      db.query(
+        `INSERT INTO landing_page_visits (landing_id, user_agent, referrer)
+         SELECT id, $2, $3 FROM landing_pages WHERE slug = $1 AND is_published = true`,
+        [landing.slug, ua, referer]
+      ).catch(err => console.error('Home visit insert error:', err.message));
+    }
+
+    res.json({ landing });
+  } catch (err) {
+    console.error('Home landing get error:', err);
+    res.status(500).json({ error: 'Failed to load home landing' });
+  }
+});
+
+/**
  * GET /api/landings/menu
  * Список лендингов для отображения в верхнем меню сайта.
  * Только published + show_in_menu, отсортировано по menu_order, затем по id.

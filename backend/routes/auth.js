@@ -11,6 +11,11 @@ const { checkBannedIp } = require('../middleware/ipBan')
 
 const router = express.Router()
 
+// Нормализаторы — login и email хранятся и сравниваются case-insensitive.
+// Применяются ВЕЗДЕ перед SELECT/INSERT/UPDATE по login или email.
+const normLogin = (s) => String(s || '').trim().toLowerCase()
+const normEmail = (s) => String(s || '').trim().toLowerCase()
+
 // Блокировка после неудачных попыток входа (in-memory)
 const loginAttempts = new Map()
 const MAX_LOGIN_ATTEMPTS = 5
@@ -51,7 +56,7 @@ async function isEmailConfirmationRequired() {
 
 // Отправка кода подтверждения на email
 router.post('/send-code', async (req, res) => {
-  const { email } = req.body
+  const email = normEmail(req.body.email)
   if (!email) return res.status(400).json({ error: 'Email обязателен' })
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -144,14 +149,17 @@ router.post('/confirm-email', require('../middleware').verifyToken, async (req, 
 
 // Регистрация пользователя
 router.post('/register', checkBannedIp, async (req, res) => {
-  const { login, email, password, emailCode, referralCode } = req.body
+  const { password, emailCode, referralCode } = req.body
+  // Логин и email нормализуем сразу — case-insensitive унификация.
+  const login = normLogin(req.body.login)
+  const email = normEmail(req.body.email)
   if (!login || !email || !password) return res.status(400).json({ error: 'Missing fields' })
 
   // Валидация логина
   if (login.length < 3 || login.length > 30) {
     return res.status(400).json({ error: 'Логин должен быть от 3 до 30 символов' })
   }
-  if (!/^[a-zA-Z0-9_-]+$/.test(login)) {
+  if (!/^[a-z0-9_-]+$/.test(login)) {
     return res.status(400).json({ error: 'Логин может содержать только латиницу, цифры, _ и -' })
   }
 
@@ -232,7 +240,10 @@ router.post('/register', checkBannedIp, async (req, res) => {
 
 // Вход пользователя
 router.post('/login', async (req, res) => {
-  const { login, password } = req.body
+  // login принимаем case-insensitive — нормализуем перед всем (lockout-cache, query, recordFailedLogin).
+  // Юзер может ввести email вместо логина (кстати нормально что email тоже в нижнем регистре после норм).
+  const login = normLogin(req.body.login)
+  const { password } = req.body
   if (!login || !password) return res.status(400).json({ error: 'Missing fields' })
   try {
     // Проверяем блокировку аккаунта
@@ -330,7 +341,8 @@ router.post('/telegram', async (req, res) => {
     }
 
     // Новый пользователь — регистрация через Telegram
-    const login = tgUsername || `tg_${telegramId}`
+    // tg_username может быть с заглавными — нормализуем для нашей системы
+    const login = normLogin(tgUsername) || `tg_${telegramId}`
     // Проверяем, не занят ли логин
     const loginCheck = await db.query('SELECT 1 FROM users WHERE login = $1', [login])
     const finalLogin = loginCheck.rows.length > 0 ? `tg_${telegramId}` : login
@@ -446,11 +458,11 @@ router.post('/telegram/link', async (req, res) => {
  */
 router.post('/forgot-password', async (req, res) => {
   try {
-    const { email } = req.body
+    const email = normEmail(req.body.email)
     if (!email) return res.status(400).json({ error: 'Email обязателен' })
 
     // Всегда отвечаем 200 — чтобы не палить наличие аккаунта
-    const user = await db.query('SELECT id, email FROM users WHERE email = $1', [email.toLowerCase().trim()])
+    const user = await db.query('SELECT id, email FROM users WHERE email = $1', [email])
     if (user.rows.length === 0) {
       return res.json({ ok: true, message: 'Если аккаунт с таким email существует, ссылка отправлена' })
     }
