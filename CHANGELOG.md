@@ -4,6 +4,38 @@
 
 ---
 
+## v0.1.22 — Hotfix: rate-limit съедал info/poll-endpoints → 429 везде
+
+После v0.1.19 на `/auth/*` стоял глобальный `authLimiter` — 20 запросов / 15 минут на IP. Это рушит сразу несколько фич, добавленных в v0.1.19:
+
+- `/auth/register/poll` поллится **раз в 2 сек** до 15 мин — это до 450 запросов на одного юзера в форме регистрации через бот.
+- `/auth/telegram/link/poll` — то же самое для привязки.
+- `/auth/telegram/availability`, `/auth/telegram/oidc/info` пингуются **на каждой загрузке** `/login` и `/register`.
+
+Юзер выжирает лимит мгновенно, дальше — 429 на всё:
+- кнопка «Войти через Telegram» (OIDC) пропадает с `/login`
+- кнопка «Регистрация через бот» пропадает с `/register`
+- классический `/auth/login` отвечает «Too many auth attempts»
+
+**Фикс:**
+
+1. **Backend** — в [`backend/index.js`](backend/index.js) `authLimiter.skip()` теперь пропускает все idempotent / polling / one-time-token endpoints. Жёсткий лимит остаётся только на brute-force-уязвимые: `/login`, `/register`, `/send-code`, `/forgot-password`, `/reset-password`, `/confirm-email`, `/register/start`, `/telegram/link/start`.
+
+   Skip-список:
+   ```
+   /telegram/availability   /telegram/oidc/info
+   /telegram/oidc/start     /telegram/callback
+   /register/poll           /telegram/link/poll
+   /tg-login
+   ```
+   Все они защищены либо непредсказуемым one-time токеном (атомарный `used_at`), либо state+PKCE+client_secret (OIDC).
+
+2. **Frontend** — кнопки теперь кэшируют последний успешный ответ от `/availability` и `/oidc/info` в `sessionStorage`. Если следующий запрос провалится (429/network/CORS) — фронт переиспользует кэш и кнопка не исчезает.
+
+После деплоя контейнер backend стартует с чистым in-memory rate-limit store — **все накопленные счётчики сбросятся**, юзеры смогут войти сразу.
+
+---
+
 ## v0.1.21 — Hotfix: TgLogin одноразовый токен «истёк» из-за двойного fetch
 
 После OIDC callback (или после перехода с inline-кнопки бота на сайт) юзер видел ошибку «Токен невалиден или истёк» — хотя токен только что создан.

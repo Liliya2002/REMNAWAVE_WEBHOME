@@ -37,12 +37,20 @@ export default function SecuritySection({ user }) {
   const [tgBotAvailable, setTgBotAvailable] = useState(false)
   const [showLinkModal, setShowLinkModal] = useState(false)
 
-  // Проверяем доступен ли бот для привязки
+  // Проверяем доступен ли бот для привязки. Фолбэк на sessionStorage если
+  // запрос провалится (429/network) — кнопка не должна пропадать случайно.
   useEffect(() => {
+    const cached = sessionStorage.getItem('bot_available')
+    if (cached === '1') setTgBotAvailable(true)
+
     fetch(`${API}/auth/telegram/availability`)
-      .then(r => r.ok ? r.json() : { bot_available: false })
-      .then(d => setTgBotAvailable(!!d.bot_available))
-      .catch(() => setTgBotAvailable(false))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return
+        setTgBotAvailable(!!d.bot_available)
+        sessionStorage.setItem('bot_available', d.bot_available ? '1' : '0')
+      })
+      .catch(() => { /* keep cached */ })
   }, [])
   const [sessions, setSessions] = useState([])
   const [sessionsLoading, setSessionsLoading] = useState(true)

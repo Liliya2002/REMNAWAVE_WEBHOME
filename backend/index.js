@@ -69,13 +69,32 @@ const globalLimiter = rateLimit({
 })
 app.use(globalLimiter)
 
-// Rate limiting — auth (строгий)
+// Rate limiting — auth (строгий, на brute-force-уязвимые endpoints).
+//
+// Скипаем endpoints, которые либо публичные read-only (фронт пингает на
+// каждой загрузке /login и /register — `availability`, `oidc/info`), либо
+// поллятся с фронта раз в 2 сек (`register/poll`, `link/poll` — могут
+// сделать сотни запросов за 15 мин), либо защищены одноразовым непредсказуемым
+// токеном (`tg-login`, `telegram/callback`).
+//
+// req.path внутри authLimiter — это путь ОТНОСИТЕЛЬНО mount '/auth'.
+const AUTH_SKIP_PATHS = new Set([
+  '/telegram/availability',
+  '/telegram/oidc/info',
+  '/telegram/oidc/start',
+  '/telegram/callback',
+  '/register/poll',
+  '/telegram/link/poll',
+  '/tg-login',
+])
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many auth attempts, please try again later' }
+  message: { error: 'Too many auth attempts, please try again later' },
+  skip: (req) => AUTH_SKIP_PATHS.has(req.path),
 })
 
 // Rate limiting — платежи

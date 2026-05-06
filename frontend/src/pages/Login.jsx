@@ -13,12 +13,21 @@ export default function Login(){
   const [oidcAvailable, setOidcAvailable] = useState(false)
   const navigate = useNavigate()
 
-  // Проверяем доступность OIDC-кнопки (публичный endpoint, без авторизации)
+  // Проверяем доступность OIDC-кнопки (публичный endpoint, без авторизации).
+  // Если запрос упал (429/network) — переиспользуем последний успешный ответ
+  // из sessionStorage чтобы кнопка не пропадала случайно.
   useEffect(() => {
+    const cached = sessionStorage.getItem('oidc_available')
+    if (cached === '1') setOidcAvailable(true)
+
     fetch(`${API}/auth/telegram/oidc/info`)
-      .then(r => r.ok ? r.json() : { available: false })
-      .then(d => setOidcAvailable(!!d.available))
-      .catch(() => setOidcAvailable(false))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return
+        setOidcAvailable(!!d.available)
+        sessionStorage.setItem('oidc_available', d.available ? '1' : '0')
+      })
+      .catch(() => { /* keep cached */ })
   }, [])
 
   // CapsLock detect для пароля — показывает warning под полем

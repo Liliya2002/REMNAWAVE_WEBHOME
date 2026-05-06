@@ -27,12 +27,20 @@ export default function Register(){
   const [searchParams] = useSearchParams()
   const referralCode = searchParams.get('ref')
 
-  // Проверяем доступность регистрации через бот
+  // Проверяем доступность регистрации через бот. Если 429/network — фолбэк
+  // на закэшированное значение из sessionStorage, чтобы кнопка не пропадала.
   useEffect(() => {
+    const cached = sessionStorage.getItem('bot_available')
+    if (cached === '1') setBotAvailable(true)
+
     fetch(`${API}/auth/telegram/availability`)
-      .then(r => r.ok ? r.json() : { bot_available: false })
-      .then(d => setBotAvailable(!!d.bot_available))
-      .catch(() => setBotAvailable(false))
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return
+        setBotAvailable(!!d.bot_available)
+        sessionStorage.setItem('bot_available', d.bot_available ? '1' : '0')
+      })
+      .catch(() => { /* keep cached */ })
   }, [])
 
   // Таймер обратного отсчёта для повторной отправки
