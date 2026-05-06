@@ -4,6 +4,22 @@
 
 ---
 
+## v0.1.10 — Hotfix: Telegram webhook требует bot.init()
+
+В webhook-режиме `bot.handleUpdate()` ругался **«Bot not initialized! Either call `await bot.init()`...»** на каждый update от Telegram. В polling-режиме это не проявлялось — `bot.start()` инициализирует бота сам.
+
+**Фикс:** в `services/telegramBot/index.js → start()` для webhook-режима теперь вызываем `await bot.init()` сразу после создания Bot, до `setWebhook`. Это кеширует `botInfo` (имя, id) внутри grammY-инстанса — без него framework отказывается обрабатывать updates.
+
+Симптомы до фикса (видно в логах nginx + backend):
+```
+[TG webhook] Bot not initialized! ...
+POST /api/tg/webhook → 403
+```
+
+После фикса — webhook отдаёт 200, бот обрабатывает входящие.
+
+---
+
 ## v0.1.9 — Telegram-бот, YC SSH-ключи + grant + auto-VPS, миллион улучшений
 
 Большой релиз: собственный Telegram-бот с регистрацией / личным кабинетом / рефералкой,

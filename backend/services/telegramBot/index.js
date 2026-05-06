@@ -103,6 +103,16 @@ async function start() {
       startupError = 'Для webhook-режима нужен webhook_url'
       return { ok: false, error: startupError }
     }
+    // ВАЖНО: в webhook-режиме нужно вручную инициализировать бота —
+    // bot.start() этого не делает (он только для polling). Без init grammY
+    // на каждом handleUpdate() будет кидать "Bot not initialized!".
+    // bot.init() вызывает getMe() и кеширует botInfo внутри инстанса.
+    try {
+      await bot.init()
+    } catch (err) {
+      startupError = `bot.init() failed: ${err.message}`
+      return { ok: false, error: startupError }
+    }
     try {
       await bot.api.setWebhook(settings.webhook_url, {
         secret_token: settings.webhook_secret || undefined,
