@@ -4,6 +4,23 @@
 
 ---
 
+## v0.1.13 — Hotfix: TG «Купить подписку» → схема plans
+
+В `handleBuy` я писал `SELECT id, name, price, duration_days, traffic_limit_gb FROM plans` — но в реальной схеме таких колонок нет. У `plans`:
+- цены: `price_monthly` / `price_quarterly` / `price_yearly` (три отдельных)
+- трафик: `traffic_gb` (не `traffic_limit_gb` — та существует только в `subscriptions`)
+- нет `duration_days` — длительность определяется выбором периода при оплате
+
+Симптом: юзер тапает «🛒 Купить подписку» → SQL error → webhook 403.
+
+**Фикс:**
+- Запрос переписан под реальную схему
+- Триальные тарифы (`is_trial=true`) больше не показываются — у них активация отдельным flow
+- В UI бота показывается `price_monthly` как основная цена; если есть `price_quarterly`/`price_yearly` — упоминаются курсивом ниже как «3 мес: X ₽ · год: Y ₽»
+- Сортировка по `tier ASC, sort_order ASC, price_monthly ASC` (как у admin-страницы тарифов)
+
+---
+
 ## v0.1.12 — Hotfix: nginx http2 deprecated warning + proxy buffers
 
 **1. `listen ... http2` deprecated warning**

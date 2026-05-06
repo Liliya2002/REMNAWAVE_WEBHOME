@@ -324,24 +324,41 @@ async function handleBuy(ctx) {
   const user = await getUserByTg(ctx.from.id)
   if (!user) return ctx.reply('Сначала нажми /start.')
 
-  // Тарифы из БД
+  // Тарифы из БД. Реальная схема:
+  //   price_monthly / price_quarterly / price_yearly — три отдельных цены
+  //   traffic_gb (не traffic_limit_gb)
+  //   hwid_device_limit (опционально)
+  //   tier / sort_order / color / is_trial
+  //
+  // Триальные тарифы (is_trial=true) не показываем в "Купить" — они активируются
+  // отдельным flow на сайте, и в боте предлагать их «купить» бессмысленно.
   const r = await db.query(
-    `SELECT id, name, price, duration_days, traffic_limit_gb, hwid_device_limit, tier, color
+    `SELECT id, name, description, is_trial, tier, color,
+            traffic_gb, hwid_device_limit,
+            price_monthly, price_quarterly, price_yearly
        FROM plans
-      WHERE is_active = true
-      ORDER BY sort_order ASC, price ASC`
+      WHERE is_active = true AND is_trial = false
+      ORDER BY tier ASC, sort_order ASC, price_monthly ASC NULLS LAST`
   )
 
   if (r.rows.length === 0) {
-    return ctx.reply('Тарифы пока не настроены. Загляни позже.')
+    return ctx.reply('Платные тарифы пока не настроены. Загляни позже или используй тестовый период на сайте.')
   }
 
   const lines = ['🛒 <b>Тарифы</b>\n']
   for (const p of r.rows) {
-    const traffic = p.traffic_limit_gb ? `${p.traffic_limit_gb} GB` : '∞'
+    const traffic = p.traffic_gb ? `${p.traffic_gb} GB` : '∞ GB'
     const devices = p.hwid_device_limit ? `${p.hwid_device_limit} устр.` : '∞ устр.'
-    lines.push(`<b>${escapeHtml(p.name)}</b> — ${fmtMoney(p.price)} ₽ / ${p.duration_days} дн.`)
+    const monthly = p.price_monthly != null ? `${fmtMoney(p.price_monthly)} ₽/мес` : '—'
+
+    lines.push(`<b>${escapeHtml(p.name)}</b> — ${monthly}`)
     lines.push(`   📊 ${traffic} · 📱 ${devices}`)
+
+    // Если есть скидочные периоды — упомянем
+    const extras = []
+    if (p.price_quarterly != null) extras.push(`3 мес: ${fmtMoney(p.price_quarterly)} ₽`)
+    if (p.price_yearly != null)    extras.push(`год: ${fmtMoney(p.price_yearly)} ₽`)
+    if (extras.length) lines.push(`   <i>${extras.join(' · ')}</i>`)
     lines.push('')
   }
   lines.push('Жми кнопку с нужным тарифом — откроется оплата на сайте.')
@@ -351,7 +368,8 @@ async function handleBuy(ctx) {
   const kb = new InlineKeyboard()
   for (const p of r.rows) {
     const url = `${FRONTEND_URL}/tg-login?t=${token}&redirect=/pricing?plan=${p.id}`
-    kb.url(`${p.name} · ${fmtMoney(p.price)} ₽`, url).row()
+    const priceLabel = p.price_monthly != null ? `${fmtMoney(p.price_monthly)} ₽/мес` : 'выбрать'
+    kb.url(`${p.name} · ${priceLabel}`, url).row()
   }
 
   await ctx.reply(lines.join('\n'), { reply_markup: kb, parse_mode: 'HTML' })
