@@ -4,6 +4,22 @@
 
 ---
 
+## v0.1.20 — Hotfix: OIDC sub != telegram_id (BIGINT overflow)
+
+При входе через OIDC падало с `value "11713064933933089000" is out of range for type bigint`. Причина: OAuth/OIDC `sub` claim — это **opaque subject identifier**, а не реальный telegram_id (который приходит через `ctx.from.id` в боте). Telegram возвращает sub значениями ~1.17×10¹⁹, что больше PostgreSQL `BIGINT` (макс 9.2×10¹⁸).
+
+**Фикс:**
+
+- Миграция [`0014_users_oidc_sub`](backend/migrations/0014_users_oidc_sub.up.sql) — отдельная колонка `users.telegram_oidc_sub VARCHAR(64)` + UNIQUE INDEX (partial, WHERE NOT NULL).
+- В [OIDC callback](backend/routes/auth.js) теперь:
+  - sub читается как строка (не парсится в int)
+  - find/create юзера идёт **по `telegram_oidc_sub`**, не по `telegram_id`
+  - `telegram_id` оставляется NULL — он будет проставлен **только когда юзер сделает `/start` в боте** через привязку из `/dashboard → Безопасность`.
+
+**Trade-off:** юзер, зашедший через OIDC, получает аккаунт, но бот ему писать не сможет (нужен реальный chat_id). Чтобы получать TG-уведомления — пусть откроет «Привязать через Telegram-бот» в `/dashboard → Безопасность` (мы добавили эту кнопку в v0.1.19) — handler `/start link_<token>` корректно проставит реальный `telegram_id`.
+
+---
+
 ## v0.1.19 — Удаление Login Widget, регистрация и привязка через бот по QR
 
 **Удалено** — старый Telegram Login Widget (HMAC поверх данных через `bot_token`):

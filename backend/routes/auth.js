@@ -652,15 +652,20 @@ router.get('/telegram/callback', async (req, res) => {
 
     const claims = await oidcSvc.verifyIdToken(tokens.id_token, { clientId: s.oidc_client_id })
 
-    const telegramId = parseInt(claims.sub, 10)
-    if (!telegramId) {
-      return res.status(400).send('OIDC: невалидный sub claim (не telegram_id).')
+    // sub — opaque OIDC subject identifier. У Telegram'а он не равен telegram_id
+    // (которое возвращает бот через ctx.from.id) и легко выходит за BIGINT.
+    // Поэтому хранится как VARCHAR в users.telegram_oidc_sub.
+    const oidcSub = String(claims.sub || '').trim()
+    if (!oidcSub) {
+      return res.status(400).send('OIDC: пустой sub claim.')
     }
     const tgUsername = claims.preferred_username || null
 
-    // Найти или создать юзера — та же логика что в POST /telegram (Login Widget).
+    // Найти/создать юзера по oidc_sub. telegram_id остаётся NULL —
+    // он придёт только когда юзер сделает /start в боте (link через
+    // /dashboard → Безопасность).
     let userId
-    const existing = await db.query('SELECT * FROM users WHERE telegram_id = $1', [telegramId])
+    const existing = await db.query('SELECT * FROM users WHERE telegram_oidc_sub = $1', [oidcSub])
     if (existing.rows.length > 0) {
       const u = existing.rows[0]
       if (!u.is_active) return res.status(403).send('Аккаунт заблокирован.')
@@ -669,14 +674,19 @@ router.get('/telegram/callback', async (req, res) => {
       }
       userId = u.id
     } else {
-      const login = normLogin(tgUsername) || `tg_${telegramId}`
-      const lc = await db.query('SELECT 1 FROM users WHERE login = $1', [login])
-      const finalLogin = lc.rows.length > 0 ? `tg_${telegramId}` : login
+      // Логин: предпочитаем @username, fallback на oidc_<short-hash>.
+      const subTail = oidcSub.replace(/[^a-z0-9]/gi, '').slice(-10) || crypto.randomBytes(4).toString('hex')
+      const baseLogin = normLogin(tgUsername) || `oidc_${subTail}`
+      const lc = await db.query('SELECT 1 FROM users WHERE login = $1', [baseLogin])
+      const finalLogin = lc.rows.length > 0 ? `oidc_${subTail}` : baseLogin
       const randomPass = crypto.randomBytes(32).toString('hex')
       const hash = await bcrypt.hash(randomPass, 12)
+      // Email — синтетический; OIDC может вернуть phone_number, но это не email.
+      const syntheticEmail = `${subTail}@oidc.telegram.user`
       const r = await db.query(
-        'INSERT INTO users (login, email, password_hash, telegram_id, telegram_username) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-        [finalLogin, `${telegramId}@telegram.user`, hash, telegramId, tgUsername]
+        `INSERT INTO users (login, email, password_hash, telegram_oidc_sub, telegram_username)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [finalLogin, syntheticEmail, hash, oidcSub, tgUsername]
       )
       userId = r.rows[0].id
       try { await referralService.createReferralLink(userId) } catch (err) {
