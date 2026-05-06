@@ -4,6 +4,16 @@
 
 ---
 
+## v0.1.15 — TG Login Widget: bot_token из БД, не из ENV
+
+`verifyTelegramData()` (HMAC-проверка виджета) читал токен только из `process.env.TELEGRAM_BOT_TOKEN`. Это значило что юзер должен был указать токен **в двух местах** — в админке `/admin/telegram` (для бота) и в `.env` (для виджета). Несовместно и неудобно.
+
+**Фикс:** теперь сначала пробуется из `telegram_settings.bot_token` (через `services/telegramBot/settings.getSettings()`), fallback на `process.env.TELEGRAM_BOT_TOKEN` (legacy совместимость).
+
+Теперь достаточно настроить токен один раз в админке.
+
+---
+
 ## v0.1.14 — Telegram Login Widget: build-arg для CI
 
 `<TelegramLoginButton botName={import.meta.env.VITE_TELEGRAM_BOT_NAME} />` существует на формах /login и /register, но в production-сборке имя бота было undefined — `frontend/Dockerfile` и CI workflow не пробрасывали `VITE_TELEGRAM_BOT_NAME`. Виджет рендерился с пустым `data-telegram-login` и не показывал кнопку.

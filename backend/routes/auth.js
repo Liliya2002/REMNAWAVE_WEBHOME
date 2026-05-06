@@ -279,9 +279,18 @@ router.post('/login', async (req, res) => {
   }
 })
 
-// Верификация данных Telegram Login Widget
-function verifyTelegramData(data) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN
+// Верификация данных Telegram Login Widget.
+// Токен берём из telegram_settings (приоритет — настраивается через админку
+// /admin/telegram), fallback на process.env.TELEGRAM_BOT_TOKEN (legacy).
+async function verifyTelegramData(data) {
+  let botToken = process.env.TELEGRAM_BOT_TOKEN
+  try {
+    const tgSettings = require('../services/telegramBot/settings')
+    const s = await tgSettings.getSettings()
+    if (s.bot_token) botToken = s.bot_token
+  } catch (err) {
+    // fallback на ENV если settings-модуль не загрузился
+  }
   if (!botToken) return false
 
   const { hash, ...rest } = data
@@ -310,7 +319,7 @@ router.post('/telegram', async (req, res) => {
     return res.status(400).json({ error: 'Некорректные данные Telegram' })
   }
 
-  if (!verifyTelegramData(tgData)) {
+  if (!(await verifyTelegramData(tgData))) {
     return res.status(401).json({ error: 'Невалидная подпись Telegram' })
   }
 
@@ -411,7 +420,7 @@ router.post('/telegram/link', async (req, res) => {
     return res.status(400).json({ error: 'Некорректные данные Telegram' })
   }
 
-  if (!verifyTelegramData(tgData)) {
+  if (!(await verifyTelegramData(tgData))) {
     return res.status(401).json({ error: 'Невалидная подпись Telegram' })
   }
 
