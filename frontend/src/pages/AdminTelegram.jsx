@@ -110,6 +110,10 @@ export default function AdminTelegram() {
         notifications_enabled: settings.notifications_enabled,
         texts: settings.texts,
         menu_buttons: settings.menu_buttons,
+        web_app_url: settings.web_app_url,
+        oidc_enabled: settings.oidc_enabled,
+        oidc_client_id: settings.oidc_client_id,
+        oidc_redirect_uri: settings.oidc_redirect_uri,
         ...extraPatch,
       }
       const r = await authFetch('/api/admin/telegram/settings', {

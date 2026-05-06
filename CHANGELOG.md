@@ -4,6 +4,16 @@
 
 ---
 
+## v0.1.18 — Hotfix: настройки OIDC сбрасывались при сохранении
+
+В `AdminTelegram.jsx → save()` body отправлялся как whitelist полей. Я забыл добавить новые OIDC-поля (`oidc_enabled`, `oidc_client_id`, `oidc_redirect_uri`) и `web_app_url` в этот whitelist. Поэтому когда юзер ставил галочку «Включить OIDC-вход», вводил Client ID + Redirect URI и нажимал «Сохранить» — эти поля просто не уходили на backend, в ответе возвращались старые значения, и фронт перезаписывал state → галочка визуально сбрасывалась.
+
+**Фикс:** все новые поля добавлены в whitelist `body` в [AdminTelegram.jsx:104-117](frontend/src/pages/AdminTelegram.jsx#L104-L117). `oidc_client_secret` сохраняется отдельной кнопкой через `extraPatch` — там было нормально.
+
+Заодно починил `web_app_url` — у него был тот же скрытый баг.
+
+---
+
 ## v0.1.17 — Telegram OAuth 2.0 / OpenID Connect
 
 Добавлен полноценный OIDC-вход параллельно с Login Widget. В отличие от виджета (HMAC поверх данных через `bot_token`), это стандартный flow `authorization_code + PKCE` через [oauth.telegram.org](https://oauth.telegram.org/.well-known/openid-configuration). Креды (`client_id` + `client_secret`) выдаёт `@BotFather` отдельно от `bot_token` командой `/newoauth`.
