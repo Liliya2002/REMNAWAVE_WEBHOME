@@ -132,6 +132,7 @@ jobs:
             VERSION=${{ steps.meta_vars.outputs.VERSION }}
             BUILD_SHA=${{ steps.meta_vars.outputs.BUILD_SHA }}
             BUILD_DATE=${{ steps.meta_vars.outputs.BUILD_DATE }}
+            VITE_TELEGRAM_BOT_NAME=${{ vars.VITE_TELEGRAM_BOT_NAME || secrets.VITE_TELEGRAM_BOT_NAME || '' }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
           platforms: linux/amd64

@@ -7,6 +7,7 @@
 FROM node:20-alpine AS build
 
 ARG VITE_API_URL=
+ARG VITE_TELEGRAM_BOT_NAME=
 ARG VERSION=0.0.0-dev
 ARG BUILD_SHA=
 ARG BUILD_DATE=
@@ -22,6 +23,7 @@ COPY . .
 
 # Прокидываем версию в Vite-сборку как VITE_-переменные (фронт сможет их прочитать через import.meta.env)
 ENV VITE_API_URL=${VITE_API_URL} \
+    VITE_TELEGRAM_BOT_NAME=${VITE_TELEGRAM_BOT_NAME} \
     VITE_VERSION=${VERSION} \
     VITE_BUILD_SHA=${BUILD_SHA} \
     VITE_BUILD_DATE=${BUILD_DATE}

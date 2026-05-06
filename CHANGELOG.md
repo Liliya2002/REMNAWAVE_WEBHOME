@@ -4,6 +4,28 @@
 
 ---
 
+## v0.1.14 — Telegram Login Widget: build-arg для CI
+
+`<TelegramLoginButton botName={import.meta.env.VITE_TELEGRAM_BOT_NAME} />` существует на формах /login и /register, но в production-сборке имя бота было undefined — `frontend/Dockerfile` и CI workflow не пробрасывали `VITE_TELEGRAM_BOT_NAME`. Виджет рендерился с пустым `data-telegram-login` и не показывал кнопку.
+
+**Фикс:**
+- В `frontend/Dockerfile` добавлен `ARG VITE_TELEGRAM_BOT_NAME=` + проброс в `ENV` для Vite-сборки
+- В `.github/workflows/build-images.yml` build-args расширены `VITE_TELEGRAM_BOT_NAME=${{ vars.VITE_TELEGRAM_BOT_NAME || secrets.VITE_TELEGRAM_BOT_NAME || '' }}`
+
+**Что нужно сделать в GitHub репо** (одноразово):
+1. Settings → Secrets and variables → Actions → Variables → New repository variable
+2. Name: `VITE_TELEGRAM_BOT_NAME`, Value: твой bot username (без `@`, например `MyVpnBot`)
+3. Сделать рестарт workflow (push любого коммита или re-run на v0.1.14 тэге)
+
+**Что нужно у @BotFather** (одноразово):
+1. Открыть [@BotFather](https://t.me/BotFather) → `/setdomain`
+2. Выбрать своего бота → ввести домен сайта **без https://** (например `shop.cdn-yandex.top`)
+3. Без этого Telegram не отдаст auth-данные виджету (security check)
+
+После этого на формах входа/регистрации появится синяя кнопка «Войти через Telegram».
+
+---
+
 ## v0.1.13 — Hotfix: TG «Купить подписку» → схема plans
 
 В `handleBuy` я писал `SELECT id, name, price, duration_days, traffic_limit_gb FROM plans` — но в реальной схеме таких колонок нет. У `plans`:
