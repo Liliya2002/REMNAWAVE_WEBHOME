@@ -280,25 +280,35 @@ router.post('/login', async (req, res) => {
 })
 
 // Верификация данных Telegram Login Widget.
+//
+// Алгоритм по docs (https://core.telegram.org/widgets/login):
+//   data_check_string = sort(keys) → "key=value" → join("\n")
+//   secret_key = SHA256(bot_token)
+//   hash должен совпасть с hex(HMAC_SHA256(data_check_string, secret_key))
+//
 // Токен берём из telegram_settings (приоритет — настраивается через админку
 // /admin/telegram), fallback на process.env.TELEGRAM_BOT_TOKEN (legacy).
+//
+// Возвращает { ok, reason } — reason полезен для диагностики "почему упало".
 async function verifyTelegramData(data) {
   let botToken = process.env.TELEGRAM_BOT_TOKEN
   try {
     const tgSettings = require('../services/telegramBot/settings')
     const s = await tgSettings.getSettings()
     if (s.bot_token) botToken = s.bot_token
-  } catch (err) {
-    // fallback на ENV если settings-модуль не загрузился
-  }
-  if (!botToken) return false
+  } catch {}
+  if (!botToken) return { ok: false, reason: 'no_bot_token' }
 
   const { hash, ...rest } = data
-  if (!hash) return false
+  if (!hash) return { ok: false, reason: 'no_hash' }
 
-  // auth_date не старше 5 минут
+  // auth_date не старше 24 часов — защита от replay-атак.
+  // Telegram в docs не указывает лимит, оставляет на наше усмотрение.
   const authDate = parseInt(rest.auth_date, 10)
-  if (isNaN(authDate) || Date.now() / 1000 - authDate > 300) return false
+  if (isNaN(authDate)) return { ok: false, reason: 'bad_auth_date' }
+  const ageSec = Date.now() / 1000 - authDate
+  if (ageSec > 86400) return { ok: false, reason: 'auth_date_expired', ageSec }
+  if (ageSec < -300) return { ok: false, reason: 'auth_date_future' }  // часы сервера расходятся
 
   // data_check_string — отсортированные key=value через \n
   const checkString = Object.keys(rest)
@@ -309,7 +319,10 @@ async function verifyTelegramData(data) {
   const secretKey = crypto.createHash('sha256').update(botToken).digest()
   const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex')
 
-  return crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(hash))
+  if (hmac.length !== hash.length) return { ok: false, reason: 'hash_length_mismatch' }
+  const match = crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(hash))
+  if (!match) return { ok: false, reason: 'hash_mismatch' }
+  return { ok: true }
 }
 
 // Авторизация через Telegram
@@ -319,8 +332,22 @@ router.post('/telegram', async (req, res) => {
     return res.status(400).json({ error: 'Некорректные данные Telegram' })
   }
 
-  if (!(await verifyTelegramData(tgData))) {
-    return res.status(401).json({ error: 'Невалидная подпись Telegram' })
+  const verif = await verifyTelegramData(tgData)
+  if (!verif.ok) {
+    const hints = {
+      no_bot_token:        'Bot token не настроен. Открой /admin/telegram → Подключение и сохрани токен от @BotFather.',
+      hash_mismatch:       'HMAC не сошёлся. Скорее всего bot token в админке не совпадает с тем что у @BotFather, или /setdomain не сделан для этого домена.',
+      auth_date_expired:   'Сессия аутентификации устарела (24+ часов). Перезагрузи страницу и попробуй снова.',
+      auth_date_future:    'Расхождение часов между сервером и Telegram. Проверь NTP на сервере.',
+      no_hash:             'В payload нет поля hash — возможно виджет загрузился неправильно.',
+      bad_auth_date:       'В payload невалидный auth_date.',
+      hash_length_mismatch:'Длина hash отличается от ожидаемой — payload повреждён.',
+    }
+    return res.status(401).json({
+      error: 'Невалидная подпись Telegram',
+      reason: verif.reason,
+      hint: hints[verif.reason] || null,
+    })
   }
 
   const telegramId = parseInt(tgData.id, 10)
@@ -420,8 +447,22 @@ router.post('/telegram/link', async (req, res) => {
     return res.status(400).json({ error: 'Некорректные данные Telegram' })
   }
 
-  if (!(await verifyTelegramData(tgData))) {
-    return res.status(401).json({ error: 'Невалидная подпись Telegram' })
+  const verif = await verifyTelegramData(tgData)
+  if (!verif.ok) {
+    const hints = {
+      no_bot_token:        'Bot token не настроен. Открой /admin/telegram → Подключение и сохрани токен от @BotFather.',
+      hash_mismatch:       'HMAC не сошёлся. Скорее всего bot token в админке не совпадает с тем что у @BotFather, или /setdomain не сделан для этого домена.',
+      auth_date_expired:   'Сессия аутентификации устарела (24+ часов). Перезагрузи страницу и попробуй снова.',
+      auth_date_future:    'Расхождение часов между сервером и Telegram. Проверь NTP на сервере.',
+      no_hash:             'В payload нет поля hash — возможно виджет загрузился неправильно.',
+      bad_auth_date:       'В payload невалидный auth_date.',
+      hash_length_mismatch:'Длина hash отличается от ожидаемой — payload повреждён.',
+    }
+    return res.status(401).json({
+      error: 'Невалидная подпись Telegram',
+      reason: verif.reason,
+      hint: hints[verif.reason] || null,
+    })
   }
 
   const telegramId = parseInt(tgData.id, 10)

@@ -23,6 +23,7 @@ export default function TelegramLoginButton({ botName, onAuth, buttonSize = 'lar
     script.setAttribute('data-radius', String(cornerRadius))
     script.setAttribute('data-onauth', `${callbackName}(user)`)
     script.setAttribute('data-request-access', 'write')
+    script.setAttribute('data-userpic', 'true')  // показывать аватар в кнопке
     script.async = true
 
     containerRef.current.appendChild(script)
