@@ -266,7 +266,8 @@ async function handleCabinet(ctx) {
         LIMIT 1`,
       [user.id]
     ),
-    db.query('SELECT balance FROM users WHERE id = $1', [user.id]),
+    // Баланс лежит в user_wallets, а не в users. Если кошелька ещё нет — 0.
+    db.query('SELECT balance FROM user_wallets WHERE user_id = $1', [user.id]),
   ])
 
   const balance = balanceRes.rows[0]?.balance || 0

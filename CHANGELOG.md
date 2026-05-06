@@ -4,6 +4,30 @@
 
 ---
 
+## v0.1.11 — Hotfix: TG cabinet balance + .git/config leak
+
+**1. TG бот «Личный кабинет» падал на `column "balance" does not exist`**
+
+Я в `handlers.handleCabinet` написал `SELECT balance FROM users` — но в схеме баланс лежит в `user_wallets.balance`. Юзер в боте жмёт «Личный кабинет» → бот пытается прочитать баланс → DB ошибка → webhook отдаёт 403, бот молчит.
+
+Исправлено: `SELECT balance FROM user_wallets WHERE user_id = $1`. Если кошелька ещё нет (юзер не пополнялся) — fallback на 0.
+
+**2. Утечка `.git/config` через nginx**
+
+В логах увидел `GET /.git/config → 200 699 байт`. Сканер с `206.189.63.1` получил содержимое файла. Это **критичный leak** — раскрывает имя репо, может вести к восстановлению истории коммитов.
+
+Защита добавлена в **обоих** nginx-конфигах:
+- `frontend/nginx.conf` (внутренний SPA-nginx)
+- `nginx/conf.d/app.conf.template` (внешний proxy)
+
+Любой запрос с префиксом `.` (`.git`, `.env`, `.htaccess`, `.DS_Store`, ...) → **404**, не логируется. Также блокированы типичные сканер-paths (`wp-admin`, `phpmyadmin`, `adminer`, `server-status` и др.).
+
+Также добавлен корневой `.dockerignore` (defence in depth — на случай если кто-то сменит build context).
+
+После деплоя `https://shop.cdn-yandex.top/.git/config` будет отвечать 404.
+
+---
+
 ## v0.1.10 — Hotfix: Telegram webhook требует bot.init()
 
 В webhook-режиме `bot.handleUpdate()` ругался **«Bot not initialized! Either call `await bot.init()`...»** на каждый update от Telegram. В polling-режиме это не проявлялось — `bot.start()` инициализирует бота сам.

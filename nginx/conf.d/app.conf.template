@@ -94,6 +94,23 @@ server {
     proxy_set_header X-Forwarded-Proto https;
   }
 
+  # Защита: блокируем скрытые файлы и директории (.git, .env, .htaccess, ...).
+  # Должно стоять ПЕРЕД "location /" чтобы перехватывать запросы вроде /.git/config.
+  location ~ /\. {
+    deny all;
+    access_log off;
+    log_not_found off;
+    return 404;
+  }
+
+  # Защита: типичные сканер-paths
+  location ~* /(wp-admin|wp-login|phpmyadmin|adminer|server-status|server-info)(\b|$) {
+    deny all;
+    access_log off;
+    log_not_found off;
+    return 404;
+  }
+
   # Frontend (статика SPA)
   location / {
     proxy_pass http://frontend:80;

@@ -1,0 +1,29 @@
+# Не пускаем в Docker build context — даже если кто-то изменит build context на корень.
+.git
+.gitignore
+.gitattributes
+.github
+
+# Локальные креды и заметки
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cert
+
+# IDE / OS / system
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Артефакты сборки
+node_modules
+dist
+build
+*.log
+
+# Документация и личные файлы
+docs/local
+*.draft.md
