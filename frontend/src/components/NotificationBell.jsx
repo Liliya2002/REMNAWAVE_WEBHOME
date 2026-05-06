@@ -33,8 +33,14 @@ export default function NotificationBell() {
 
   const token = localStorage.getItem('token')
 
-  // Закрытие при клике вне панели
+  // Закрытие при клике вне панели.
+  // Регистрируем listener ТОЛЬКО когда dropdown открыт + используем `click` (а не
+  // `mousedown` — на iOS/Android Safari mousedown не всегда срабатывает
+  // одинаково, click — кросс-браузерный стандарт).
+  // setTimeout(0) — чтобы текущий click (которым открыли dropdown) не закрыл
+  // его же на той же микрозадаче.
   useEffect(() => {
+    if (!isOpen) return
     function handleClickOutside(e) {
       if (
         panelRef.current && !panelRef.current.contains(e.target) &&
@@ -43,9 +49,14 @@ export default function NotificationBell() {
         setIsOpen(false)
       }
     }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+    const t = setTimeout(() => {
+      document.addEventListener('click', handleClickOutside)
+    }, 0)
+    return () => {
+      clearTimeout(t)
+      document.removeEventListener('click', handleClickOutside)
+    }
+  }, [isOpen])
 
   // Загрузка количества непрочитанных
   const fetchUnreadCount = useCallback(async () => {
@@ -165,9 +176,11 @@ export default function NotificationBell() {
       {/* Bell Button */}
       <button
         ref={bellRef}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={(e) => { e.stopPropagation(); setIsOpen(prev => !prev) }}
+        type="button"
         className="relative w-10 h-10 flex items-center justify-center rounded-lg text-sky-700 dark:text-slate-400 dark:text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-all"
         aria-label="Уведомления"
+        aria-expanded={isOpen}
       >
         <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />

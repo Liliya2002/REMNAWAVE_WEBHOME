@@ -301,6 +301,22 @@ async function runCheck() {
                JSON.stringify({ resolveOrigin: limit.origin, applyResult: result }),
                inserted.id]
             )
+
+            // Telegram-уведомление юзеру (silent skip если бот выключен / нет TG-id / выключен toggle)
+            if (result.applied && user.user_id) {
+              setImmediate(async () => {
+                try {
+                  const tgNotify = require('./telegramBot/notify')
+                  const usedGb = (Number(usedBytes) / (1024 ** 3)).toFixed(2)
+                  const limitGb = (Number(limitBytes) / (1024 ** 3)).toFixed(2)
+                  await tgNotify.notifyUser(user.user_id, 'user_traffic_blocked', {
+                    usedGb, limitGb, node: node.name || node.uuid,
+                  })
+                } catch (e) {
+                  console.warn('[TG notify] traffic_blocked notification failed:', e.message)
+                }
+              })
+            }
             // IP-collection: registration_ip (Phase 1) + SSH-lookup настоящих IP с ноды (Phase 2)
             const collectedIps = new Set()
             if (user.registration_ip) collectedIps.add(user.registration_ip)

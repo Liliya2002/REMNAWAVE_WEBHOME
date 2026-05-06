@@ -13,15 +13,11 @@ export default function Home() {
   useEffect(() => {
     let cancelled = false
     fetch(`${API}/api/landings/home`)
-      .then(async (res) => {
-        if (res.status === 404) { if (!cancelled) setUseFallback(true); return null }
-        if (!res.ok) throw new Error('Failed')
-        return res.json()
-      })
+      .then(res => res.ok ? res.json() : null)
       .then(data => {
         if (cancelled) return
         if (data?.landing) setLanding(data.landing)
-        else setUseFallback(true)
+        else setUseFallback(true)  // null или ошибка → дефолтная Landing
       })
       .catch(() => { if (!cancelled) setUseFallback(true) })
       .finally(() => { if (!cancelled) setLoading(false) })

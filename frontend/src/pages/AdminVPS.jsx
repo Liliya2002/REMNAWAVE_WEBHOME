@@ -1027,6 +1027,12 @@ export default function AdminVPS() {
                           <Globe2 className="w-3 h-3" /> {vps.hosting_provider}
                         </span>
                       )}
+                      {vps.yc_instance_id && (
+                        <a href="/admin/yandex-cloud" title={`Управляется через Yandex Cloud (instance ${vps.yc_instance_id})`}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-500/15 border border-blue-500/30 rounded-full text-[11px] font-semibold text-blue-300 hover:bg-blue-500/25">
+                          ☁ Yandex Cloud
+                        </a>
+                      )}
                       {vps.status === 'inactive' && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/80 border border-slate-600/50 rounded-full text-[11px] text-slate-400">
                           <PauseCircle className="w-3 h-3" /> Неактивен

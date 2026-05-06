@@ -434,14 +434,18 @@ router.post('/accounts/:id/instances', async (req, res) => {
     // Если пришёл sshKeyId — подгружаем сохранённый ключ из БД (приоритет над сырым sshKey)
     let sshKey = req.body.sshKey
     let sshUser = req.body.sshUser
+    let savedPrivateKey = null  // расшифрованный приватник из yc_ssh_keys (если есть и есть)
     if (req.body.sshKeyId) {
       const k = await db.query(
-        'SELECT public_key, default_user FROM yc_ssh_keys WHERE id = $1 AND account_id = $2',
+        'SELECT public_key, private_key, default_user FROM yc_ssh_keys WHERE id = $1 AND account_id = $2',
         [req.body.sshKeyId, ctx.id]
       )
       if (k.rows.length === 0) return res.status(400).json({ error: 'Сохранённый SSH-ключ не найден' })
       sshKey = k.rows[0].public_key
       if (!sshUser) sshUser = k.rows[0].default_user
+      if (k.rows[0].private_key) {
+        try { savedPrivateKey = decryptValue(k.rows[0].private_key) } catch {}
+      }
     }
 
     const yc = await ycClient(ctx.id)
@@ -449,17 +453,125 @@ router.post('/accounts/:id/instances', async (req, res) => {
       ...req.body, folderId, imageId, sshKey, sshUser,
     })
 
+    // Если был auto-gen — отделяем приватник, возвращаем фронту в спец-поле,
+    // чтобы юзер мог скачать. Сам Operation-объект чистим от _generatedKey.
+    let generatedKey = null
+    if (op && op._generatedKey) {
+      generatedKey = op._generatedKey
+      delete op._generatedKey
+    }
+
+    // Эффективный приватник для управления через /admin/vps:
+    // 1) auto-gen → используем сгенерированный
+    // 2) saved-key с приватником → используем расшифрованный
+    // 3) paste без приватника → null (управление невозможно)
+    const effectivePrivateKey = generatedKey?.privateKey || savedPrivateKey || null
+
+    // Авто-создание VPS-записи (этап 3)
+    let vpsId = null
+    let vpsWarning = null
+    if (req.body.addToVps) {
+      try {
+        vpsId = await createVpsFromYcInstance({
+          accountId: ctx.id,
+          op,
+          folderId,
+          sshUser: sshUser || 'ubuntu',
+          privateKey: effectivePrivateKey,
+          serviceType: req.body.vpsServiceType || 'other',
+          adminId: req.userId,
+          ycClientObj: yc,
+        })
+        if (!effectivePrivateKey) {
+          vpsWarning = 'VPS-запись создана, но без приватного SSH-ключа — управление через /admin/vps невозможно. Добавь приватник в карточке VPS.'
+        }
+      } catch (e) {
+        console.error('[YC→VPS] auto-create error:', e.message)
+        vpsWarning = `Ошибка создания VPS-записи: ${e.message}`
+      }
+    }
+
     audit.write(req, 'yc.instance.create',
       { type: 'yc_instance' },
-      { accountId: ctx.id, folderId, name: req.body.name, imageId, cores: req.body.cores, memoryGb: req.body.memoryGb }
+      {
+        accountId: ctx.id, folderId, name: req.body.name, imageId,
+        cores: req.body.cores, memoryGb: req.body.memoryGb,
+        keySource: req.body.sshKeyId ? 'saved' : (generatedKey ? `generated:${generatedKey.algo}` : 'paste'),
+        addedToVps: !!vpsId,
+        vpsId,
+      }
     ).catch(() => {})
 
-    res.json({ operation: op })
+    // generatedKey возвращается ТОЛЬКО в ответ на этот запрос (один раз).
+    // На бэке нигде не сохраняется в открытом виде — фронт показывает в модалке скачивания.
+    res.json({ operation: op, generatedKey, vpsId, vpsWarning })
   } catch (err) {
     console.error('[YC] create instance error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
+
+/**
+ * Авто-создание записи в vps_servers по созданной YC VM.
+ * Ждёт операцию, тянет полные данные VM (для public IP), пишет INSERT.
+ */
+async function createVpsFromYcInstance({ accountId, op, folderId, sshUser, privateKey, serviceType, adminId, ycClientObj }) {
+  const { waitForOperation } = require('../services/yandexCloud/operations')
+  // Дождёмся пока операция создания закончится — иначе VM ещё нет в системе
+  const finalOp = await waitForOperation(ycClientObj, op, { maxWaitMs: 60000 }).catch(e => {
+    console.warn('[YC→VPS] waitForOperation:', e.message)
+    return null
+  })
+  const instanceId = finalOp?.metadata?.instanceId || op?.metadata?.instanceId || op?.response?.id
+  if (!instanceId) throw new Error('Не удалось получить instanceId из operation')
+
+  // Тянем полные данные VM
+  let inst
+  try {
+    inst = await compute.getInstance(ycClientObj, instanceId)
+  } catch (e) {
+    throw new Error(`getInstance failed: ${e.message}`)
+  }
+  const simple = compute.simplifyInstance(inst)
+
+  // Имя аккаунта для notes
+  const accNameRow = await db.query('SELECT name FROM yc_accounts WHERE id = $1', [accountId])
+  const accName = accNameRow.rows[0]?.name || `account#${accountId}`
+
+  // Имя VPS-записи: уникализируем если уже есть такое же (vps_servers.name nullable но удобно когда уникально)
+  const r = await db.query(
+    `INSERT INTO vps_servers
+      (name, hosting_provider, ip_address, location, ssh_user, ssh_port, ssh_key,
+       service_type, specs, status,
+       yc_account_id, yc_instance_id, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+     RETURNING id`,
+    [
+      simple.name || `yc-${instanceId.slice(-8)}`,
+      'Yandex Cloud',
+      simple.publicIp || null,
+      simple.zoneId || null,
+      sshUser,
+      22,
+      privateKey ? encryptValue(privateKey) : null,
+      serviceType,
+      JSON.stringify({
+        cores: simple.cores,
+        memoryGb: simple.memory ? Math.round(simple.memory / (1024 ** 3)) : null,
+        platform: simple.platformId,
+        fqdn: simple.fqdn,
+      }),
+      'active',
+      accountId,
+      instanceId,
+      `Создан из /admin/yandex-cloud (account: ${accName}, VM: ${instanceId})`,
+    ]
+  )
+  return r.rows[0].id
+}
+
+// Локальные алиасы encrypt/decrypt — чтобы не таскать импорт по файлу
+const { encrypt: encryptValue, decrypt: decryptValue } = require('../services/encryption')
 
 /**
  * GET /api/admin/yandex-cloud/accounts/:id/catalog?folderId=...
@@ -558,8 +670,45 @@ router.delete('/accounts/:id/instances/:vmId', async (req, res) => {
   try {
     const yc = await ycClient(ctx.id)
     const data = await compute.deleteInstance(yc, req.params.vmId)
-    audit.write(req, 'yc.instance.delete', { type: 'yc_instance', id: req.params.vmId }, { accountId: ctx.id }).catch(() => {})
-    res.json({ operation: data })
+
+    // Если VM была привязана к VPS-записи и юзер не передал ?keepVps=1 — удалим и её
+    let vpsRemoved = null
+    const keepVps = req.query.keepVps === '1' || req.query.keepVps === 'true'
+    if (!keepVps) {
+      const r = await db.query(
+        `DELETE FROM vps_servers
+           WHERE yc_account_id = $1 AND yc_instance_id = $2
+           RETURNING id, name`,
+        [ctx.id, req.params.vmId]
+      )
+      if (r.rows.length > 0) vpsRemoved = r.rows[0]
+    }
+
+    audit.write(req, 'yc.instance.delete', { type: 'yc_instance', id: req.params.vmId },
+      { accountId: ctx.id, vpsRemoved: vpsRemoved?.id || null }
+    ).catch(() => {})
+    res.json({ operation: data, vpsRemoved })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * GET /accounts/:id/instances/linked-vps
+ * Возвращает map { yc_instance_id → vps_server_id } чтобы UI мог показать бейдж 🔗
+ */
+router.get('/accounts/:id/instances/linked-vps', async (req, res) => {
+  const ctx = await loadAccountWithFolderHint(req, res); if (!ctx) return
+  try {
+    const r = await db.query(
+      `SELECT yc_instance_id, id AS vps_id, name AS vps_name
+         FROM vps_servers
+        WHERE yc_account_id = $1 AND yc_instance_id IS NOT NULL`,
+      [ctx.id]
+    )
+    const map = {}
+    for (const row of r.rows) map[row.yc_instance_id] = { vpsId: row.vps_id, vpsName: row.vps_name }
+    res.json({ links: map })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
@@ -676,8 +825,87 @@ router.get('/accounts/:id/balance', async (req, res) => {
       sum,
       currency: acc?.currency || 'RUB',
     })
-    res.json({ billing: acc, topUpUrl })
+
+    // Грант — ручные данные из yc_accounts. YC API не отдаёт сумму гранта публично,
+    // поэтому админ вводит вручную. Считаем remaining + дни до истечения.
+    let grant = null
+    if (ctx.account.grant_amount != null) {
+      const total = Number(ctx.account.grant_amount) || 0
+      const used  = Number(ctx.account.grant_used_amount) || 0
+      const remaining = Math.max(0, total - used)
+      const daysLeft = ctx.account.grant_expires_at
+        ? Math.ceil((new Date(ctx.account.grant_expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+        : null
+      grant = {
+        total, used, remaining,
+        currency:  ctx.account.grant_currency || acc?.currency || 'RUB',
+        expiresAt: ctx.account.grant_expires_at,
+        daysLeft,
+        expired:   daysLeft != null && daysLeft <= 0,
+        notes:     ctx.account.grant_notes,
+      }
+    }
+
+    res.json({ billing: acc, topUpUrl, grant })
   } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * PATCH /api/admin/yandex-cloud/accounts/:id/grant
+ * Body: { amount?, used?, expiresAt?, currency?, notes? }
+ * Любое поле = null/undefined → не меняем. amount = 0 → "грант исчерпан / нет".
+ * Чтобы полностью убрать грант — передай amount=null явно.
+ */
+router.patch('/accounts/:id/grant', async (req, res) => {
+  const ctx = await loadAccountWithFolderHint(req, res); if (!ctx) return
+  try {
+    const sets = []
+    const values = [ctx.id]
+    let idx = 2
+
+    const map = {
+      amount:    'grant_amount',
+      used:      'grant_used_amount',
+      expiresAt: 'grant_expires_at',
+      currency:  'grant_currency',
+      notes:     'grant_notes',
+    }
+    for (const [bodyKey, dbKey] of Object.entries(map)) {
+      if (!(bodyKey in req.body)) continue
+      let v = req.body[bodyKey]
+      if (bodyKey === 'amount' || bodyKey === 'used') {
+        v = (v === null || v === '') ? null : Number(v)
+        if (v != null && (isNaN(v) || v < 0)) return res.status(400).json({ error: `${bodyKey} должно быть число >= 0` })
+      } else if (bodyKey === 'expiresAt') {
+        v = (v === null || v === '') ? null : new Date(v)
+        if (v && isNaN(v.getTime())) return res.status(400).json({ error: 'expiresAt — невалидная дата' })
+      } else if (bodyKey === 'currency') {
+        v = v ? String(v).toUpperCase().slice(0, 8) : null
+      } else if (bodyKey === 'notes') {
+        v = v || null
+      }
+      sets.push(`${dbKey} = $${idx++}`)
+      values.push(v)
+    }
+    if (sets.length === 0) return res.status(400).json({ error: 'Нет полей для обновления' })
+
+    sets.push('updated_at = NOW()')
+    const r = await db.query(
+      `UPDATE yc_accounts SET ${sets.join(', ')} WHERE id = $1
+       RETURNING grant_amount, grant_used_amount, grant_expires_at, grant_currency, grant_notes`,
+      values
+    )
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Не найден' })
+
+    audit.write(req, 'yc.account.grant_update', { type: 'yc_account', id: ctx.id }, {
+      keys: Object.keys(req.body),
+    }).catch(() => {})
+
+    res.json({ ok: true, grant: r.rows[0] })
+  } catch (err) {
+    console.error('[YC] grant update error:', err.message)
     res.status(500).json({ error: err.message })
   }
 })
@@ -705,6 +933,7 @@ router.get('/accounts/:id/ssh-keys', async (req, res) => {
   try {
     const r = await db.query(
       `SELECT k.id, k.name, k.public_key, k.fingerprint, k.default_user, k.notes,
+              (k.private_key IS NOT NULL) AS has_private_key,
               k.created_at, k.updated_at,
               u.login AS created_by_login
          FROM yc_ssh_keys k
@@ -713,6 +942,7 @@ router.get('/accounts/:id/ssh-keys', async (req, res) => {
         ORDER BY k.updated_at DESC`,
       [ctx.id]
     )
+    // private_key никогда не возвращаем в открытом виде — только флаг has_private_key
     res.json({ keys: r.rows })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -722,14 +952,21 @@ router.get('/accounts/:id/ssh-keys', async (req, res) => {
 router.post('/accounts/:id/ssh-keys', async (req, res) => {
   const ctx = await loadAccountWithFolderHint(req, res); if (!ctx) return
   try {
-    const { name, public_key, default_user, notes } = req.body
+    const { name, public_key, private_key, default_user, notes } = req.body
     if (!name || !name.trim()) return res.status(400).json({ error: 'name обязателен' })
 
     const v = sshKeys.validatePublicKey(public_key || '')
     if (!v.ok) return res.status(400).json({ error: v.error })
 
+    // Опциональная валидация приватника. Принимаем PEM или OpenSSH формат.
+    let encryptedPrivate = null
+    if (private_key && String(private_key).trim()) {
+      const pv = sshKeys.validatePrivateKey(private_key)
+      if (!pv.ok) return res.status(400).json({ error: `Приватный ключ: ${pv.error}` })
+      encryptedPrivate = encrypt(pv.key)
+    }
+
     const fingerprint = sshKeys.computeFingerprint(v.key)
-    // Проверка дедупа — есть ли уже такой ключ под другим именем?
     const dup = await db.query(
       'SELECT name FROM yc_ssh_keys WHERE account_id = $1 AND fingerprint = $2 LIMIT 1',
       [ctx.id, fingerprint]
@@ -739,17 +976,72 @@ router.post('/accounts/:id/ssh-keys', async (req, res) => {
     }
 
     const r = await db.query(
-      `INSERT INTO yc_ssh_keys (account_id, name, public_key, fingerprint, default_user, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [ctx.id, name.trim().slice(0, 128), v.key, fingerprint,
+      `INSERT INTO yc_ssh_keys (account_id, name, public_key, private_key, fingerprint, default_user, notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, name, public_key, fingerprint, default_user, notes, created_at, updated_at,
+                 (private_key IS NOT NULL) AS has_private_key`,
+      [ctx.id, name.trim().slice(0, 128), v.key, encryptedPrivate, fingerprint,
        (default_user || 'ubuntu').replace(/[^a-z0-9_-]/gi, '').slice(0, 64) || 'ubuntu',
        notes || null, req.userId]
     )
-    audit.write(req, 'yc.ssh_key.create', { type: 'yc_ssh_key', id: r.rows[0].id }, { name, accountId: ctx.id }).catch(() => {})
+    audit.write(req, 'yc.ssh_key.create', { type: 'yc_ssh_key', id: r.rows[0].id },
+      { name, accountId: ctx.id, withPrivate: !!encryptedPrivate }).catch(() => {})
     res.json({ key: r.rows[0] })
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Ключ с таким именем уже есть' })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * POST /accounts/:id/ssh-keys/:keyId/private
+ * Body: { private_key }
+ * Добавить или заменить приватник у уже сохранённого ключа.
+ */
+router.post('/accounts/:id/ssh-keys/:keyId/private', async (req, res) => {
+  const ctx = await loadAccountWithFolderHint(req, res); if (!ctx) return
+  try {
+    const keyId = parseInt(req.params.keyId)
+    const { private_key } = req.body
+    if (!private_key || !String(private_key).trim()) {
+      return res.status(400).json({ error: 'private_key обязателен' })
+    }
+    const pv = sshKeys.validatePrivateKey(private_key)
+    if (!pv.ok) return res.status(400).json({ error: pv.error })
+    const r = await db.query(
+      `UPDATE yc_ssh_keys SET private_key = $1, updated_at = NOW()
+        WHERE id = $2 AND account_id = $3
+        RETURNING id, name`,
+      [encrypt(pv.key), keyId, ctx.id]
+    )
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Не найден' })
+    audit.write(req, 'yc.ssh_key.private_set', { type: 'yc_ssh_key', id: keyId },
+      { name: r.rows[0].name, accountId: ctx.id }).catch(() => {})
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+/**
+ * DELETE /accounts/:id/ssh-keys/:keyId/private
+ * Стереть приватник (публичная часть остаётся). Управление через нашу систему отвалится.
+ */
+router.delete('/accounts/:id/ssh-keys/:keyId/private', async (req, res) => {
+  const ctx = await loadAccountWithFolderHint(req, res); if (!ctx) return
+  try {
+    const keyId = parseInt(req.params.keyId)
+    const r = await db.query(
+      `UPDATE yc_ssh_keys SET private_key = NULL, updated_at = NOW()
+        WHERE id = $1 AND account_id = $2
+        RETURNING id, name`,
+      [keyId, ctx.id]
+    )
+    if (r.rows.length === 0) return res.status(404).json({ error: 'Не найден' })
+    audit.write(req, 'yc.ssh_key.private_clear', { type: 'yc_ssh_key', id: keyId },
+      { name: r.rows[0].name, accountId: ctx.id }).catch(() => {})
+    res.json({ ok: true })
+  } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })

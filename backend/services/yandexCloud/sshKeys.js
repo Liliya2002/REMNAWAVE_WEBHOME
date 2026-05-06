@@ -40,8 +40,30 @@ function computeFingerprint(publicKey) {
   return crypto.createHash('sha256').update(`${v.prefix} ${v.key.split(' ')[1]}`).digest('hex').slice(0, 32)
 }
 
+/**
+ * Валидация приватного ключа. Принимаем PEM (RSA, EC) и OpenSSH формат (ed25519, RSA).
+ * Не используем эту функцию чтобы парсить ключ — только чтобы убедиться что это
+ * хоть как-то правдоподобно SSH-ключ. Реальная попытка подключения через ssh2 покажет
+ * валидность по факту.
+ */
+function validatePrivateKey(raw) {
+  if (typeof raw !== 'string') return { ok: false, error: 'Ключ должен быть строкой' }
+  const cleaned = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n').trim()
+  if (!cleaned) return { ok: false, error: 'Ключ пустой' }
+  if (cleaned.length < 64) return { ok: false, error: 'Ключ слишком короткий' }
+  if (cleaned.length > 16384) return { ok: false, error: 'Ключ слишком длинный (>16K)' }
+  // Проверяем разумные начальные/конечные маркеры
+  const startsOk = /^-----BEGIN (OPENSSH|RSA|DSA|EC|PRIVATE) (PRIVATE )?KEY-----/.test(cleaned)
+  const endsOk   = /-----END (OPENSSH|RSA|DSA|EC|PRIVATE) (PRIVATE )?KEY-----\s*$/.test(cleaned)
+  if (!startsOk || !endsOk) {
+    return { ok: false, error: 'Ожидается формат "-----BEGIN ... PRIVATE KEY-----" / "-----END ... PRIVATE KEY-----"' }
+  }
+  return { ok: true, key: cleaned }
+}
+
 module.exports = {
   validatePublicKey,
+  validatePrivateKey,
   computeFingerprint,
   SUPPORTED_PREFIXES,
 }

@@ -7,6 +7,7 @@ import Dashboard from './pages/Dashboard'
 import Servers from './pages/Servers'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import TgLogin from './pages/TgLogin'
 import PaymentSuccess from './pages/PaymentSuccess'
 import PaymentFailed from './pages/PaymentFailed'
 import ForgotPassword from './pages/ForgotPassword'
@@ -32,6 +33,7 @@ import AdminInstructions from './pages/AdminInstructions'
 import AdminTrafficTracking from './pages/AdminTrafficTracking'
 import AdminTrafficGuard from './pages/AdminTrafficGuard'
 import AdminYandexCloud from './pages/AdminYandexCloud'
+import AdminTelegram from './pages/AdminTelegram'
 import LandingPage from './pages/LandingPage'
 import PaymentHistory from './pages/PaymentHistory'
 import AdminNotifications from './components/AdminNotifications'
@@ -228,6 +230,7 @@ export default function App(){
             <Route path="/servers" element={<Servers />} />
             <Route path="/auth" element={<Navigate to="/login" replace />} />
             <Route path="/login" element={<Login />} />
+            <Route path="/tg-login" element={<TgLogin />} />
             <Route path="/register" element={<Register />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
@@ -253,6 +256,7 @@ export default function App(){
               <Route path="instructions" element={<AdminInstructions />} />
               <Route path="traffic" element={<AdminTrafficTracking />} />
               <Route path="traffic-guard" element={<AdminTrafficGuard />} />
+              <Route path="telegram" element={<AdminTelegram />} />
               <Route path="settings" element={<TemplateBuilder />} />
               <Route path="templates" element={<Navigate to="/admin/settings" replace />} />
             </Route>

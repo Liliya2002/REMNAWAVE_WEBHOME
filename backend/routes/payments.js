@@ -584,6 +584,33 @@ router.post('/webhook', async (req, res) => {
       }
     }
 
+    // Telegram-уведомления (юзеру + админу) — silent skip если бот выключен / нет TG-id.
+    // Кладём в setImmediate чтобы webhook ответил провайдеру быстро.
+    if (result.outcome === 'applied' && result.payment) {
+      setImmediate(async () => {
+        try {
+          const tgNotify = require('../services/telegramBot/notify');
+          const p = result.payment;
+          // Юзеру
+          await tgNotify.notifyUser(p.user_id, 'user_payment_received', {
+            amount: Number(p.amount).toLocaleString('ru-RU'),
+            plan: p.payment_type === 'subscription' || p.payment_type === 'subscription_change'
+              ? (p.metadata?.plan_name || `Тариф #${p.plan_id || '—'}`)
+              : (p.payment_type === 'topup' ? 'Пополнение баланса' : ''),
+          });
+          // Админу
+          const userRow = await pool.query('SELECT login FROM users WHERE id = $1', [p.user_id]);
+          await tgNotify.notifyAdmin('admin_payment_received', {
+            login: userRow.rows[0]?.login || `#${p.user_id}`,
+            amount: Number(p.amount).toLocaleString('ru-RU'),
+            plan: p.payment_type === 'topup' ? 'Пополнение баланса' : (p.metadata?.plan_name || `#${p.plan_id || '—'}`),
+          });
+        } catch (e) {
+          console.warn('[TG notify] payment notification failed:', e.message);
+        }
+      });
+    }
+
     res.status(200).json({ success: true, outcome: result.outcome });
   } catch (error) {
     console.error('Webhook processing error:', error);

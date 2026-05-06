@@ -6,6 +6,8 @@
  * Для UI используем pull-модель: после действия фронт перечитает список и увидит новый статус.
  */
 const COMPUTE_BASE = 'https://compute.api.cloud.yandex.net/compute/v1'
+const sshKeys = require('./sshKeys')
+const { generateKeypair } = require('./keygen')
 
 /**
  * Список инстансов в папке.
@@ -98,11 +100,39 @@ async function createInstance(yc, params) {
   }
 
   const metadata = {}
-  if (params.sshKey) {
-    const user = params.sshUser || 'ubuntu'
-    // Стандартный путь: ssh-keys = "user:ssh-rsa ..." для cloud-init на Ubuntu/Debian
-    metadata['ssh-keys'] = `${user}:${params.sshKey.trim()}`
+  // Если запрошена авто-генерация ключа — генерируем pair прямо здесь.
+  // Public кладём в metadata, private возвращаем дальше через generatedPrivateKey
+  // в результате createInstance — вызывающий код решит что с ним делать
+  // (показать юзеру для скачивания, сохранить в yc_ssh_keys, и т.п.).
+  let generatedPrivateKey = null
+  let generatedAlgo = null
+  if (params.generateKey?.algo) {
+    const algo = params.generateKey.algo
+    const comment = `vm-${(params.name || 'auto').slice(0, 32)}@yc`
+    const kp = generateKeypair({ algo, comment })
+    params.sshKey = kp.publicKey
+    generatedPrivateKey = kp.privateKey
+    generatedAlgo = kp.algo
   }
+
+  if (params.sshKey) {
+    // Валидируем + нормализуем ключ. Это:
+    //   - убирает BOM, leading/trailing whitespace
+    //   - превращает любые \r\n / tabs внутри в одиночные пробелы (Windows copy-paste!)
+    //   - проверяет префикс (ssh-rsa / ssh-ed25519 / ecdsa-*)
+    // Без этой нормализации cloud-init молча отвергает ключ и SSH-доступа нет.
+    const v = sshKeys.validatePublicKey(params.sshKey)
+    if (!v.ok) {
+      throw new Error(`SSH-ключ невалиден: ${v.error}`)
+    }
+    const user = (params.sshUser || 'ubuntu').toLowerCase().replace(/[^a-z0-9_-]/g, '')
+    if (!user) throw new Error('SSH-пользователь невалиден')
+    // Формат для cloud-init: "user:ssh-prefix base64 comment"
+    metadata['ssh-keys'] = `${user}:${v.key}`
+  }
+  // Serial console — позволяет зайти через YC-консоль если SSH сломан
+  // (cloud-init не отработал, ключ не подошёл, образ изменился). Бесплатно, безопасно.
+  metadata['serial-port-enable'] = '1'
 
   const body = {
     folderId: params.folderId,
@@ -131,6 +161,12 @@ async function createInstance(yc, params) {
   }
 
   const r = await yc.post(`${COMPUTE_BASE}/instances`, body)
+  // Если генерили pair — прицепляем private к operation-объекту
+  // (вызывающий код сам решит как использовать; в response к фронту private
+  // отдаётся ОДИН РАЗ, после чего нигде не сохраняется в открытом виде).
+  if (generatedPrivateKey) {
+    return { ...r.data, _generatedKey: { privateKey: generatedPrivateKey, algo: generatedAlgo, publicKey: params.sshKey } }
+  }
   return r.data
 }
 

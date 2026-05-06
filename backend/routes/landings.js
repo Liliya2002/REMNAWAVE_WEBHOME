@@ -20,7 +20,10 @@ router.get('/home', async (req, res) => {
         WHERE lp.is_published = true
         LIMIT 1`
     );
-    if (r.rows.length === 0) return res.status(404).json({ error: 'No home landing' });
+    // Нет назначенного home-лендинга — это не ошибка, а валидное состояние
+    // ("показывай дефолтный <Landing />"). Возвращаем 200 с null чтобы не засорять
+    // консоль браузера красными 404 на каждой загрузке главной страницы.
+    if (r.rows.length === 0) return res.json({ landing: null });
     const landing = r.rows[0];
 
     // Учёт просмотра — fire-and-forget, без ботов

@@ -307,6 +307,29 @@ async function processPaymentReward(paymentId, referredUserId, paymentAmount) {
     // Обновляем месячную статистику
     await updateMonthlyStats(referrerId);
 
+    // Telegram-уведомление рефереру (silent skip если бот выключен / нет TG-id)
+    if (rewardAmount > 0) {
+      setImmediate(async () => {
+        try {
+          const tgNotify = require('./telegramBot/notify');
+          // Текущий баланс
+          const wRes = await db.query(
+            'SELECT balance FROM user_wallets WHERE user_id = $1', [referrerId]
+          );
+          const balance = wRes.rows[0]?.balance != null
+            ? Number(wRes.rows[0].balance).toLocaleString('ru-RU')
+            : '0';
+          await tgNotify.notifyUser(referrerId, 'user_referral_bonus', {
+            amount: Number(rewardAmount).toLocaleString('ru-RU'),
+            balance,
+            days: bonusDays || 0,
+          });
+        } catch (e) {
+          console.warn('[TG notify] referral bonus notification failed:', e.message);
+        }
+      });
+    }
+
     return {
       type: rewardType,
       amount: rewardAmount,

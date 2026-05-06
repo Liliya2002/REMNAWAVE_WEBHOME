@@ -159,6 +159,8 @@ async function runJob(jobId) {
   const progress = { tried: 0, found: 0, attempts: [], cap }
 
   let foundAddress = null
+  let rateLimitHits = 0
+  const MAX_RATE_LIMIT_HITS = 10  // если YC даёт 429 больше N раз за job — сдаёмся
 
   for (let i = 0; i < cap; i++) {
     if (await isCancelled(jobId)) {
@@ -218,22 +220,59 @@ async function runJob(jobId) {
         }
       }
     } catch (e) {
+      // 429 — это rate-limit YC (например vpc.externalAddressesCreation.rate).
+      // НЕ fatal: ждём долгую паузу и пробуем ту же попытку снова, не увеличивая
+      // счётчик tried (это не реальная попытка — мы даже до alloc не дошли).
+      if (e.status === 429) {
+        rateLimitHits++
+        if (rateLimitHits > MAX_RATE_LIMIT_HITS) {
+          await setStatus(jobId, 'failed', {
+            error: `YC ${MAX_RATE_LIMIT_HITS}+ раз вернул 429 (rate-limit). Прерываемся. Повтори поиск через ~10 минут — ограничение per-folder восстановится.`,
+            finishedAt: new Date(),
+            result: { foundAddress: null, progress },
+          })
+          return
+        }
+        // Backoff растёт: 15s, 30s, 45s, 60s (cap)
+        const wait = Math.min(15 * rateLimitHits, 60)
+        attempt.error = `Rate-limit YC (429) #${rateLimitHits}: "${e.message}". Пауза ${wait}с перед повтором.`
+        progress.lastError = attempt.error
+        progress.rateLimitHits = rateLimitHits
+        progress.attempts.push(attempt)
+        await updateProgress(jobId, progress)
+        for (let s = 0; s < wait; s++) {
+          if (await isCancelled(jobId)) {
+            await setStatus(jobId, 'cancelled', { finishedAt: new Date(), result: { foundAddress, progress } })
+            return
+          }
+          await new Promise(r => setTimeout(r, 1000))
+        }
+        i--  // повтор той же попытки
+        continue
+      }
+
       attempt.error = e.message
       progress.tried++
       progress.attempts.push(attempt)
       progress.lastError = e.message
       await updateProgress(jobId, progress)
-      // Если ошибка из-за квоты или auth — нет смысла ретраить (все попытки упадут так же)
-      const isFatal = e.status === 401 || e.status === 403 || e.status === 404 ||
-                      /quota|forbidden|unauthorized|permission denied|not.found/i.test(e.message)
+
+      // Реальные fatal: только auth и не-rate-limit квота / not found
+      const msg = (e.message || '').toLowerCase()
+      const isAuthFatal = e.status === 401 || e.status === 403 || /permission denied|forbidden|unauthorized/i.test(msg)
+      const isHardQuota = /\b(quota.*exceeded|quota.*reached|exceeds.*quota)\b/i.test(msg) &&
+                          !/rate/i.test(msg)  // НЕ путать с rate-limit
+      const isNotFound  = e.status === 404 || /not.found/i.test(msg)
+      const isFatal = isAuthFatal || isHardQuota || isNotFound
+
       if (isFatal) {
         let hint = ''
-        if (e.status === 403 || /permission denied/i.test(e.message)) {
-          hint = ' Подсказка: у Service Account / OAuth нет роли для создания публичных IP. Дай в YC-консоли роль "vpc.publicAdmin" или "editor" на этот folder.'
-        } else if (e.status === 401 || /unauthorized/i.test(e.message)) {
-          hint = ' Подсказка: токен невалиден или истёк. Перепроверь creds аккаунта во вкладке «Аккаунты» → «Тест».'
-        } else if (/quota/i.test(e.message)) {
-          hint = ' Подсказка: исчерпана квота на адреса в этом folder. Освободи неиспользуемые IP во вкладке «IP-адреса» или попроси YC увеличить квоту.'
+        if (e.status === 403 || /permission denied/i.test(msg)) {
+          hint = ' Подсказка: у SA / OAuth нет роли для создания публичных IP. Дай в YC-консоли "vpc.publicAdmin" или "editor".'
+        } else if (e.status === 401 || /unauthorized/i.test(msg)) {
+          hint = ' Подсказка: токен невалиден или истёк. Перепроверь "Тест" в карточке аккаунта.'
+        } else if (isHardQuota) {
+          hint = ' Подсказка: исчерпан hard-cap квоты на адреса в folder\'е. Освободи во вкладке «IP-адреса» или подними квоту в YC-консоли.'
         }
         await setStatus(jobId, 'failed', {
           error: `Прервано после ошибки на попытке #${i + 1}: ${e.message}.${hint}`,
@@ -242,9 +281,14 @@ async function runJob(jobId) {
         })
         return
       }
-      // Иначе — пауза и идём дальше
+      // Не-fatal — пауза 2 сек и продолжаем (попытка засчитана как tried)
       await new Promise(r => setTimeout(r, 2000))
     }
+
+    // Между УСПЕШНЫМИ попытками тоже делаем паузу 1 секунду — чтобы не влетать
+    // в YC rate-limit (vpc.externalAddressesCreation.rate). Без этой паузы
+    // первая же попытка в плотном цикле даёт 429.
+    await new Promise(r => setTimeout(r, 1000))
   }
 
   if (foundAddress) {

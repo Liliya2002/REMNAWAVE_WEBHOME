@@ -533,4 +533,40 @@ router.post('/reset-password', async (req, res) => {
   }
 })
 
+/**
+ * GET /auth/tg-login?t=<token>
+ * Авто-логин из Telegram-бота. Юзер тапает в боте «🌐 Веб-Панель»,
+ * бот выдаёт ссылку с одноразовым токеном — фронт открывает её и шлёт сюда.
+ *
+ * Возвращает { token: <jwt> } если ОК, либо 400/410 если токен невалидный/протух.
+ */
+router.get('/tg-login', async (req, res) => {
+  try {
+    const t = String(req.query.t || '').trim()
+    if (!t) return res.status(400).json({ error: 'Токен не передан' })
+
+    const { consumeAutoLoginToken } = require('../services/telegramBot/tokens')
+    const consumed = await consumeAutoLoginToken(t)
+    if (!consumed) {
+      return res.status(410).json({ error: 'Токен невалиден или истёк. Запроси новую ссылку в боте.' })
+    }
+
+    const userRes = await db.query('SELECT id, login, is_admin, is_active FROM users WHERE id = $1', [consumed.userId])
+    if (userRes.rows.length === 0) return res.status(404).json({ error: 'Юзер не найден' })
+    const user = userRes.rows[0]
+    if (!user.is_active) return res.status(403).json({ error: 'Аккаунт заблокирован' })
+
+    const token = jwt.sign(
+      { id: user.id, login: user.login, is_admin: user.is_admin },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    )
+    createSession(user.id, token, req).catch(err => console.error('Session create error:', err))
+    res.json({ token, login: user.login })
+  } catch (err) {
+    console.error('[tg-login]', err.message)
+    res.status(500).json({ error: 'Ошибка авторизации' })
+  }
+})
+
 module.exports = router

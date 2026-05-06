@@ -412,24 +412,16 @@ router.post('/notify-expiring', async (req, res) => {
     const lines = rows.map(v => {
       const d = Math.ceil((new Date(v.paid_until) - new Date()) / 86400000)
       const status = d <= 0 ? '🔴 Просрочен' : d <= 3 ? '🟠 Срочно' : '🟡 Скоро'
-      return `${status} *${v.name}* (${v.hosting_provider || '—'})\n   IP: \`${v.ip_address || '—'}\` · До: ${new Date(v.paid_until).toLocaleDateString('ru-RU')} (${d <= 0 ? 'просрочен' : d + ' дн.'})`
+      return `${status} <b>${v.name}</b> (${v.hosting_provider || '—'})\n   IP: <code>${v.ip_address || '—'}</code> · До: ${new Date(v.paid_until).toLocaleDateString('ru-RU')} (${d <= 0 ? 'просрочен' : d + ' дн.'})`
     })
 
-    const text = `⚠️ *VPS — истечение оплаты*\n\n${lines.join('\n\n')}\n\n_Всего: ${rows.length} серв._`
-
-    const tgRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text,
-        parse_mode: 'Markdown',
-      })
+    const tgNotify = require('../services/telegramBot/notify')
+    const result = await tgNotify.notifyAdmin('admin_vps_expiring', {
+      lines: lines.join('\n\n'),
+      count: rows.length,
     })
-
-    const tgData = await tgRes.json()
-    if (!tgData.ok) {
-      return res.status(500).json({ error: `Telegram ошибка: ${tgData.description || 'unknown'}` })
+    if (!result.ok) {
+      return res.status(500).json({ error: `Telegram: ${result.error || result.skipped || 'не отправлено'}` })
     }
 
     res.json({ sent: true, count: rows.length })
@@ -1030,17 +1022,16 @@ async function sendExpiryNotification() {
     const lines = rows.map(v => {
       const d = Math.ceil((new Date(v.paid_until) - new Date()) / 86400000)
       const status = d <= 0 ? '🔴 Просрочен' : d <= 3 ? '🟠 Срочно' : '🟡 Скоро'
-      return `${status} *${v.name}* (${v.hosting_provider || '—'})\n   IP: \`${v.ip_address || '—'}\` · До: ${new Date(v.paid_until).toLocaleDateString('ru-RU')} (${d <= 0 ? 'просрочен' : d + ' дн.'})`
+      return `${status} <b>${v.name}</b> (${v.hosting_provider || '—'})\n   IP: <code>${v.ip_address || '—'}</code> · До: ${new Date(v.paid_until).toLocaleDateString('ru-RU')} (${d <= 0 ? 'просрочен' : d + ' дн.'})`
     })
 
-    const text = `⏰ *Авто-уведомление: VPS истечение оплаты*\n\n${lines.join('\n\n')}\n\n_Всего: ${rows.length} серв._`
-
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown' })
+    const tgNotify = require('../services/telegramBot/notify')
+    const r = await tgNotify.notifyAdmin('admin_vps_expiring', {
+      lines: lines.join('\n\n'),
+      count: rows.length,
     })
-    console.log(`[VPS Cron] Отправлено уведомление: ${rows.length} серверов`)
+    if (r.ok) console.log(`[VPS Cron] Отправлено уведомление: ${rows.length} серверов`)
+    else console.warn(`[VPS Cron] notifyAdmin: ${r.error || r.skipped}`)
   } catch (err) {
     console.error('[VPS Cron] Ошибка:', err.message)
   }

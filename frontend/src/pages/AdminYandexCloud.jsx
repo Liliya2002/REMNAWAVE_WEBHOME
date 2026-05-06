@@ -6,7 +6,7 @@ import {
   Play, Square, RotateCw, Cpu, MemoryStick, Network, Server,
   Pin, PinOff, Coins, CreditCard, ArrowUpRight,
   Target, History, Ban, Hourglass, ChevronDown, Upload, FileText,
-  Bookmark, Folder
+  Bookmark, Folder, Gift
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || ''
@@ -939,6 +939,8 @@ function InstancesTab({ account }) {
   const [error, setError] = useState(null)
   const [actionState, setActionState] = useState({})  // { vmId: { loading, action } }
   const [createOpen, setCreateOpen] = useState(false)
+  const [genKeyShown, setGenKeyShown] = useState(null)  // { algo, publicKey, privateKey } — показ ОДИН раз
+  const [vpsLinks, setVpsLinks] = useState({})  // { yc_instance_id → { vpsId, vpsName } }
 
   useEffect(() => { setFolderId(account.default_folder_id || '') }, [account.id])
 
@@ -946,12 +948,17 @@ function InstancesTab({ account }) {
     if (!folderId) { setError('Укажи folderId — либо в карточке аккаунта (default_folder_id), либо здесь'); return }
     setLoading(true); setError(null)
     try {
-      const res = await fetch(`${API}/api/admin/yandex-cloud/accounts/${account.id}/instances?folderId=${encodeURIComponent(folderId)}`, {
-        headers: authHeaders(),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Ошибка')
+      const [resInst, resLinks] = await Promise.all([
+        fetch(`${API}/api/admin/yandex-cloud/accounts/${account.id}/instances?folderId=${encodeURIComponent(folderId)}`, { headers: authHeaders() }),
+        fetch(`${API}/api/admin/yandex-cloud/accounts/${account.id}/instances/linked-vps`, { headers: authHeaders() }),
+      ])
+      const data = await resInst.json()
+      if (!resInst.ok) throw new Error(data.error || 'Ошибка')
       setInstances(data.instances || [])
+      if (resLinks.ok) {
+        const ld = await resLinks.json()
+        setVpsLinks(ld.links || {})
+      }
     } catch (e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -959,7 +966,11 @@ function InstancesTab({ account }) {
   useEffect(() => { if (folderId) load() }, [account.id, folderId])
 
   async function action(vm, name) {
-    if (name === 'delete' && !confirm(`Удалить VM «${vm.name}»? Это необратимо.`)) return
+    if (name === 'delete') {
+      const link = vpsLinks[vm.id]
+      const linkText = link ? `\n\nЭта VM привязана к VPS-записи «${link.vpsName}» (#${link.vpsId}). Она тоже будет удалена.` : ''
+      if (!confirm(`Удалить VM «${vm.name}»?${linkText}\n\nЭто необратимо.`)) return
+    }
     setActionState(p => ({ ...p, [vm.id]: { loading: true, action: name } }))
     try {
       const url = `${API}/api/admin/yandex-cloud/accounts/${account.id}/instances/${vm.id}${name === 'delete' ? '' : '/' + name}`
@@ -1013,8 +1024,17 @@ function InstancesTab({ account }) {
           account={account}
           folderId={folderId}
           onClose={() => setCreateOpen(false)}
-          onCreated={() => { setCreateOpen(false); setTimeout(load, 1500) }}
+          onCreated={(generatedKey) => {
+            setCreateOpen(false)
+            setTimeout(load, 1500)
+            // Если был auto-gen — открываем модалку скачивания приватника
+            if (generatedKey?.privateKey) setGenKeyShown(generatedKey)
+          }}
         />
+      )}
+
+      {genKeyShown && (
+        <GeneratedKeyModal data={genKeyShown} onClose={() => setGenKeyShown(null)} />
       )}
 
       {error && (
@@ -1067,10 +1087,20 @@ function InstancesTab({ account }) {
                   const running = vm.status === 'RUNNING'
                   const stopped = vm.status === 'STOPPED'
 
+                  const vpsLink = vpsLinks[vm.id]
                   return (
                     <tr key={vm.id} className="border-b border-slate-800/40 hover:bg-slate-800/20 transition">
                       <td className="px-4 py-2.5">
-                        <div className="sensitive text-white font-semibold text-sm truncate max-w-[200px]">{vm.name}</div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="sensitive text-white font-semibold text-sm truncate max-w-[200px]">{vm.name}</div>
+                          {vpsLink && (
+                            <a href={`/admin/vps`} target="_blank" rel="noopener noreferrer"
+                              title={`Связана с VPS «${vpsLink.vpsName}» (#${vpsLink.vpsId}). Открыть в /admin/vps`}
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded bg-blue-500/15 border border-blue-500/30 text-blue-300 hover:bg-blue-500/25 shrink-0">
+                              🔗 VPS
+                            </a>
+                          )}
+                        </div>
                         <div className="text-[10px] font-mono text-slate-500 truncate max-w-[200px]">{vm.id}</div>
                       </td>
                       <td className="px-2 py-2.5">
@@ -1426,6 +1456,7 @@ function BillingTab({ account }) {
   const [error, setError] = useState(null)
   const [topUpAmount, setTopUpAmount] = useState(1000)
   const [billingAccountsList, setBillingAccountsList] = useState(null)
+  const [grantDialog, setGrantDialog] = useState(null) // { amount, used, expiresAt, currency, notes }
 
   async function load() {
     if (!account.billing_account_id) {
@@ -1448,6 +1479,51 @@ function BillingTab({ account }) {
   }
 
   useEffect(() => { load() }, [account.id])
+
+  // Открыть диалог редактирования гранта (с предзаполненными значениями если уже задано)
+  function openGrantDialog() {
+    const g = data?.grant
+    setGrantDialog({
+      amount:    g?.total != null ? String(g.total) : '',
+      used:      g?.used != null ? String(g.used) : '',
+      expiresAt: g?.expiresAt ? new Date(g.expiresAt).toISOString().slice(0, 10) : '',
+      currency:  g?.currency || data?.billing?.currency || 'RUB',
+      notes:     g?.notes || '',
+    })
+  }
+
+  async function saveGrant() {
+    if (!grantDialog) return
+    try {
+      const body = {
+        amount:    grantDialog.amount === '' ? null : Number(grantDialog.amount),
+        used:      grantDialog.used === '' ? 0 : Number(grantDialog.used),
+        expiresAt: grantDialog.expiresAt || null,
+        currency:  grantDialog.currency || null,
+        notes:     grantDialog.notes || null,
+      }
+      const res = await fetch(`${API}/api/admin/yandex-cloud/accounts/${account.id}/grant`, {
+        method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Ошибка')
+      setGrantDialog(null)
+      load()
+    } catch (e) { setError(e.message) }
+  }
+
+  async function clearGrant() {
+    if (!confirm('Удалить данные о гранте? Сумма и срок будут стёрты.')) return
+    try {
+      const res = await fetch(`${API}/api/admin/yandex-cloud/accounts/${account.id}/grant`, {
+        method: 'PATCH', headers: authHeaders(),
+        body: JSON.stringify({ amount: null, used: null, expiresAt: null, currency: null, notes: null }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(d.error || 'Ошибка')
+      load()
+    } catch (e) { setError(e.message) }
+  }
 
   function buildTopUpUrl() {
     if (!data?.billing?.id) return null
@@ -1571,6 +1647,9 @@ function BillingTab({ account }) {
             </div>
           </div>
 
+          {/* Grant card */}
+          <GrantCard grant={data.grant} onEdit={openGrantDialog} onClear={clearGrant} />
+
           {/* Details */}
           <div className="bg-gradient-to-br from-slate-800/40 to-slate-900/50 border border-slate-700/50 rounded-2xl p-5 space-y-2 text-sm">
             <Row label="Имя">{data.billing.name}</Row>
@@ -1583,6 +1662,166 @@ function BillingTab({ account }) {
           </div>
         </>
       )}
+
+      {/* Grant edit dialog */}
+      {grantDialog && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700/60 rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="px-5 py-4 border-b border-slate-800 flex items-center gap-3">
+              <Gift className="w-5 h-5 text-amber-400" />
+              <div className="flex-1 text-sm font-bold text-white">Грант от Yandex Cloud</div>
+              <button onClick={() => setGrantDialog(null)} className="w-8 h-8 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <div className="text-[11px] text-slate-400 leading-relaxed">
+                YC не отдаёт сумму гранта в публичном API — введи вручную из консоли (раздел «Биллинг» → «Бонусы»). Поле <span className="text-slate-200">«Использовано»</span> можно периодически обновлять для отслеживания.
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Грант (всего)">
+                  <input type="number" min="0" step="0.01"
+                    value={grantDialog.amount}
+                    onChange={e => setGrantDialog({ ...grantDialog, amount: e.target.value })}
+                    placeholder="4000"
+                    className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
+                </Field>
+                <Field label="Использовано">
+                  <input type="number" min="0" step="0.01"
+                    value={grantDialog.used}
+                    onChange={e => setGrantDialog({ ...grantDialog, used: e.target.value })}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Истекает">
+                  <input type="date"
+                    value={grantDialog.expiresAt}
+                    onChange={e => setGrantDialog({ ...grantDialog, expiresAt: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
+                </Field>
+                <Field label="Валюта">
+                  <select value={grantDialog.currency}
+                    onChange={e => setGrantDialog({ ...grantDialog, currency: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-amber-500 focus:outline-none">
+                    <option value="RUB">RUB</option>
+                    <option value="USD">USD</option>
+                    <option value="KZT">KZT</option>
+                    <option value="BYN">BYN</option>
+                  </select>
+                </Field>
+              </div>
+              <Field label="Заметка (опц.)">
+                <input value={grantDialog.notes}
+                  onChange={e => setGrantDialog({ ...grantDialog, notes: e.target.value })}
+                  placeholder="Стартовый грант 60 дней"
+                  className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-amber-500 focus:outline-none" />
+              </Field>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-800 flex justify-end gap-2">
+              <button onClick={() => setGrantDialog(null)} className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg">
+                Отмена
+              </button>
+              <button onClick={saveGrant}
+                className="px-5 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-bold rounded-lg hover:shadow-lg hover:shadow-amber-500/30 flex items-center gap-1.5">
+                <Save className="w-3.5 h-3.5" /> Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function GrantCard({ grant, onEdit, onClear }) {
+  // Если данные не введены — компактный empty-state с кнопкой
+  if (!grant) {
+    return (
+      <button onClick={onEdit}
+        className="w-full p-4 rounded-2xl border border-dashed border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10 hover:border-amber-500/50 transition flex items-center gap-3 text-left">
+        <Gift className="w-5 h-5 text-amber-400 shrink-0" />
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-amber-200">Указать данные гранта</div>
+          <div className="text-[11px] text-amber-200/70">YC не отдаёт сумму гранта в API. Можешь вписать вручную для отображения остатка и срока.</div>
+        </div>
+        <Plus className="w-4 h-4 text-amber-300" />
+      </button>
+    )
+  }
+
+  const pct = grant.total > 0 ? Math.min(100, Math.round((grant.used / grant.total) * 100)) : 0
+  const expired = grant.expired
+  const soonExpiring = grant.daysLeft != null && grant.daysLeft >= 0 && grant.daysLeft <= 7
+
+  return (
+    <div className={`rounded-2xl p-5 border ${
+      expired
+        ? 'bg-red-500/5 border-red-500/30'
+        : soonExpiring
+          ? 'bg-amber-500/10 border-amber-500/40'
+          : 'bg-gradient-to-br from-amber-900/20 via-slate-900/60 to-orange-900/10 border-amber-500/30'
+    }`}>
+      <div className="flex items-start gap-4">
+        <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-lg ${
+          expired ? 'bg-red-500/20 shadow-red-500/20' : 'bg-gradient-to-br from-amber-500 to-orange-500 shadow-amber-500/30'
+        }`}>
+          <Gift className="w-6 h-6 text-white" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <div className="text-[11px] uppercase font-bold text-amber-300/80 tracking-wider">Грант от YC</div>
+            {expired && (
+              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-red-500/20 border border-red-500/40 text-red-300">истёк</span>
+            )}
+            {!expired && soonExpiring && (
+              <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-amber-500/20 border border-amber-500/40 text-amber-300">скоро истечёт</span>
+            )}
+          </div>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <div className={`text-2xl sm:text-3xl font-bold font-mono ${expired ? 'text-red-300/60 line-through' : 'text-white'}`}>
+              {Number(grant.remaining).toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+            </div>
+            <span className="text-sm text-slate-400">{grant.currency}</span>
+            <span className="text-[11px] text-slate-500">из {Number(grant.total).toLocaleString('ru-RU')}</span>
+          </div>
+          {grant.daysLeft != null && (
+            <div className="text-[11px] text-slate-400 mt-1">
+              {expired
+                ? <>Истёк {new Date(grant.expiresAt).toLocaleDateString('ru-RU')}</>
+                : <>Осталось <span className={`font-bold ${soonExpiring ? 'text-amber-300' : 'text-slate-200'}`}>{grant.daysLeft}</span> {grant.daysLeft === 1 ? 'день' : grant.daysLeft < 5 ? 'дня' : 'дней'} (до {new Date(grant.expiresAt).toLocaleDateString('ru-RU')})</>}
+            </div>
+          )}
+          {grant.notes && (
+            <div className="text-[11px] text-slate-500 mt-1 italic truncate">{grant.notes}</div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1 shrink-0">
+          <button onClick={onEdit} title="Изменить" className="w-8 h-8 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-white flex items-center justify-center">
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={onClear} title="Удалить данные о гранте" className="w-8 h-8 rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-400 hover:text-red-300 flex items-center justify-center">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="mt-4">
+        <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+          <span>Использовано: <span className="text-slate-300 font-mono">{Number(grant.used).toLocaleString('ru-RU')} {grant.currency}</span></span>
+          <span>{pct}%</span>
+        </div>
+        <div className="h-2 bg-slate-900/60 border border-slate-800 rounded-full overflow-hidden">
+          <div className={`h-full transition-all duration-300 ${
+            expired ? 'bg-red-500/40'
+            : pct >= 90 ? 'bg-gradient-to-r from-red-500 to-orange-500'
+            : pct >= 60 ? 'bg-gradient-to-r from-amber-500 to-orange-500'
+            : 'bg-gradient-to-r from-emerald-500 to-amber-500'
+          }`} style={{ width: `${pct}%` }} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -2282,11 +2521,14 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
     imageFamily: 'ubuntu-2204-lts',
     diskType: 'network-ssd',
     diskSizeGb: 20,
-    sshKeySource: 'paste',     // 'paste' | 'saved'
+    sshKeySource: 'paste',     // 'paste' | 'saved' | 'generate'
     sshKeyId: null,            // id выбранного сохранённого ключа
     sshKey: '',
     sshUser: 'ubuntu',
+    sshGenerateAlgo: 'ed25519', // 'ed25519' | 'rsa-4096' — для sshKeySource='generate'
     preemptible: false,
+    addToVps: true,             // авто-создать запись в /admin/vps для управления
+    vpsServiceType: 'other',    // 'node' | 'panel' | 'other'
   })
 
   function setField(k, v) { setForm(prev => ({ ...prev, [k]: v })) }
@@ -2384,9 +2626,18 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
       }
       if (form.sshKeySource === 'saved' && form.sshKeyId) {
         payload.sshKeyId = form.sshKeyId
+      } else if (form.sshKeySource === 'generate') {
+        payload.generateKey = { algo: form.sshGenerateAlgo }
+        payload.sshUser = form.sshUser
       } else if (form.sshKey) {
         payload.sshKey = form.sshKey
         payload.sshUser = form.sshUser
+      }
+
+      // Этап 3: автосоздание VPS-записи для управления через /admin/vps
+      if (form.addToVps) {
+        payload.addToVps = true
+        payload.vpsServiceType = form.vpsServiceType
       }
 
       const res = await fetch(`${API}/api/admin/yandex-cloud/accounts/${account.id}/instances`, {
@@ -2395,7 +2646,9 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
       })
       const d = await res.json()
       if (!res.ok) throw new Error(d.error || 'Ошибка')
-      onCreated()
+      // Если был auto-gen — передаём приватник наверх через onCreated(generatedKey),
+      // там покажется модалка скачивания
+      onCreated(d.generatedKey || null)
     } catch (e) { setError(e.message) }
     finally { setCreating(false) }
   }
@@ -2426,6 +2679,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
       name: '',
       default_user: form.sshUser || 'ubuntu',
       notes: '',
+      private_key: '',  // опционально — нужен для управления VM через /admin/vps
     })
   }
 
@@ -2438,6 +2692,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
         body: JSON.stringify({
           name: saveSshDialog.name.trim(),
           public_key: form.sshKey,
+          private_key: saveSshDialog.private_key?.trim() || undefined,
           default_user: saveSshDialog.default_user,
           notes: saveSshDialog.notes || null,
         }),
@@ -2713,6 +2968,14 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                         <span className="ml-1 text-[10px] font-mono opacity-70">{catalog.sshKeys.length}</span>
                       )}
                     </button>
+                    <button type="button"
+                      onClick={() => setField('sshKeySource', 'generate')}
+                      title="Сгенерировать новый pair: public кладётся в VM, private отдадим тебе один раз для скачивания"
+                      className={`px-2.5 py-1 rounded text-[11px] font-bold transition ${
+                        form.sshKeySource === 'generate' ? 'bg-amber-500/20 text-amber-300' : 'text-slate-400 hover:text-white'
+                      }`}>
+                      🆕 Сгенерировать
+                    </button>
                   </div>
                 </div>
 
@@ -2733,8 +2996,14 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                             >
                               <KeyRound className={`w-3.5 h-3.5 shrink-0 ${active ? 'text-emerald-300' : 'text-slate-500'}`} />
                               <div className="flex-1 min-w-0">
-                                <div className={`text-sm font-bold truncate ${active ? 'text-emerald-200' : 'text-white'}`}>
-                                  {k.name}
+                                <div className={`text-sm font-bold truncate flex items-center gap-1.5 ${active ? 'text-emerald-200' : 'text-white'}`}>
+                                  <span className="truncate">{k.name}</span>
+                                  {k.has_private_key && (
+                                    <span title="Есть приватник — система может SSH-ить от твоего имени"
+                                      className="text-[9px] font-mono px-1 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300 shrink-0">
+                                      🔒 priv
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-[10px] text-slate-500 font-mono truncate">
                                   user: {k.default_user} • {k.public_key.split(' ')[0]} • {k.fingerprint?.slice(0, 16)}…
@@ -2753,6 +3022,31 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                         )
                       })
                     )}
+                  </div>
+                ) : form.sshKeySource === 'generate' ? (
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-100 text-xs flex items-start gap-2">
+                      <Info className="w-4 h-4 mt-0.5 shrink-0 text-amber-300" />
+                      <div>
+                        <div className="font-semibold text-amber-200 mb-0.5">Новый ключ будет сгенерирован сервером</div>
+                        <div className="text-[11px] text-amber-100/90">Public-часть положим в VM через cloud-init. Private отдадим тебе <strong>один раз после создания</strong> — в модалке для скачивания. После закрытия модалки приватник нельзя будет восстановить.</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <Field label="Алгоритм" hint="ed25519 — короткий, быстрый, рекомендуется. RSA-4096 — универсально совместим, но 50× длиннее.">
+                        <select value={form.sshGenerateAlgo}
+                          onChange={e => setField('sshGenerateAlgo', e.target.value)}
+                          className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-amber-500 focus:outline-none">
+                          <option value="ed25519">ed25519 (рекомендуется)</option>
+                          <option value="rsa-4096">RSA-4096</option>
+                        </select>
+                      </Field>
+                      <Field label="SSH user" hint="Юзер, под которого будет положен ключ (cloud-init создаст если нет)">
+                        <input value={form.sshUser}
+                          onChange={e => setField('sshUser', e.target.value.replace(/[^a-z0-9_-]/gi, ''))}
+                          className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
+                      </Field>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -2808,6 +3102,25 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                     </div>
                   </div>
                 )}
+
+                {/* Подсказка как подключаться после создания */}
+                {((form.sshKeySource === 'paste' && form.sshKey.trim()) ||
+                  (form.sshKeySource === 'saved' && form.sshKeyId)) && (() => {
+                  const effectiveUser = form.sshKeySource === 'saved'
+                    ? ((catalog?.sshKeys || []).find(k => k.id === form.sshKeyId)?.default_user || 'ubuntu')
+                    : (form.sshUser || 'ubuntu')
+                  return (
+                    <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-100 text-xs flex items-start gap-2">
+                      <Info className="w-4 h-4 mt-0.5 shrink-0 text-blue-300" />
+                      <div className="flex-1">
+                        <div className="font-semibold text-blue-200 mb-1">Подключение после создания</div>
+                        <div>Ключ будет положен пользователю <span className="font-mono px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-200">{effectiveUser}</span>, не root.</div>
+                        <div className="mt-1 font-mono text-[11px] text-blue-200/90">ssh {effectiveUser}@&lt;публичный-IP&gt;</div>
+                        <div className="mt-1 text-[10px] text-blue-200/60">Cloud-init разворачивает ключ ~30-60 сек после первого старта. Если SSH не пустит сразу — подожди минуту.</div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Preemptible */}
@@ -2818,6 +3131,50 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                   <div className="text-[11px] text-amber-200/70">Дешевле на ~30%, но YC может остановить в любой момент. Только для не-критичных задач.</div>
                 </div>
               </label>
+
+              {/* Добавить в VPS-управление (этап 3) */}
+              {(() => {
+                const willHavePrivate = form.sshKeySource === 'generate' ||
+                  (form.sshKeySource === 'saved' && form.sshKeyId &&
+                    (catalog?.sshKeys || []).find(k => k.id === form.sshKeyId)?.has_private_key)
+                return (
+                  <label className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition ${
+                    form.addToVps ? 'bg-blue-500/10 border-blue-500/40' : 'bg-slate-900/40 border-slate-700/40 hover:border-blue-500/30'
+                  }`}>
+                    <input type="checkbox" checked={form.addToVps}
+                      onChange={e => setField('addToVps', e.target.checked)}
+                      className="w-4 h-4 mt-0.5 accent-blue-500" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white font-medium flex items-center gap-2">
+                        Добавить в управление /admin/vps
+                        {willHavePrivate ? (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300">с приватником</span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-amber-300">без SSH-доступа</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {willHavePrivate
+                          ? 'VPS-запись создастся с приватным ключом — система сможет SSH-ить (Traffic Agent, прочие операции).'
+                          : 'VPS-запись создастся, но без приватника — управление через /admin/vps не сработает пока не добавишь ключ вручную.'}
+                      </div>
+                      {form.addToVps && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-[11px] text-slate-400">Тип:</span>
+                          <select value={form.vpsServiceType}
+                            onChange={e => { e.stopPropagation(); setField('vpsServiceType', e.target.value) }}
+                            onClick={e => e.stopPropagation()}
+                            className="px-2 py-1 bg-slate-950/60 border border-slate-700 rounded text-white text-xs focus:border-blue-500 focus:outline-none">
+                            <option value="other">other (любой)</option>
+                            <option value="node">node (RemnaWave-нода)</option>
+                            <option value="panel">panel (RemnaWave-панель)</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </label>
+                )
+              })()}
             </>
           )}
         </div>
@@ -2879,6 +3236,22 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                   className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none"
                 />
               </Field>
+
+              {/* Приватный ключ — опционально, для управления через нашу систему */}
+              <div className="border-t border-slate-800 pt-4">
+                <Field
+                  label={<span className="flex items-center gap-1.5">🔒 Приватный ключ <span className="text-[10px] text-slate-500 font-normal">опционально</span></span>}
+                  hint="Нужен только если хочешь чтобы система могла SSH-ить от твоего имени (управление VM в /admin/vps, установка traffic-agent). Хранится зашифрованным, наружу не отдаётся."
+                >
+                  <textarea
+                    value={saveSshDialog.private_key}
+                    onChange={e => setSaveSshDialog({ ...saveSshDialog, private_key: e.target.value })}
+                    rows={4}
+                    placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'}
+                    className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-[11px] font-mono focus:border-amber-500 focus:outline-none resize-y"
+                  />
+                </Field>
+              </div>
             </div>
             <div className="px-5 py-3 border-t border-slate-800 flex justify-end gap-2">
               <button onClick={() => setSaveSshDialog(null)} className="px-4 py-2 text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg">
@@ -2932,3 +3305,93 @@ function HistoryRow({ job, onSelect }) {
 }
 
 
+
+// ─── GeneratedKeyModal — показ приватника ОДИН РАЗ после создания VM с auto-gen ──
+
+function GeneratedKeyModal({ data, onClose }) {
+  const [copied, setCopied] = useState(null)
+
+  function copy(text, key) {
+    navigator.clipboard.writeText(text)
+    setCopied(key); setTimeout(() => setCopied(null), 1500)
+  }
+
+  function downloadFile(filename, content) {
+    const blob = new Blob([content], { type: 'application/x-pem-file' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-amber-500/40 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="sticky top-0 bg-slate-900/95 backdrop-blur-xl border-b border-amber-500/30 px-6 py-4 flex items-center gap-3 z-10">
+          <KeyRound className="w-5 h-5 text-amber-400" />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Сохрани приватный ключ — это единственный шанс</div>
+            <div className="text-[11px] text-amber-300/80">Алгоритм: <span className="font-mono">{data.algo}</span> · Закрытие модалки = ключ потерян навсегда</div>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/40 text-red-200 text-xs flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
+            <div>
+              <div className="font-semibold mb-0.5">Это твой единственный шанс получить приватник</div>
+              <div className="text-[11px] text-red-100/90">Backend нигде не сохраняет приватный ключ в открытом виде. Скачай файл или скопируй текст — иначе придётся пересоздавать VM с новым ключом.</div>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <div className="text-[11px] font-bold text-slate-400 uppercase">Приватный ключ (PEM)</div>
+              <div className="flex gap-1.5">
+                <button onClick={() => copy(data.privateKey, 'priv')}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 rounded-lg transition flex items-center gap-1">
+                  {copied === 'priv' ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  {copied === 'priv' ? 'Скопировано' : 'Скопировать'}
+                </button>
+                <button onClick={() => downloadFile(`yc-${data.algo}-${Date.now()}.pem`, data.privateKey)}
+                  className="px-2.5 py-1 text-[11px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25 rounded-lg transition flex items-center gap-1">
+                  <Upload className="w-3 h-3 rotate-180" /> Скачать .pem
+                </button>
+              </div>
+            </div>
+            <pre className="text-[10px] font-mono text-slate-300 bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-60 overflow-y-auto whitespace-pre">{data.privateKey}</pre>
+            <div className="text-[11px] text-slate-500 mt-1.5">
+              Подключение: <span className="font-mono text-slate-300">chmod 600 yc-*.pem && ssh -i yc-*.pem &lt;user&gt;@&lt;public-IP&gt;</span>
+            </div>
+          </div>
+
+          <details className="bg-slate-950/40 border border-slate-800 rounded-xl">
+            <summary className="px-3 py-2 text-[11px] font-bold text-slate-400 uppercase cursor-pointer hover:text-slate-200">
+              Публичная часть (положена в VM)
+            </summary>
+            <div className="border-t border-slate-800 p-3">
+              <div className="flex items-start gap-2">
+                <pre className="flex-1 text-[10px] font-mono text-slate-300 break-all whitespace-pre-wrap">{data.publicKey}</pre>
+                <button onClick={() => copy(data.publicKey, 'pub')}
+                  className="px-2 py-1 text-[11px] font-bold bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 rounded-lg transition shrink-0">
+                  {copied === 'pub' ? '✓' : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div className="sticky bottom-0 bg-slate-900/95 backdrop-blur-xl border-t border-amber-500/30 px-6 py-4 flex justify-end">
+          <button onClick={onClose}
+            className="px-5 py-2 bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 rounded-lg text-xs font-bold">
+            Я сохранил, закрыть
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -8,7 +8,7 @@ import {
   Gift, Bell,
   Sparkles, FileText,
   Globe, Server, ShoppingCart, Cloud,
-  Settings, Activity, Palette, ShieldCheck, BookOpen, TrendingUp, Shield,
+  Settings, Activity, Palette, ShieldCheck, BookOpen, TrendingUp, Shield, MessageCircle,
   // ui
   Search, Circle,
 } from 'lucide-react'
@@ -61,8 +61,9 @@ const GROUPS = [
     title: 'Система',
     color: 'from-sky-500 to-indigo-500',
     items: [
-      { to: '/admin/system',   Icon: Activity, label: 'Состояние системы' },
-      { to: '/admin/settings', Icon: Palette,  label: 'Настройки' },
+      { to: '/admin/system',   Icon: Activity,       label: 'Состояние системы' },
+      { to: '/admin/settings', Icon: Palette,        label: 'Настройки' },
+      { to: '/admin/telegram', Icon: MessageCircle,  label: 'Telegram-бот' },
     ],
   },
   {

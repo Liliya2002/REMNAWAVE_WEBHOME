@@ -50,10 +50,21 @@ async function notifyExpiringSoon() {
         AND (expiry_notice_sent_at IS NULL OR expiry_notice_sent_at < created_at)`
   )
 
+  const tgNotify = require('../services/telegramBot/notify')
+
   for (const sub of rows) {
     const daysLeft = Math.max(1, Math.ceil((new Date(sub.expires_at) - new Date()) / 86400000))
     try {
+      // 1. Email/in-app — существующее уведомление
       await notifySubscriptionExpiring(sub.user_id, { planName: sub.plan_name, daysLeft })
+
+      // 2. Telegram — silent skip если бот выключен / у юзера нет telegram_id / тип уведомления выключен
+      tgNotify.notifyUser(sub.user_id, 'user_subscription_expiring', {
+        plan: sub.plan_name,
+        daysLeft,
+        expiresAt: new Date(sub.expires_at).toLocaleDateString('ru-RU'),
+      }).catch(() => {})
+
       await db.query(`UPDATE subscriptions SET expiry_notice_sent_at = NOW() WHERE id = $1`, [sub.id])
     } catch (e) {
       console.error('[Cron] notifySubscriptionExpiring failed:', e.message)

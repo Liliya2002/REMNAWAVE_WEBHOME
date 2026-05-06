@@ -4,6 +4,58 @@
 
 ---
 
+## v0.1.9 — Telegram-бот, YC SSH-ключи + grant + auto-VPS, миллион улучшений
+
+Большой релиз: собственный Telegram-бот с регистрацией / личным кабинетом / рефералкой,
+расширение YC-интеграции, фиксы багов в проде.
+
+### Telegram-бот
+
+- **Полноценный бот на grammY** (long-polling + webhook) — `services/telegramBot/`
+- **Регистрация через `/start`** — юзер пишет в бот, в БД создаётся аккаунт (можно входить и через бот, и через сайт — одна учётка)
+- **Реф-код в `/start ref_<code>`** — реферальная привязка из бота
+- **Главное меню** — InlineKeyboard с 7 кнопками (Личный кабинет / Веб-Панель / Купить / Пригласить / FAQ / Поддержка / Оферта)
+- **Auto-login deeplink** — кнопка «🌐 Веб-Панель» открывает сайт без ввода логина (одноразовый токен 5 мин, страница `/tg-login`)
+- **Web App кнопки** — если задан `web_app_url` (HTTPS), главные действия открываются Mini App'ом прямо в Telegram (с launch-иконкой)
+- **Динамическая раскладка** — `wide` / pair, настраивается в админке
+- **Уведомления юзерам**: подписка истекает / платёж получен / реф-бонус / блок за трафик
+- **Уведомления админу**: VPS-просрочки / платежи / новые юзеры — теперь через единый `notifyAdmin()`
+- **Админ-панель `/admin/telegram`** — 5 табов: Подключение / Юзер-увед. / Админ-увед. / Кнопки меню / Тексты
+  - Настройка bot_token, mode (polling/webhook), webhook_url + secret
+  - Toggles per-type для уведомлений + редактируемые шаблоны с плейсхолдерами
+  - Тест-сообщение из админки
+  - Sticky save bar при изменениях, авто-рестарт бота при смене токена/mode
+
+### Yandex Cloud — расширения
+
+- **Грант** — поле в карточке аккаунта (вручную, т.к. YC API не отдаёт). UI с прогресс-баром, дни до истечения, бейджи «истёк / скоро истечёт» (миграция 0005)
+- **SSH-ключи с приватником** — теперь можно сохранять полный keypair (миграция 0006). Поле public_key + опциональный private_key
+- **Auto-gen SSH keypair** — генерация ed25519 / rsa-4096 прямо в админке (`services/yandexCloud/keygen.js`). Приватник показывается **один раз** в красной модалке для скачивания
+- **VPS auto-link** при создании VM — чекбокс «Добавить в /admin/vps» автоматически создаёт VPS-запись с ssh_user / private_key / yc_instance_id (миграция 0007)
+- **Бейдж «☁ Yandex Cloud»** в `/admin/vps` для всех VPS созданных из YC, ссылка на YC + при удалении VM удаляется и VPS-запись
+- **Compute SSH-key валидация** — `compute.js` теперь жёстко валидирует ключ (убирает Windows-`\r\n`, BOM) перед metadata. Без этого cloud-init молча отвергал ключ
+- **Serial-port enabled** в metadata всегда — fallback-доступ через консоль YC если SSH сломан
+- **IP-search rate-limit fix** — 429 теперь корректно классифицируется (раньше regex `/quota/i` принимал 429 за hard quota и сразу выходил). Backoff 15→30→45→60 секунд, hard-cap 10 hits подряд
+
+### Прочие фиксы и улучшения
+
+- **NotificationBell на мобилке** — outside-click переписан на `click` event (mousedown глюк на iOS Safari) + `setTimeout(0)` чтобы открывающий tap не закрывал dropdown сразу
+- **Главная (Home.jsx)** — `/api/landings/home` без назначенного лендинга возвращает 200+null (было 404, спамил консоль)
+- **Случай case-insensitive auth** уточнения и нормализация в auth.js
+- **AdminOverview** — новая плитка «Telegram-бот» в разделе «Система»
+
+### Миграции в этом релизе
+
+- 0005 — `yc_accounts.grant_*`
+- 0006 — `yc_ssh_keys.private_key + key_algo`
+- 0007 — `vps_servers.yc_account_id + yc_instance_id` (auto-link)
+- 0008 — `telegram_settings + telegram_link_tokens`
+- 0009 — `telegram_link_tokens.purpose`
+- 0010 — обновление дефолтного меню Telegram (7 кнопок с FAQ + Поддержкой)
+- 0011 — `telegram_settings.web_app_url`
+
+---
+
 ## v0.1.8 — Yandex Cloud, Traffic Agent, главная как лендинг, case-insensitive auth
 
 Большой релиз: 7 миграций сжаты в одну (`0004_release_v0.1.8`).

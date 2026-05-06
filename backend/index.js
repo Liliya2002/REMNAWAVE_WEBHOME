@@ -111,6 +111,8 @@ const adminDocsRoutes = require('./routes/admin-docs')
 const adminTrafficRoutes = require('./routes/admin-traffic')
 const adminTrafficGuardRoutes = require('./routes/admin-traffic-guard')
 const adminYandexCloudRoutes = require('./routes/admin-yandex-cloud')
+const adminTelegramRoutes = require('./routes/admin-telegram')
+const telegramBot = require('./services/telegramBot')
 const healthRoutes = require('./routes/health')
 const maintenanceRoutes = require('./routes/maintenance')
 const maintenanceGuard = require('./middleware/maintenance')
@@ -160,6 +162,20 @@ app.use('/api/admin/docs', adminLimiter, adminDocsRoutes)
 app.use('/api/admin/traffic', adminLimiter, adminTrafficRoutes)
 app.use('/api/admin/traffic-guard', adminLimiter, adminTrafficGuardRoutes)
 app.use('/api/admin/yandex-cloud', adminLimiter, adminYandexCloudRoutes)
+app.use('/api/admin/telegram', adminLimiter, adminTelegramRoutes)
+
+// Public webhook endpoint для Telegram (mode=webhook).
+// Telegram POST'ит сюда обновления; secret_token проверяется внутри.
+app.post('/api/tg/webhook', express.json(), async (req, res) => {
+  try {
+    const secret = req.headers['x-telegram-bot-api-secret-token']
+    await telegramBot.handleWebhookUpdate(req.body, secret)
+    res.sendStatus(200)
+  } catch (err) {
+    console.warn('[TG webhook]', err.message)
+    res.sendStatus(403)
+  }
+})
 // /api/health — публичный, без auth/limiter (для health-check'ов)
 app.use('/api/health', healthRoutes)
 app.use('/api/landings', landingsRoutes)
@@ -199,6 +215,9 @@ require('./cron/p2pDetector').start()
 
 // Cron: Squad Quotas — per-squad traffic limits
 require('./cron/squadQuota').start()
+
+// Telegram bot — авто-старт если включён в настройках (telegram_settings.is_enabled)
+telegramBot.autoStart().catch(err => console.warn('[TG bot] autoStart:', err.message))
 
 // YC: при рестарте помечаем зависшие IP-search job'ы как failed
 require('./services/yandexCloud/ipRangeSearch').recoverOrphanedJobs().catch(() => {})
