@@ -262,8 +262,10 @@ function BotStatusBadge({ status, settings }) {
 function ConnectionTab({ settings, status, setField, save, restart, saving }) {
   const [showToken, setShowToken] = useState(false)
   const [showSecret, setShowSecret] = useState(false)
+  const [showOidcSecret, setShowOidcSecret] = useState(false)
   const [tokenInput, setTokenInput] = useState('')
   const [secretInput, setSecretInput] = useState('')
+  const [oidcSecretInput, setOidcSecretInput] = useState('')
   const [testChatId, setTestChatId] = useState('')
   const [testText, setTestText] = useState('')
   const [testing, setTesting] = useState(false)
@@ -278,6 +280,12 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
   async function saveSecret() {
     await save({ webhook_secret: secretInput.trim() || null })
     setSecretInput('')
+  }
+
+  async function saveOidcSecret() {
+    if (!oidcSecretInput.trim()) return
+    await save({ oidc_client_secret: oidcSecretInput.trim() })
+    setOidcSecretInput('')
   }
 
   async function sendTest() {
@@ -459,6 +467,96 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
             <p>5. Сохрани → бэкенд автоматически вызовет setWebhook к Telegram API</p>
             <p>6. Проверь: <code className="text-cyan-300">curl https://api.telegram.org/bot&lt;TOKEN&gt;/getWebhookInfo</code></p>
             <p className="text-amber-400 mt-2">⚠️ Polling и webhook взаимоисключающие — Telegram сам снимает webhook при переходе на polling</p>
+          </div>
+        </details>
+      </Card>
+
+      {/* OAuth 2.0 / OIDC */}
+      <Card
+        icon={<Shield className="w-4 h-4 text-fuchsia-300" />}
+        title="OAuth 2.0 / OpenID Connect"
+        subtitle={
+          settings.oidc_enabled
+            ? (settings.has_oidc_client_secret && settings.oidc_client_id ? 'Включён · готов к работе' : 'Включён, но не заполнен полностью')
+            : 'Современный flow вместо Login Widget — кнопка «Войти через Telegram (OIDC)» на /login'
+        }
+      >
+        <label className="flex items-start gap-3 cursor-pointer mb-4">
+          <input
+            type="checkbox"
+            checked={!!settings.oidc_enabled}
+            onChange={e => setField('oidc_enabled', e.target.checked)}
+            className="w-5 h-5 mt-0.5 accent-fuchsia-500"
+          />
+          <div className="flex-1">
+            <div className="text-sm font-bold text-white">Включить OIDC-вход</div>
+            <div className="text-[11px] text-slate-400">
+              На странице <code className="text-cyan-300 font-mono">/login</code> появится отдельная кнопка
+              «Войти через Telegram (OIDC)». Login Widget продолжит работать параллельно.
+            </div>
+          </div>
+        </label>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Client ID</label>
+            <input
+              value={settings.oidc_client_id || ''}
+              onChange={e => setField('oidc_client_id', e.target.value.trim())}
+              placeholder="например 8009303824"
+              className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-fuchsia-500 focus:outline-none"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+              Client Secret <span className="text-slate-500 font-normal">(шифр.)</span>
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showOidcSecret ? 'text' : 'password'}
+                  value={oidcSecretInput}
+                  onChange={e => setOidcSecretInput(e.target.value)}
+                  placeholder={settings.has_oidc_client_secret ? 'Сохранён · оставь пустым чтобы не менять' : 'Длинная случайная строка от @BotFather'}
+                  className="w-full px-3 py-2 pr-10 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-fuchsia-500 focus:outline-none"
+                />
+                <button type="button" onClick={() => setShowOidcSecret(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-slate-400 hover:text-white">
+                  {showOidcSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <button onClick={saveOidcSecret} disabled={!oidcSecretInput.trim() || saving}
+                className="px-3 py-2 bg-fuchsia-500/15 border border-fuchsia-500/40 text-fuchsia-300 text-xs font-bold rounded-lg disabled:opacity-50 flex items-center gap-1">
+                <Save className="w-3.5 h-3.5" /> Сохранить
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Redirect URI</label>
+            <input
+              value={settings.oidc_redirect_uri || ''}
+              onChange={e => setField('oidc_redirect_uri', e.target.value.trim())}
+              placeholder="https://your-domain.com/auth/telegram/callback"
+              className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-fuchsia-500 focus:outline-none"
+            />
+            <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1">
+              <Info className="w-3 h-3 mt-0.5 shrink-0" />
+              Должен оканчиваться на <code className="text-cyan-300 font-mono">/auth/telegram/callback</code> и быть добавлен в @BotFather через <code className="text-cyan-300 font-mono">/setoauthredirects</code>. Только HTTPS.
+            </p>
+          </div>
+        </div>
+
+        <details className="mt-4">
+          <summary className="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300">📖 Как получить Client ID / Secret у @BotFather</summary>
+          <div className="mt-2 p-3 bg-slate-950/40 border border-slate-700/40 rounded-lg text-[11px] text-slate-400 space-y-1.5">
+            <p>1. Открой <a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">@BotFather</a></p>
+            <p>2. Введи <code className="text-cyan-300">/newoauth</code> → выбери своего бота → подтверди создание OAuth-приложения</p>
+            <p>3. BotFather пришлёт <b className="text-fuchsia-300">Client ID</b> + <b className="text-fuchsia-300">Client Secret</b> — вставь их сюда</p>
+            <p>4. Введи <code className="text-cyan-300">/setoauthredirects</code> → бот → перечисли redirect URIs (через перенос строки):</p>
+            <pre className="text-cyan-300 font-mono text-[10px] bg-slate-900/60 p-2 rounded">https://your-domain.com/auth/telegram/callback</pre>
+            <p className="text-emerald-400 mt-2">✓ После сохранения и включения галочки на /login появится кнопка «Войти через Telegram (OIDC)»</p>
+            <p className="text-amber-400 mt-1">⚠️ Login Widget HMAC использует <i>bot_token</i>, а OIDC — <i>client_id+client_secret</i>. Это разные креды, не смешивай.</p>
           </div>
         </details>
       </Card>

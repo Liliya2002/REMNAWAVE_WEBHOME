@@ -29,13 +29,18 @@ async function getSettings() {
       notifications_enabled: {},
       texts: {},
       menu_buttons: [],
+      oidc_enabled: false,
+      oidc_client_id: null,
+      oidc_client_secret: null,
+      oidc_redirect_uri: null,
     }
   }
   const row = r.rows[0]
   return {
     ...row,
-    bot_token:      row.bot_token ? safeDecrypt(row.bot_token) : null,
-    webhook_secret: row.webhook_secret ? safeDecrypt(row.webhook_secret) : null,
+    bot_token:          row.bot_token          ? safeDecrypt(row.bot_token)          : null,
+    webhook_secret:     row.webhook_secret     ? safeDecrypt(row.webhook_secret)     : null,
+    oidc_client_secret: row.oidc_client_secret ? safeDecrypt(row.oidc_client_secret) : null,
   }
 }
 
@@ -50,6 +55,8 @@ async function getSettingsSafe() {
     has_bot_token: !!s.bot_token,
     webhook_secret: null,
     has_webhook_secret: !!s.webhook_secret,
+    oidc_client_secret: null,
+    has_oidc_client_secret: !!s.oidc_client_secret,
   }
 }
 
@@ -65,8 +72,9 @@ async function updateSettings(patch) {
     'is_enabled', 'bot_username', 'mode', 'webhook_url',
     'admin_chat_id', 'notifications_enabled', 'texts', 'menu_buttons',
     'web_app_url',
+    'oidc_enabled', 'oidc_client_id', 'oidc_redirect_uri',
   ]
-  const sensitiveFields = ['bot_token', 'webhook_secret']
+  const sensitiveFields = ['bot_token', 'webhook_secret', 'oidc_client_secret']
 
   // Валидация mode
   if (patch.mode !== undefined && !['polling', 'webhook'].includes(patch.mode)) {
@@ -78,6 +86,10 @@ async function updateSettings(patch) {
   // web_app_url — только https
   if (patch.web_app_url && patch.web_app_url.length > 0 && !/^https:\/\//.test(patch.web_app_url)) {
     throw new Error('Web App URL должен начинаться с https:// (Telegram требует HTTPS для Mini Apps)')
+  }
+  // oidc_redirect_uri — только https в проде
+  if (patch.oidc_redirect_uri && patch.oidc_redirect_uri.length > 0 && !/^https:\/\//.test(patch.oidc_redirect_uri)) {
+    throw new Error('OIDC redirect_uri должен начинаться с https:// (Telegram требует HTTPS)')
   }
 
   const sets = []

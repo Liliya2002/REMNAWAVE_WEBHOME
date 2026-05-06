@@ -583,6 +583,184 @@ router.post('/reset-password', async (req, res) => {
   }
 })
 
+// ─── Telegram OAuth 2.0 / OpenID Connect ─────────────────────────────────
+//
+// В отличие от Login Widget (HMAC поверх данных от @<bot>), OIDC — это
+// стандартный flow `authorization_code + PKCE`:
+//
+//   1. Юзер жмёт «Войти через Telegram (OIDC)»
+//   2. GET /auth/telegram/oidc/start
+//        — генерим state + PKCE verifier
+//        — кладём { state, verifier } в подписанную httpOnly-cookie на 5 мин
+//        — 302 → https://oauth.telegram.org/auth?response_type=code&…
+//   3. Юзер логинится на стороне Telegram, оттуда 302 → наш redirect_uri
+//        с ?code=…&state=…
+//   4. GET /auth/telegram/callback
+//        — сверяем state с cookie
+//        — POST /token (code + code_verifier + client_id + client_secret)
+//        — валидируем id_token через JWKS (RS256, iss, aud, exp)
+//        — sub = telegram_id → ищем/создаём юзера
+//        — выдаём одноразовый auto-login токен и редиректим на /tg-login?t=<token>
+//          (TgLogin.jsx уже умеет конвертить такой токен в JWT в localStorage)
+//
+// Регистрация в @BotFather:  /newoauth + /setoauthredirects.
+//
+// Cookie tg_oidc_session — это подписанный JWT { state, verifier },
+// мы парсим её руками, чтобы не тащить cookie-parser ради одной точки.
+
+function parseCookies(s) {
+  const out = {}
+  if (!s) return out
+  for (const part of s.split(';')) {
+    const i = part.indexOf('=')
+    if (i < 0) continue
+    out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim())
+  }
+  return out
+}
+
+// Публичный endpoint — чтобы фронт мог решить, показывать ли кнопку «Войти через Telegram (OIDC)».
+// Не светим client_id/secret, только факт «доступно/нет».
+router.get('/telegram/oidc/info', async (req, res) => {
+  try {
+    const tgSettings = require('../services/telegramBot/settings')
+    const s = await tgSettings.getSettings()
+    const ready = !!(s.oidc_enabled && s.oidc_client_id && s.oidc_client_secret && s.oidc_redirect_uri)
+    res.json({ available: ready })
+  } catch {
+    res.json({ available: false })
+  }
+})
+
+router.get('/telegram/oidc/start', async (req, res) => {
+  try {
+    const tgSettings = require('../services/telegramBot/settings')
+    const oidcSvc    = require('../services/telegramBot/oidc')
+    const s = await tgSettings.getSettings()
+    if (!s.oidc_enabled) {
+      return res.status(503).send('Telegram OIDC отключён в админке. Включи в /admin/telegram → Подключение.')
+    }
+    if (!s.oidc_client_id || !s.oidc_client_secret || !s.oidc_redirect_uri) {
+      return res.status(503).send('Telegram OIDC: не заполнены client_id / client_secret / redirect_uri в админке.')
+    }
+
+    const state = oidcSvc.genState()
+    const { verifier, challenge } = oidcSvc.genPkce()
+
+    const sessionToken = jwt.sign({ s: state, v: verifier }, process.env.JWT_SECRET, { expiresIn: '5m' })
+    const isHttps = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https'
+    res.setHeader('Set-Cookie',
+      `tg_oidc_session=${sessionToken}; Path=/; Max-Age=300; HttpOnly; SameSite=Lax${isHttps ? '; Secure' : ''}`
+    )
+
+    const url = oidcSvc.buildAuthUrl({
+      clientId:      s.oidc_client_id,
+      redirectUri:   s.oidc_redirect_uri,
+      state,
+      codeChallenge: challenge,
+    })
+    return res.redirect(302, url)
+  } catch (err) {
+    console.error('[oidc-start]', err.message)
+    return res.status(500).send(`Ошибка OIDC: ${err.message}`)
+  }
+})
+
+router.get('/telegram/callback', async (req, res) => {
+  // Финальный URL для редиректа на фронт — оба ветка, success и error, ведут в одно место.
+  const frontendUrl = process.env.FRONTEND_URL || ''
+
+  try {
+    const { code, state, error: oauthError, error_description } = req.query
+    if (oauthError) {
+      return res.status(400).send(`Telegram OIDC отказ: ${oauthError} ${error_description || ''}`)
+    }
+    if (!code || !state) {
+      return res.status(400).send('Не передан code/state')
+    }
+
+    const cookie = parseCookies(req.headers.cookie || '')
+    const sessionToken = cookie.tg_oidc_session
+    if (!sessionToken) {
+      return res.status(400).send('Сессия OIDC потеряна (cookie не пришла). Попробуй ещё раз.')
+    }
+
+    let session
+    try {
+      session = jwt.verify(sessionToken, process.env.JWT_SECRET)
+    } catch {
+      return res.status(400).send('Сессия OIDC просрочена. Попробуй ещё раз.')
+    }
+    if (session.s !== state) {
+      return res.status(400).send('state не совпадает (возможна CSRF-атака).')
+    }
+
+    // Очищаем cookie сразу
+    res.setHeader('Set-Cookie', 'tg_oidc_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax')
+
+    const tgSettings = require('../services/telegramBot/settings')
+    const oidcSvc    = require('../services/telegramBot/oidc')
+    const s = await tgSettings.getSettings()
+    if (!s.oidc_client_id || !s.oidc_client_secret || !s.oidc_redirect_uri) {
+      return res.status(503).send('Telegram OIDC настроен неполно (нет client_id/secret/redirect_uri).')
+    }
+
+    const tokens = await oidcSvc.exchangeCode({
+      clientId:     s.oidc_client_id,
+      clientSecret: s.oidc_client_secret,
+      redirectUri:  s.oidc_redirect_uri,
+      code:         String(code),
+      codeVerifier: session.v,
+    })
+
+    const claims = await oidcSvc.verifyIdToken(tokens.id_token, { clientId: s.oidc_client_id })
+
+    const telegramId = parseInt(claims.sub, 10)
+    if (!telegramId) {
+      return res.status(400).send('OIDC: невалидный sub claim (не telegram_id).')
+    }
+    const tgUsername = claims.preferred_username || null
+
+    // Найти или создать юзера — та же логика что в POST /telegram (Login Widget).
+    let userId
+    const existing = await db.query('SELECT * FROM users WHERE telegram_id = $1', [telegramId])
+    if (existing.rows.length > 0) {
+      const u = existing.rows[0]
+      if (!u.is_active) return res.status(403).send('Аккаунт заблокирован.')
+      if (tgUsername && tgUsername !== u.telegram_username) {
+        await db.query('UPDATE users SET telegram_username = $1 WHERE id = $2', [tgUsername, u.id])
+      }
+      userId = u.id
+    } else {
+      const login = normLogin(tgUsername) || `tg_${telegramId}`
+      const lc = await db.query('SELECT 1 FROM users WHERE login = $1', [login])
+      const finalLogin = lc.rows.length > 0 ? `tg_${telegramId}` : login
+      const randomPass = crypto.randomBytes(32).toString('hex')
+      const hash = await bcrypt.hash(randomPass, 12)
+      const r = await db.query(
+        'INSERT INTO users (login, email, password_hash, telegram_id, telegram_username) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [finalLogin, `${telegramId}@telegram.user`, hash, telegramId, tgUsername]
+      )
+      userId = r.rows[0].id
+      try { await referralService.createReferralLink(userId) } catch (err) {
+        console.error('Error creating referral link for OIDC user:', err)
+      }
+      notifyWelcome(userId).catch(err => console.error('Welcome notification error:', err))
+    }
+
+    // Выдаём одноразовый auto-login токен и редиректим на фронт /tg-login?t=<token>.
+    // TgLogin.jsx это уже умеет — обменяет на JWT и кладёт в localStorage.
+    const { createAutoLoginToken } = require('../services/telegramBot/tokens')
+    const { token: oneTime } = await createAutoLoginToken(userId)
+
+    const redirectTo = `${frontendUrl}/tg-login?t=${encodeURIComponent(oneTime)}`
+    return res.redirect(302, redirectTo)
+  } catch (err) {
+    console.error('[oidc-callback]', err.message)
+    return res.status(500).send(`Ошибка OIDC callback: ${err.message}`)
+  }
+})
+
 /**
  * GET /auth/tg-login?t=<token>
  * Авто-логин из Telegram-бота. Юзер тапает в боте «🌐 Веб-Панель»,

@@ -4,6 +4,35 @@
 
 ---
 
+## v0.1.17 — Telegram OAuth 2.0 / OpenID Connect
+
+Добавлен полноценный OIDC-вход параллельно с Login Widget. В отличие от виджета (HMAC поверх данных через `bot_token`), это стандартный flow `authorization_code + PKCE` через [oauth.telegram.org](https://oauth.telegram.org/.well-known/openid-configuration). Креды (`client_id` + `client_secret`) выдаёт `@BotFather` отдельно от `bot_token` командой `/newoauth`.
+
+**Что нового:**
+
+- Миграция `0012_telegram_oidc` — поля `oidc_enabled`, `oidc_client_id`, `oidc_client_secret` (encrypted), `oidc_redirect_uri` в `telegram_settings`.
+- `backend/services/telegramBot/oidc.js` — клиент OIDC: `genState`, `genPkce`, `buildAuthUrl`, `exchangeCode`, `verifyIdToken` (через JWKS, RS256, кэш 10 мин).
+- `GET /auth/telegram/oidc/start` — генерит state + PKCE (S256), кладёт в подписанную httpOnly-cookie на 5 мин, редиректит на `https://oauth.telegram.org/auth?...`.
+- `GET /auth/telegram/callback` — сверяет state, обменивает code на токены, валидирует ID Token (JWKS RS256, iss, aud, exp), мапит `sub → telegram_id`, выдаёт одноразовый auto-login токен и редиректит на `/tg-login?t=...` (фронт уже умеет такое).
+- `GET /auth/telegram/oidc/info` — публичный, отвечает `{ available: true|false }`. Фронт `/login` его пингует чтобы решить, показывать ли OIDC-кнопку.
+- UI: новая карточка «OAuth 2.0 / OpenID Connect» в `/admin/telegram → Подключение` с полями Client ID / Client Secret / Redirect URI и галочкой включения.
+- UI: на `/login` отдельная кнопка «Войти через Telegram (OIDC)» — показывается только когда настройки полные и галочка включена.
+
+**Что нужно сделать у @BotFather** (одноразово):
+
+1. `/newoauth` → выбрать бота → BotFather пришлёт `Client ID` + `Client Secret`.
+2. `/setoauthredirects` → бот → ввести redirect URI (`https://your-domain/auth/telegram/callback`).
+
+**Что нужно в админке** `/admin/telegram → Подключение → OAuth 2.0 / OpenID Connect`:
+
+1. Вставить `Client ID`, `Client Secret`, `Redirect URI`.
+2. Включить галочку «Включить OIDC-вход».
+3. Сохранить.
+
+Login Widget продолжает работать как и раньше — это две независимые точки входа.
+
+---
+
 ## v0.1.16 — TG Login Widget: TTL 24ч, диагностика, аватар в кнопке
 
 Прошёлся по [официальной docs](https://core.telegram.org/widgets/login) Telegram Login Widget. HMAC-проверка у нас уже корректная (sort → key=value → \n → SHA256(token) → HMAC_SHA256), но три улучшения:

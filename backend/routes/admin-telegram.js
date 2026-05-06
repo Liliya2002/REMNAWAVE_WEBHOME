@@ -44,9 +44,11 @@ router.put('/settings', async (req, res) => {
     }
 
     res.json({
-      settings: { ...updated, bot_token: null, webhook_secret: null,
-                  has_bot_token: !!updated.bot_token,
-                  has_webhook_secret: !!updated.webhook_secret },
+      settings: { ...updated,
+                  bot_token: null, webhook_secret: null, oidc_client_secret: null,
+                  has_bot_token:          !!updated.bot_token,
+                  has_webhook_secret:     !!updated.webhook_secret,
+                  has_oidc_client_secret: !!updated.oidc_client_secret },
       restart: restartResult,
     })
   } catch (err) {
