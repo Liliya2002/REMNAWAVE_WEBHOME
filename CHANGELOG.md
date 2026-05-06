@@ -4,6 +4,32 @@
 
 ---
 
+## v0.1.12 — Hotfix: nginx http2 deprecated warning + proxy buffers
+
+**1. `listen ... http2` deprecated warning**
+
+В nginx 1.25+ устарел синтаксис `listen 443 ssl http2;`. Template в репо уже использует новый синтаксис (`listen 443 ssl;` + `http2 on;`), но на проде `nginx/conf.d/app.conf` был отрендерен из старой версии шаблона и не обновлялся при деплоях.
+
+**Фикс:**
+- Скрипт `deploy/update-nginx-config.sh` — регенерирует app.conf из template, делает `nginx -t` проверку и graceful reload. Идемпотентный — если конфиг уже актуален, ничего не делает.
+- В `deploy/deploy.sh` добавлен автовызов этого скрипта при каждом деплое.
+
+После релиза `app.conf` обновится автоматически и warning исчезнет.
+
+**2. Buffered upstream temp file (производительность)**
+
+В логах: `an upstream response is buffered to a temporary file ... index-daf79621.js` — большие JS-бандлы Vite (>200кб) уходили в temp-file на диск (медленнее).
+
+**Фикс:** в `app.conf.template` подняты proxy-буферы для `location /` (фронт):
+```
+proxy_buffer_size       16k;
+proxy_buffers           8 16k;
+proxy_busy_buffers_size 32k;
+```
+Теперь бандлы держатся в RAM.
+
+---
+
 ## v0.1.11 — Hotfix: TG cabinet balance + .git/config leak
 
 **1. TG бот «Личный кабинет» падал на `column "balance" does not exist`**

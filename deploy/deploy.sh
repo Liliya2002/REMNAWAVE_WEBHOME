@@ -235,6 +235,14 @@ DEPLOY_STARTED=1
 docker compose up -d backend frontend
 ok "Контейнеры перезапущены"
 
+# Регенерируем nginx-конфиг из template если изменился (деплой нового релиза мог
+# принести правки в nginx/conf.d/app.conf.template). Скрипт сам сделает reload nginx
+# через `nginx -s reload` если контейнер запущен.
+if [ -x ./deploy/update-nginx-config.sh ]; then
+  log "Проверяю актуальность nginx/conf.d/app.conf…"
+  ./deploy/update-nginx-config.sh 2>&1 | sed 's/^/  /' || warn "update-nginx-config.sh упал"
+fi
+
 # Restart nginx чтобы он переподключился к свежим IP backend/frontend.
 # Иначе nginx-кеш resolver'а держит старые (мёртвые) адреса → 502 Bad Gateway.
 # Делаем только если nginx уже работает (если нет — запускать его — не задача deploy.sh).
