@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { RefreshCw, AlertCircle, CheckCircle2 } from 'lucide-react'
 
@@ -17,6 +17,12 @@ export default function TgLogin() {
   const [params] = useSearchParams()
   const [status, setStatus] = useState('loading') // loading | error | success
   const [error, setError] = useState(null)
+  // Guard от двойного fetch — токен одноразовый и в БД помечается used_at
+  // атомарно, поэтому второй запрос гарантированно вернёт 410.
+  // Дублирование может произойти из-за StrictMode (dev), back/forward cache
+  // или browser-prefetch. useRef переживает re-renders и StrictMode'овский
+  // mount→unmount→mount.
+  const startedRef = useRef(false)
 
   useEffect(() => {
     const t = params.get('t')
@@ -26,6 +32,9 @@ export default function TgLogin() {
       setStatus('error'); setError('Токен не передан в URL')
       return
     }
+
+    if (startedRef.current) return
+    startedRef.current = true
 
     let cancelled = false
     fetch(`${API}/auth/tg-login?t=${encodeURIComponent(t)}`)

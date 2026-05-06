@@ -4,6 +4,16 @@
 
 ---
 
+## v0.1.21 — Hotfix: TgLogin одноразовый токен «истёк» из-за двойного fetch
+
+После OIDC callback (или после перехода с inline-кнопки бота на сайт) юзер видел ошибку «Токен невалиден или истёк» — хотя токен только что создан.
+
+**Причина:** в [TgLogin.jsx](frontend/src/pages/TgLogin.jsx) `useEffect` мог отработать дважды (StrictMode, back/forward cache, browser-prefetch, расширения). Второй `fetch /auth/tg-login` приходил уже после того как `consumeAutoLoginToken` атомарно пометил токен `used_at = NOW()` — и возвращал 410 Gone.
+
+**Фикс:** добавлен `useRef` guard, который переживает re-renders и StrictMode'овский mount→unmount→mount, гарантирует ровно один fetch.
+
+---
+
 ## v0.1.20 — Hotfix: OIDC sub != telegram_id (BIGINT overflow)
 
 При входе через OIDC падало с `value "11713064933933089000" is out of range for type bigint`. Причина: OAuth/OIDC `sub` claim — это **opaque subject identifier**, а не реальный telegram_id (который приходит через `ctx.from.id` в боте). Telegram возвращает sub значениями ~1.17×10¹⁹, что больше PostgreSQL `BIGINT` (макс 9.2×10¹⁸).
