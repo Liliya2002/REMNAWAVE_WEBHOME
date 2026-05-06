@@ -44,32 +44,3 @@ export async function register(login, email, password, emailCode, referralCode =
 export function logout(){
   localStorage.removeItem('token')
 }
-
-export async function telegramLogin(tgData){
-  const res = await fetch(`${API}/auth/telegram`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(tgData)
-  })
-  const data = await res.json()
-  if (res.ok && data.token){
-    localStorage.setItem('token', data.token)
-    return { ok: true, isNew: data.isNew }
-  }
-  return { ok: false, error: data.error || 'Ошибка' }
-}
-
-export async function linkTelegram(tgData){
-  const token = localStorage.getItem('token')
-  const res = await fetch(`${API}/auth/telegram/link`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify(tgData)
-  })
-  const data = await res.json()
-  if (res.ok) return { ok: true }
-  return { ok: false, error: data.error || 'Ошибка' }
-}

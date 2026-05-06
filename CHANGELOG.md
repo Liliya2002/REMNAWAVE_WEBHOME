@@ -4,6 +4,44 @@
 
 ---
 
+## v0.1.19 — Удаление Login Widget, регистрация и привязка через бот по QR
+
+**Удалено** — старый Telegram Login Widget (HMAC поверх данных через `bot_token`):
+- frontend: `<TelegramLoginButton>` (компонент удалён), `telegramLogin()` и `linkTelegram()` в [services/auth.js](frontend/src/services/auth.js) — удалены
+- backend: `POST /auth/telegram`, `POST /auth/telegram/link`, функция `verifyTelegramData()` — удалены
+- viewport `data-onauth` глобальные callbacks больше не создаются на странице
+
+**Добавлено** — два независимых bot-flow с QR-кодом и polling:
+
+### Регистрация через бот ([Register.jsx](frontend/src/pages/Register.jsx))
+
+Пользователь заполняет login/email/password → жмёт «Зарегистрироваться через Telegram-бот» → видит QR-код с deeplink `t.me/<bot>?start=reg_<token>` → сканирует камерой или открывает в Telegram → бот регистрирует юзера с привязкой `telegram_id` → фронт автоматически логинит на сайте через одноразовый auto-login токен.
+
+- Email-код остаётся как **альтернативный путь** на той же странице — юзер выбирает.
+- Бот делает **только TG-привязку**. `email_confirmed` остаётся `false`, если в `site_config` включено email-подтверждение, юзеру всё равно придётся подтвердить email из ЛК.
+- TTL токена — 15 минут.
+
+### Привязка существующего аккаунта ([SecuritySection.jsx](frontend/src/pages/dashboard/SecuritySection.jsx))
+
+Юзер в `/dashboard → Безопасность` жмёт «Привязать через Telegram-бот» → QR-код с deeplink `t.me/<bot>?start=link_<token>` → бот проставляет `users.telegram_id` для текущего юзера. RemnaWave-подписки синхронизируются автоматически.
+
+### Технически
+
+- Миграция [`0013_pending_registrations`](backend/migrations/0013_pending_registrations.up.sql) — отдельная таблица для pending-регистраций (не плодим неподтверждённых юзеров в `users`) + `confirmed_at` в `telegram_link_tokens`.
+- Новые backend endpoints (см. [routes/auth.js](backend/routes/auth.js)): `POST /auth/register/start`, `GET /auth/register/poll`, `POST /auth/telegram/link/start`, `GET /auth/telegram/link/poll`, `GET /auth/telegram/availability`.
+- Новый сервис в [services/telegramBot/tokens.js](backend/services/telegramBot/tokens.js): `createPendingRegistration`, `pollRegistrationStatus`, `createLinkToken`, `pollLinkStatus`.
+- Обработка `/start reg_<token>` и `/start link_<token>` в [handlers.js](backend/services/telegramBot/handlers.js).
+- Общий React-компонент [BotQrModal.jsx](frontend/src/components/BotQrModal.jsx) — QR + polling + таймер + копирование ссылки. Переиспользуется и для регистрации, и для привязки.
+- Зависимость `qrcode.react@^4.1.0` (~6kb) для рендера QR в браузере.
+
+### На странице `/login`
+
+Login Widget убран. Остаются:
+- Логин + пароль
+- «Войти через Telegram» (OIDC) — если настроен в `/admin/telegram → OAuth 2.0 / OIDC`
+
+---
+
 ## v0.1.18 — Hotfix: настройки OIDC сбрасывались при сохранении
 
 В `AdminTelegram.jsx → save()` body отправлялся как whitelist полей. Я забыл добавить новые OIDC-поля (`oidc_enabled`, `oidc_client_id`, `oidc_redirect_uri`) и `web_app_url` в этот whitelist. Поэтому когда юзер ставил галочку «Включить OIDC-вход», вводил Client ID + Redirect URI и нажимал «Сохранить» — эти поля просто не уходили на backend, в ответе возвращались старые значения, и фронт перезаписывал state → галочка визуально сбрасывалась.

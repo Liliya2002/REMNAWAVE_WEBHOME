@@ -1,7 +1,6 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { login, telegramLogin } from '../services/auth'
-import TelegramLoginButton from '../components/TelegramLoginButton'
+import { login } from '../services/auth'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -38,15 +37,6 @@ export default function Login(){
     if (res.ok) navigate('/dashboard')
     else setError(res.error)
   }
-
-  const handleTelegramAuth = useCallback(async (user) => {
-    setError(null)
-    setLoading(true)
-    const res = await telegramLogin(user)
-    setLoading(false)
-    if (res.ok) navigate('/dashboard')
-    else setError(res.error)
-  }, [navigate])
 
   return (
     <div className="min-h-[calc(100vh-200px)] flex items-center justify-center py-8 px-4 sm:px-6 lg:px-8">
@@ -142,14 +132,9 @@ export default function Login(){
             </div>
           </div>
 
-          {/* Telegram Login */}
-          <div className="mb-6 space-y-3">
-            <TelegramLoginButton
-              botName={import.meta.env.VITE_TELEGRAM_BOT_NAME}
-              onAuth={handleTelegramAuth}
-            />
-
-            {oidcAvailable && (
+          {/* Telegram OIDC — только если настроен в админке */}
+          {oidcAvailable && (
+            <div className="mb-6">
               <a
                 href={`${API}/auth/telegram/oidc/start`}
                 className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg font-semibold text-sm bg-[#229ED9] hover:bg-[#1d8bc1] text-white shadow-lg transition-colors"
@@ -158,10 +143,10 @@ export default function Login(){
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.16.16-.295.295-.605.295l.213-3.054 5.56-5.022c.24-.213-.054-.334-.373-.121l-6.869 4.326-2.96-.924c-.64-.203-.658-.64.135-.954l11.566-4.458c.538-.196 1.006.128.832.94z"/>
                 </svg>
-                Войти через Telegram (OIDC)
+                Войти через Telegram
               </a>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Register Link */}
           <div className="text-center">

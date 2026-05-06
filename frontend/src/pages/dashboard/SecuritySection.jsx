@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { Lock, Radio, Globe, Clock, ShieldAlert, KeyRound, Ban, MailCheck, MessageCircle, Monitor, Smartphone, LogOut, Loader2 } from 'lucide-react'
-import { linkTelegram } from '../../services/auth'
-import TelegramLoginButton from '../../components/TelegramLoginButton'
+import BotQrModal from '../../components/BotQrModal'
+
+const API = import.meta.env.VITE_API_URL || ''
 
 function parseUserAgent(ua) {
   if (!ua || ua === 'unknown') return { device: 'Неизвестное устройство', icon: 'desktop' }
@@ -33,6 +34,16 @@ export default function SecuritySection({ user }) {
   const [tgUsername, setTgUsername] = useState(user?.telegram_username || null)
   const [tgMessage, setTgMessage] = useState(null)
   const [tgError, setTgError] = useState(null)
+  const [tgBotAvailable, setTgBotAvailable] = useState(false)
+  const [showLinkModal, setShowLinkModal] = useState(false)
+
+  // Проверяем доступен ли бот для привязки
+  useEffect(() => {
+    fetch(`${API}/auth/telegram/availability`)
+      .then(r => r.ok ? r.json() : { bot_available: false })
+      .then(d => setTgBotAvailable(!!d.bot_available))
+      .catch(() => setTgBotAvailable(false))
+  }, [])
   const [sessions, setSessions] = useState([])
   const [sessionsLoading, setSessionsLoading] = useState(true)
   const [sessionAction, setSessionAction] = useState(null)
@@ -86,17 +97,14 @@ export default function SecuritySection({ user }) {
     }
   }
 
-  const handleTelegramLink = useCallback(async (tgUser) => {
+  // Когда бот подтвердил привязку — обновляем UI и закрываем модалку через 1 сек
+  const handleLinkConfirmed = useCallback(() => {
     setTgError(null)
-    setTgMessage(null)
-    const res = await linkTelegram(tgUser)
-    if (res.ok) {
-      setTgLinked(true)
-      setTgUsername(tgUser.username || null)
-      setTgMessage('Telegram успешно привязан!')
-    } else {
-      setTgError(res.error)
-    }
+    setTgLinked(true)
+    setTgMessage('Telegram успешно привязан!')
+    setTimeout(() => setShowLinkModal(false), 1500)
+    // Юзер может обновить страницу чтобы подтянуть свежий tgUsername из /api/me,
+    // но мы поставим заглушку — если бот не передал, останется null.
   }, [])
 
   const handleChangePassword = async () => {
@@ -208,14 +216,27 @@ export default function SecuritySection({ user }) {
               </div>
             </div>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <p className="text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400">Привяжите Telegram для быстрого входа в аккаунт</p>
-            <TelegramLoginButton
-              botName={import.meta.env.VITE_TELEGRAM_BOT_NAME}
-              onAuth={handleTelegramLink}
-            />
+        ) : tgBotAvailable ? (
+          <div className="space-y-3">
+            <p className="text-sm text-sky-700 dark:text-slate-400">Привяжите Telegram для быстрого входа в аккаунт</p>
+            <button
+              type="button"
+              onClick={() => { setTgError(null); setTgMessage(null); setShowLinkModal(true) }}
+              className="flex items-center justify-center gap-2 w-full sm:w-auto px-5 py-3 bg-[#229ED9] hover:bg-[#1d8bc1] text-white rounded-lg font-semibold text-sm shadow-lg transition-colors"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 8.221l-1.97 9.28c-.145.658-.537.818-1.084.508l-3-2.21-1.446 1.394c-.16.16-.295.295-.605.295l.213-3.054 5.56-5.022c.24-.213-.054-.334-.373-.121l-6.869 4.326-2.96-.924c-.64-.203-.658-.64.135-.954l11.566-4.458c.538-.196 1.006.128.832.94z"/>
+              </svg>
+              Привязать через Telegram-бот
+            </button>
+            <p className="text-[11px] text-sky-700/60 dark:text-slate-500">
+              Откроется QR-код с deeplink в бота. Бот привяжет твой Telegram к этому аккаунту.
+            </p>
           </div>
+        ) : (
+          <p className="text-sm text-sky-700/70 dark:text-slate-500">
+            Telegram-бот сейчас не настроен. Обратись к администратору.
+          </p>
         )}
         {tgMessage && <div className="mt-4 p-4 bg-green-500/10 border border-green-500/50 text-green-600 dark:text-green-400 rounded-lg text-sm flex items-center gap-2"><span>✓</span> {tgMessage}</div>}
         {tgError && <div className="mt-4 p-4 bg-red-500/10 border border-red-500/50 text-red-600 dark:text-red-400 rounded-lg text-sm flex items-center gap-2"><span>✕</span> {tgError}</div>}
@@ -349,6 +370,17 @@ export default function SecuritySection({ user }) {
           </div>
         </div>
       </div>
+
+      <BotQrModal
+        open={showLinkModal}
+        onClose={() => setShowLinkModal(false)}
+        kind="link"
+        startUrl="/auth/telegram/link/start"
+        pollUrl="/auth/telegram/link/poll"
+        payload={{}}
+        authHeader={true}
+        onSuccess={handleLinkConfirmed}
+      />
     </div>
   )
 }

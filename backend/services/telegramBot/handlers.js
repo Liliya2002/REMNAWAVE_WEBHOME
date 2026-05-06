@@ -34,6 +34,16 @@ async function handleStart(ctx) {
 
   const payload = String(ctx.match || '').trim()
 
+  // /start reg_<token> — подтверждение регистрации с сайта (новый юзер)
+  if (payload.startsWith('reg_')) {
+    return handleRegistrationConfirm(ctx, payload.slice(4))
+  }
+
+  // /start link_<token> — привязка существующего сайт-аккаунта
+  if (payload.startsWith('link_')) {
+    return handleLinkConfirm(ctx, payload.slice(5))
+  }
+
   let user
   try {
     user = await findOrCreateUser(tgUser, payload)
@@ -113,6 +123,154 @@ async function findOrCreateUser(tgUser, payload) {
   catch (err) { console.warn('[TG bot] Create referral link error:', err.message) }
 
   return { ...newUser, _isNew: true }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// /start reg_<token> — подтверждение регистрации с сайта
+// ────────────────────────────────────────────────────────────────────────────
+
+async function handleRegistrationConfirm(ctx, token) {
+  const tgUser = ctx.from
+  const telegramId = parseInt(tgUser.id, 10)
+  const tgUsername = tgUser.username || null
+
+  const pending = await tokens.getPendingRegistration(token)
+  if (!pending) {
+    return ctx.reply('⚠️ Регистрационная ссылка не найдена. Сгенерируй новую на сайте.')
+  }
+  if (pending.confirmed_at) {
+    return ctx.reply('✅ Эта регистрация уже подтверждена раньше. Зайди на сайт.')
+  }
+  if (pending.expired) {
+    return ctx.reply('⏱ Ссылка истекла (живёт 15 мин). Сгенерируй новую на сайте.')
+  }
+
+  // Этот telegram_id уже привязан к другому юзеру?
+  const occupied = await db.query('SELECT id FROM users WHERE telegram_id = $1', [telegramId])
+  if (occupied.rows.length > 0) {
+    return ctx.reply(
+      `⚠️ Этот Telegram уже привязан к аккаунту <b>${escapeHtml(occupied.rows[0].id)}</b>. ` +
+      `Выйди из него на сайте или используй другой Telegram-аккаунт.`,
+      { parse_mode: 'HTML' }
+    )
+  }
+
+  // Логин/email могли быть заняты пока юзер думал — перепроверяем атомарно
+  const dup = await db.query('SELECT 1 FROM users WHERE login = $1 OR email = $2',
+                             [pending.login, pending.email])
+  if (dup.rows.length > 0) {
+    return ctx.reply('⚠️ Логин или email уже заняты — кто-то успел зарегистрироваться раньше. Попробуй другие.')
+  }
+
+  let newUserId
+  try {
+    const ins = await db.query(
+      `INSERT INTO users (login, email, password_hash, telegram_id, telegram_username, registration_ip)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [pending.login, pending.email, pending.password_hash,
+       telegramId, tgUsername, pending.registration_ip]
+    )
+    newUserId = ins.rows[0].id
+
+    await tokens.markRegistrationConfirmed(token, newUserId)
+
+    if (pending.referral_code) {
+      try {
+        const referrerId = await referralService.getUserByReferralCode(pending.referral_code)
+        if (referrerId && referrerId !== newUserId) {
+          await referralService.createReferral(referrerId, newUserId, pending.referral_code)
+          await referralService.processSignupBonus(referrerId, newUserId).catch(() => {})
+        }
+      } catch (err) {
+        console.warn('[TG bot] Referral link error:', err.message)
+      }
+    }
+    try { await referralService.createReferralLink(newUserId) }
+    catch (err) { console.warn('[TG bot] Create referral link error:', err.message) }
+  } catch (err) {
+    console.error('[TG bot] handleRegistrationConfirm:', err.message)
+    return ctx.reply('⚠️ Ошибка создания аккаунта. Попробуй ещё раз через минуту.')
+  }
+
+  // Шлём auto-login кнопку
+  const auto = await tokens.createAutoLoginToken(newUserId)
+  const settings = await getSettings()
+  const webBase = (settings.web_app_url || FRONTEND_URL).replace(/\/$/, '')
+  const loginUrl = `${webBase}/tg-login?t=${auto.token}`
+
+  const kb = new InlineKeyboard().url('🌐 Открыть сайт', loginUrl)
+  return ctx.reply(
+    `✅ Регистрация подтверждена!\n\n` +
+    `Логин: <code>${escapeHtml(pending.login)}</code>\n` +
+    `Email: <code>${escapeHtml(pending.email)}</code>\n\n` +
+    `Тапни кнопку ниже чтобы войти на сайт.`,
+    { parse_mode: 'HTML', reply_markup: kb }
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// /start link_<token> — привязка к существующему сайт-аккаунту
+// ────────────────────────────────────────────────────────────────────────────
+
+async function handleLinkConfirm(ctx, token) {
+  const tgUser = ctx.from
+  const telegramId = parseInt(tgUser.id, 10)
+  const tgUsername = tgUser.username || null
+
+  const link = await tokens.getLinkToken(token)
+  if (!link) {
+    return ctx.reply('⚠️ Ссылка привязки не найдена. Сгенерируй новую в Личном кабинете.')
+  }
+  if (link.confirmedAt) {
+    return ctx.reply('✅ Аккаунт уже привязан раньше.')
+  }
+  if (link.expired) {
+    return ctx.reply('⏱ Ссылка истекла (живёт 15 мин). Сгенерируй новую.')
+  }
+
+  // Этот telegram_id уже привязан к другому?
+  const other = await db.query(
+    'SELECT id FROM users WHERE telegram_id = $1 AND id != $2',
+    [telegramId, link.userId]
+  )
+  if (other.rows.length > 0) {
+    return ctx.reply('⚠️ Этот Telegram уже привязан к другому аккаунту на сайте.')
+  }
+
+  await db.query(
+    'UPDATE users SET telegram_id = $1, telegram_username = $2 WHERE id = $3',
+    [telegramId, tgUsername, link.userId]
+  )
+  await tokens.confirmLinkToken(token)
+
+  // Синхронизируем telegramId в RemnaWave
+  try {
+    const subs = await db.query(
+      `SELECT remnwave_user_uuid FROM subscriptions
+       WHERE user_id = $1 AND is_active = true AND remnwave_user_uuid IS NOT NULL`,
+      [link.userId]
+    )
+    if (subs.rows.length > 0) {
+      const remnwave = require('../remnwave')
+      for (const s of subs.rows) {
+        remnwave.updateRemnwaveUser(s.remnwave_user_uuid, { telegramId })
+          .catch(err => console.error('[link-confirm] RW sync failed:', err.message))
+      }
+    }
+  } catch {}
+
+  const settings = await getSettings()
+  await ctx.reply(
+    '✅ Telegram-аккаунт успешно привязан к твоему сайту-аккаунту!',
+    { reply_markup: buildMainMenu(settings.menu_buttons || [], settings) }
+  )
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
 
 // ────────────────────────────────────────────────────────────────────────────

@@ -279,223 +279,137 @@ router.post('/login', async (req, res) => {
   }
 })
 
-// Верификация данных Telegram Login Widget.
+// ─── Регистрация через Telegram-бот ───────────────────────────────────────────
 //
-// Алгоритм по docs (https://core.telegram.org/widgets/login):
-//   data_check_string = sort(keys) → "key=value" → join("\n")
-//   secret_key = SHA256(bot_token)
-//   hash должен совпасть с hex(HMAC_SHA256(data_check_string, secret_key))
+// Юзер на /register заполняет login/email/password, выбирает «Через Telegram».
+// Backend создаёт pending_registrations (юзер ещё НЕ в users), возвращает
+// deeplink t.me/<bot>?start=reg_<token> + token для polling.
 //
-// Токен берём из telegram_settings (приоритет — настраивается через админку
-// /admin/telegram), fallback на process.env.TELEGRAM_BOT_TOKEN (legacy).
+// Бот в /start reg_<token> создаёт users (telegram_id+telegram_username) и
+// проставляет confirmed_at. Frontend поллит /auth/register/poll и редиректит
+// на /tg-login?t=<auto_login_token>.
 //
-// Возвращает { ok, reason } — reason полезен для диагностики "почему упало".
-async function verifyTelegramData(data) {
-  let botToken = process.env.TELEGRAM_BOT_TOKEN
+// Важно: бот делает ТОЛЬКО привязку telegram_id. Если site_config требует
+// email-подтверждение, поле email_confirmed остаётся false — юзеру всё равно
+// придётся подтвердить email кодом из ЛК.
+
+router.post('/register/start', checkBannedIp, async (req, res) => {
   try {
+    const { password, referralCode } = req.body
+    const login = normLogin(req.body.login)
+    const email = normEmail(req.body.email)
+    if (!login || !email || !password) return res.status(400).json({ error: 'Missing fields' })
+
+    if (login.length < 3 || login.length > 30) {
+      return res.status(400).json({ error: 'Логин должен быть от 3 до 30 символов' })
+    }
+    if (!/^[a-z0-9_-]+$/.test(login)) {
+      return res.status(400).json({ error: 'Логин может содержать только латиницу, цифры, _ и -' })
+    }
+    if (password.length < 8) return res.status(400).json({ error: 'Пароль должен быть минимум 8 символов' })
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      return res.status(400).json({ error: 'Пароль должен содержать буквы и цифры' })
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'Некорректный формат email' })
+    }
+
+    const exists = await db.query('SELECT 1 FROM users WHERE login=$1 OR email=$2', [login, email])
+    if (exists.rows.length > 0) return res.status(409).json({ error: 'User already exists' })
+
     const tgSettings = require('../services/telegramBot/settings')
     const s = await tgSettings.getSettings()
-    if (s.bot_token) botToken = s.bot_token
-  } catch {}
-  if (!botToken) return { ok: false, reason: 'no_bot_token' }
-
-  const { hash, ...rest } = data
-  if (!hash) return { ok: false, reason: 'no_hash' }
-
-  // auth_date не старше 24 часов — защита от replay-атак.
-  // Telegram в docs не указывает лимит, оставляет на наше усмотрение.
-  const authDate = parseInt(rest.auth_date, 10)
-  if (isNaN(authDate)) return { ok: false, reason: 'bad_auth_date' }
-  const ageSec = Date.now() / 1000 - authDate
-  if (ageSec > 86400) return { ok: false, reason: 'auth_date_expired', ageSec }
-  if (ageSec < -300) return { ok: false, reason: 'auth_date_future' }  // часы сервера расходятся
-
-  // data_check_string — отсортированные key=value через \n
-  const checkString = Object.keys(rest)
-    .sort()
-    .map(k => `${k}=${rest[k]}`)
-    .join('\n')
-
-  const secretKey = crypto.createHash('sha256').update(botToken).digest()
-  const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex')
-
-  if (hmac.length !== hash.length) return { ok: false, reason: 'hash_length_mismatch' }
-  const match = crypto.timingSafeEqual(Buffer.from(hmac), Buffer.from(hash))
-  if (!match) return { ok: false, reason: 'hash_mismatch' }
-  return { ok: true }
-}
-
-// Авторизация через Telegram
-router.post('/telegram', async (req, res) => {
-  const tgData = req.body
-  if (!tgData || !tgData.id) {
-    return res.status(400).json({ error: 'Некорректные данные Telegram' })
-  }
-
-  const verif = await verifyTelegramData(tgData)
-  if (!verif.ok) {
-    const hints = {
-      no_bot_token:        'Bot token не настроен. Открой /admin/telegram → Подключение и сохрани токен от @BotFather.',
-      hash_mismatch:       'HMAC не сошёлся. Скорее всего bot token в админке не совпадает с тем что у @BotFather, или /setdomain не сделан для этого домена.',
-      auth_date_expired:   'Сессия аутентификации устарела (24+ часов). Перезагрузи страницу и попробуй снова.',
-      auth_date_future:    'Расхождение часов между сервером и Telegram. Проверь NTP на сервере.',
-      no_hash:             'В payload нет поля hash — возможно виджет загрузился неправильно.',
-      bad_auth_date:       'В payload невалидный auth_date.',
-      hash_length_mismatch:'Длина hash отличается от ожидаемой — payload повреждён.',
+    if (!s.is_enabled || !s.bot_token || !s.bot_username) {
+      return res.status(503).json({ error: 'Telegram-бот не настроен. Используй обычную регистрацию.' })
     }
-    return res.status(401).json({
-      error: 'Невалидная подпись Telegram',
-      reason: verif.reason,
-      hint: hints[verif.reason] || null,
+
+    const bot = require('../services/telegramBot')
+    if (!bot.status().running) {
+      return res.status(503).json({ error: 'Telegram-бот сейчас не работает. Попробуй позже или используй email-код.' })
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12)
+    const tokens = require('../services/telegramBot/tokens')
+    const { token, expiresAt } = await tokens.createPendingRegistration({
+      login,
+      email,
+      passwordHash,
+      referralCode: referralCode || null,
+      registrationIp: req.ip || null,
     })
-  }
 
-  const telegramId = parseInt(tgData.id, 10)
-  const tgUsername = tgData.username || null
-
-  try {
-    // Ищем пользователя с таким telegram_id
-    const existing = await db.query('SELECT * FROM users WHERE telegram_id = $1', [telegramId])
-    
-    if (existing.rows.length > 0) {
-      const user = existing.rows[0]
-      if (!user.is_active) {
-        return res.status(403).json({ error: 'Ваш аккаунт заблокирован' })
-      }
-      // Обновляем telegram_username если изменился
-      if (tgUsername && tgUsername !== user.telegram_username) {
-        await db.query('UPDATE users SET telegram_username = $1 WHERE id = $2', [tgUsername, user.id])
-      }
-      const token = jwt.sign(
-        { id: user.id, login: user.login, is_admin: user.is_admin },
-        process.env.JWT_SECRET,
-        { expiresIn: '8h' }
-      )
-      // Сохраняем сессию
-      createSession(user.id, token, req).catch(err => console.error('Session create error:', err))
-      return res.json({ token, isNew: false })
-    }
-
-    // Новый пользователь — регистрация через Telegram
-    // tg_username может быть с заглавными — нормализуем для нашей системы
-    const login = normLogin(tgUsername) || `tg_${telegramId}`
-    // Проверяем, не занят ли логин
-    const loginCheck = await db.query('SELECT 1 FROM users WHERE login = $1', [login])
-    const finalLogin = loginCheck.rows.length > 0 ? `tg_${telegramId}` : login
-
-    // Генерируем случайный пароль (пользователь входит через Telegram, пароль не используется)
-    const randomPass = crypto.randomBytes(32).toString('hex')
-    const hash = await bcrypt.hash(randomPass, 12)
-
-    const result = await db.query(
-      'INSERT INTO users (login, email, password_hash, telegram_id, telegram_username) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-      [finalLogin, `${telegramId}@telegram.user`, hash, telegramId, tgUsername]
-    )
-    const newUserId = result.rows[0].id
-
-    // Создаем реферальную ссылку
-    try {
-      await referralService.createReferralLink(newUserId)
-    } catch (err) {
-      console.error('Error creating referral link for telegram user:', err)
-    }
-
-    // Обработка реферального кода
-    const referralCode = tgData.referralCode || null
-    if (referralCode) {
-      try {
-        const referrerId = await referralService.getUserByReferralCode(referralCode)
-        if (referrerId) {
-          await referralService.createReferral(referrerId, newUserId, referralCode)
-          await referralService.processSignupBonus(referrerId, newUserId)
-        }
-      } catch (err) {
-        console.error('Error processing referral for telegram user:', err)
-      }
-    }
-
-    notifyWelcome(newUserId).catch(err => console.error('Welcome notification error:', err))
-
-    const token = jwt.sign(
-      { id: newUserId, login: finalLogin, is_admin: false },
-      process.env.JWT_SECRET,
-      { expiresIn: '8h' }
-    )
-    // Сохраняем сессию
-    createSession(newUserId, token, req).catch(err => console.error('Session create error:', err))
-    return res.json({ token, isNew: true })
+    const deeplink = `https://t.me/${s.bot_username}?start=reg_${token}`
+    return res.json({
+      token,
+      deeplink,
+      bot_username: s.bot_username,
+      expires_at:   expiresAt,
+      ttl_ms:       tokens.REGISTRATION_TTL_MS,
+    })
   } catch (e) {
-    console.error('Telegram auth error:', e)
+    console.error('register/start error:', e)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
 
-// Привязка Telegram к существующему аккаунту (требует авторизации)
-router.post('/telegram/link', async (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1]
-  if (!token) return res.status(401).json({ error: 'Не авторизован' })
-
-  let decoded
+router.get('/register/poll', async (req, res) => {
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET)
-  } catch {
-    return res.status(401).json({ error: 'Невалидный токен' })
-  }
-
-  const tgData = req.body
-  if (!tgData || !tgData.id) {
-    return res.status(400).json({ error: 'Некорректные данные Telegram' })
-  }
-
-  const verif = await verifyTelegramData(tgData)
-  if (!verif.ok) {
-    const hints = {
-      no_bot_token:        'Bot token не настроен. Открой /admin/telegram → Подключение и сохрани токен от @BotFather.',
-      hash_mismatch:       'HMAC не сошёлся. Скорее всего bot token в админке не совпадает с тем что у @BotFather, или /setdomain не сделан для этого домена.',
-      auth_date_expired:   'Сессия аутентификации устарела (24+ часов). Перезагрузи страницу и попробуй снова.',
-      auth_date_future:    'Расхождение часов между сервером и Telegram. Проверь NTP на сервере.',
-      no_hash:             'В payload нет поля hash — возможно виджет загрузился неправильно.',
-      bad_auth_date:       'В payload невалидный auth_date.',
-      hash_length_mismatch:'Длина hash отличается от ожидаемой — payload повреждён.',
-    }
-    return res.status(401).json({
-      error: 'Невалидная подпись Telegram',
-      reason: verif.reason,
-      hint: hints[verif.reason] || null,
-    })
-  }
-
-  const telegramId = parseInt(tgData.id, 10)
-  const tgUsername = tgData.username || null
-
-  try {
-    // Проверяем, не привязан ли уже этот telegram_id к другому аккаунту
-    const alreadyLinked = await db.query('SELECT id FROM users WHERE telegram_id = $1', [telegramId])
-    if (alreadyLinked.rows.length > 0 && alreadyLinked.rows[0].id !== decoded.id) {
-      return res.status(409).json({ error: 'Этот Telegram аккаунт уже привязан к другому пользователю' })
-    }
-
-    await db.query('UPDATE users SET telegram_id = $1, telegram_username = $2 WHERE id = $3', [telegramId, tgUsername, decoded.id])
-
-    // Синхронизируем telegramId во все активные подписки юзера в RemnaWave
-    try {
-      const subs = await db.query(
-        `SELECT remnwave_user_uuid FROM subscriptions
-         WHERE user_id = $1 AND is_active = true AND remnwave_user_uuid IS NOT NULL`,
-        [decoded.id]
-      )
-      if (subs.rows.length > 0) {
-        const remnwave = require('../services/remnwave')
-        for (const s of subs.rows) {
-          remnwave.updateRemnwaveUser(s.remnwave_user_uuid, { telegramId })
-            .catch(err => console.error('[telegram-link] RW sync failed:', err.message))
-        }
-      }
-    } catch {}
-
-    res.json({ ok: true })
+    const t = String(req.query.token || '').trim()
+    if (!t) return res.status(400).json({ error: 'token обязателен' })
+    const tokens = require('../services/telegramBot/tokens')
+    const result = await tokens.pollRegistrationStatus(t)
+    res.json(result)
   } catch (e) {
-    console.error('Telegram link error:', e)
+    console.error('register/poll error:', e)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ─── Привязка Telegram к существующему аккаунту через бота ───────────────────
+
+router.post('/telegram/link/start', async (req, res) => {
+  const tokenAuth = req.headers.authorization?.split(' ')[1]
+  if (!tokenAuth) return res.status(401).json({ error: 'Не авторизован' })
+  let decoded
+  try { decoded = jwt.verify(tokenAuth, process.env.JWT_SECRET) }
+  catch { return res.status(401).json({ error: 'Невалидный токен' }) }
+
+  try {
+    const tgSettings = require('../services/telegramBot/settings')
+    const s = await tgSettings.getSettings()
+    if (!s.is_enabled || !s.bot_token || !s.bot_username) {
+      return res.status(503).json({ error: 'Telegram-бот не настроен' })
+    }
+    const bot = require('../services/telegramBot')
+    if (!bot.status().running) {
+      return res.status(503).json({ error: 'Telegram-бот сейчас не работает' })
+    }
+
+    const tokens = require('../services/telegramBot/tokens')
+    const { token, expiresAt } = await tokens.createLinkToken(decoded.id)
+    const deeplink = `https://t.me/${s.bot_username}?start=link_${token}`
+    res.json({
+      token,
+      deeplink,
+      bot_username: s.bot_username,
+      expires_at:   expiresAt,
+      ttl_ms:       tokens.LINK_TTL_MS,
+    })
+  } catch (e) {
+    console.error('telegram/link/start error:', e)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+router.get('/telegram/link/poll', async (req, res) => {
+  try {
+    const t = String(req.query.token || '').trim()
+    if (!t) return res.status(400).json({ error: 'token обязателен' })
+    const tokens = require('../services/telegramBot/tokens')
+    const result = await tokens.pollLinkStatus(t)
+    res.json(result)
+  } catch (e) {
+    console.error('telegram/link/poll error:', e)
     res.status(500).json({ error: 'Internal server error' })
   }
 })
@@ -618,6 +532,29 @@ function parseCookies(s) {
   }
   return out
 }
+
+// Публичный endpoint — статус всех Telegram-способов авторизации (для фронта).
+//   bot_available  — бот включён, токен есть, username есть, polling/webhook работает.
+//                    Используется для кнопок «Регистрация через бот» (/register) и
+//                    «Привязать Telegram через бот» (/dashboard/security).
+//   oidc_available — то же что /auth/telegram/oidc/info (бэкап-совместимость).
+router.get('/telegram/availability', async (req, res) => {
+  try {
+    const tgSettings = require('../services/telegramBot/settings')
+    const bot = require('../services/telegramBot')
+    const s = await tgSettings.getSettings()
+    const botRunning = !!bot.status().running
+    const botReady = !!(s.is_enabled && s.bot_token && s.bot_username && botRunning)
+    const oidcReady = !!(s.oidc_enabled && s.oidc_client_id && s.oidc_client_secret && s.oidc_redirect_uri)
+    res.json({
+      bot_available:  botReady,
+      bot_username:   s.bot_username || null,
+      oidc_available: oidcReady,
+    })
+  } catch {
+    res.json({ bot_available: false, bot_username: null, oidc_available: false })
+  }
+})
 
 // Публичный endpoint — чтобы фронт мог решить, показывать ли кнопку «Войти через Telegram (OIDC)».
 // Не светим client_id/secret, только факт «доступно/нет».
