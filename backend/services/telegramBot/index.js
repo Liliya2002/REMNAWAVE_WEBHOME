@@ -33,6 +33,7 @@ function buildBot(token) {
 
   // Команды
   bot.command('start', handlers.handleStart)
+  bot.command('myid',  handlers.handleMyId)
 
   // Главное меню — InlineKeyboard под сообщением (data="menu:<action>")
   bot.callbackQuery(/^menu:/, handlers.handleMenuCallback)

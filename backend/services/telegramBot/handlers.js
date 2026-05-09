@@ -126,6 +126,30 @@ async function findOrCreateUser(tgUser, payload) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// /myid — пришлёт chat_id текущего чата.
+// Работает и в личке (id юзера) и в группе (отрицательный id группы).
+// Полезно для админ-настройки `admin_chat_id` без копаний в getUpdates.
+// ────────────────────────────────────────────────────────────────────────────
+
+async function handleMyId(ctx) {
+  const chat = ctx.chat
+  if (!chat) return
+  const lines = [`🆔 <b>Chat ID:</b> <code>${chat.id}</code>`]
+
+  if (chat.type === 'private') {
+    lines.push(`👤 Тип: личный чат`)
+    if (ctx.from?.username) lines.push(`Username: @${escapeHtml(ctx.from.username)}`)
+  } else {
+    lines.push(`👥 Тип: <b>${chat.type}</b>`)
+    if (chat.title) lines.push(`Название: ${escapeHtml(chat.title)}`)
+    lines.push('')
+    lines.push(`<i>Вставь этот id в /admin/telegram → Админ-уведомления → Admin Chat ID. Бот должен оставаться в группе чтобы отправлять уведомления.</i>`)
+  }
+
+  return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' })
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // /start reg_<token> — подтверждение регистрации с сайта
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -728,6 +752,7 @@ async function handleMenuCallback(ctx) {
 module.exports = {
   handleStart,
   handleMenuCallback,
+  handleMyId,
   // Экспорт по отдельности — на случай прямых вызовов
   handleOpenWeb,
   handleCabinet,
