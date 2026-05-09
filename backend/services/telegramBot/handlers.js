@@ -73,7 +73,7 @@ async function handleStart(ctx) {
 
   // 2. Welcome с InlineKeyboard под сообщением (с поддержкой web_app)
   await ctx.reply(text, {
-    reply_markup: buildMainMenu(settings.menu_buttons || [], settings),
+    reply_markup: buildMainMenu(settings.menu_buttons || [], settings, { isAdmin: !!user.is_admin }),
     parse_mode: 'HTML',
   })
 }
@@ -284,9 +284,12 @@ async function handleLinkConfirm(ctx, token) {
   } catch {}
 
   const settings = await getSettings()
+  // Перечитываем юзера — после привязки is_admin актуален из БД.
+  const updated = await db.query('SELECT is_admin FROM users WHERE id = $1', [link.userId])
+  const isAdmin = !!updated.rows[0]?.is_admin
   await ctx.reply(
     '✅ Telegram-аккаунт успешно привязан к твоему сайту-аккаунту!',
-    { reply_markup: buildMainMenu(settings.menu_buttons || [], settings) }
+    { reply_markup: buildMainMenu(settings.menu_buttons || [], settings, { isAdmin }) }
   )
 }
 
@@ -347,10 +350,10 @@ function buildExternalUrl(action, settings) {
  * Раскладка: если у кнопки `wide: true` → отдельная строка,
  * иначе пары по 2.
  */
-function buildMainMenu(buttons, settings = {}) {
+function buildMainMenu(buttons, settings = {}, { isAdmin = false } = {}) {
   const enabled = (buttons || []).filter(b => b && b.enabled !== false)
   enabled.sort((a, b) => (a.order || 0) - (b.order || 0))
-  if (enabled.length === 0) return undefined
+  if (enabled.length === 0 && !isAdmin) return undefined
 
   const webAppBase = (settings.web_app_url || '').trim()
   const useWebApp = /^https:\/\//.test(webAppBase)
@@ -384,6 +387,11 @@ function buildMainMenu(buttons, settings = {}) {
     }
   }
   if (pairBuf.length > 0) rows.push(pairBuf)
+
+  // Кнопка «🛠 Админка» — только для админов, отдельная строка внизу.
+  if (isAdmin) {
+    rows.push([{ text: '🛠 Админка', callback_data: 'admin:home' }])
+  }
 
   return { inline_keyboard: rows }
 }
@@ -713,7 +721,7 @@ async function handleBack(ctx) {
     name: ctx.from?.first_name || ctx.from?.username || 'друг',
     login: user?.login || '',
   })
-  const kb = buildMainMenu(settings.menu_buttons || [], settings)
+  const kb = buildMainMenu(settings.menu_buttons || [], settings, { isAdmin: !!user?.is_admin })
   await sendOrEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb })
 }
 
@@ -749,10 +757,32 @@ async function handleMenuCallback(ctx) {
   return handler(ctx)
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// /admin — вход в админ-панель из любого чата (для пользователей с is_admin)
+// ────────────────────────────────────────────────────────────────────────────
+
+async function handleAdminCommand(ctx) {
+  const adminHandlers = require('./adminHandlers')
+  // sendOrEdit: для команд /admin — это новое сообщение (нет callback). Внутри
+  // шлёт reply, дальнейшие переходы по callback'ам уже редактируют это сообщение.
+  return adminHandlers.handleAdminHome(ctx, sendOrEdit)
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Callback admin:* — делегируем в adminHandlers
+// ────────────────────────────────────────────────────────────────────────────
+
+async function handleAdminCallbackEntry(ctx) {
+  const adminHandlers = require('./adminHandlers')
+  return adminHandlers.handleAdminCallback(ctx, sendOrEdit)
+}
+
 module.exports = {
   handleStart,
   handleMenuCallback,
   handleMyId,
+  handleAdminCommand,
+  handleAdminCallbackEntry,
   // Экспорт по отдельности — на случай прямых вызовов
   handleOpenWeb,
   handleCabinet,
@@ -762,6 +792,7 @@ module.exports = {
   handleFaq,
   handleSupport,
   buildMainMenu,
+  sendOrEdit,
   renderTemplate,
   REMOVE_REPLY_KEYBOARD,
 }

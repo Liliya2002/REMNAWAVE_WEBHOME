@@ -34,9 +34,12 @@ function buildBot(token) {
   // Команды
   bot.command('start', handlers.handleStart)
   bot.command('myid',  handlers.handleMyId)
+  bot.command('admin', handlers.handleAdminCommand)
 
   // Главное меню — InlineKeyboard под сообщением (data="menu:<action>")
-  bot.callbackQuery(/^menu:/, handlers.handleMenuCallback)
+  bot.callbackQuery(/^menu:/,  handlers.handleMenuCallback)
+  // Админ-панель — admin:home, admin:vps, admin:vps:<id>
+  bot.callbackQuery(/^admin:/, handlers.handleAdminCallbackEntry)
 
   // Глобальный обработчик ошибок — чтобы вылет на одном update не клал бота
   bot.catch((err) => {
