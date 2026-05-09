@@ -235,6 +235,12 @@ require('./cron/p2pDetector').start()
 // Cron: Squad Quotas — per-squad traffic limits
 require('./cron/squadQuota').start()
 
+// Cron: VPS — ежедневная сводка по истекающей оплате (admin_vps_expiring)
+require('./cron/vpsExpiry').start()
+
+// Cron: VPS health-check — TCP-пинг порта 22, уведомление при смене состояния
+require('./cron/vpsHealth').start()
+
 // Telegram bot — авто-старт если включён в настройках (telegram_settings.is_enabled)
 telegramBot.autoStart().catch(err => console.warn('[TG bot] autoStart:', err.message))
 

@@ -4,6 +4,49 @@
 
 ---
 
+## v0.1.23 — TG бот: меню в одном сообщении + админ-уведомления о VPS
+
+### Бот UI: меньше засора, кнопка «Назад в меню»
+
+Раньше каждое нажатие inline-кнопки в главном меню создавало **новое сообщение** (`ctx.reply`). Чат с ботом превращался в простыню. Плюс — кнопки «Назад» нигде не было, юзер должен был жать `/start` чтобы вернуться.
+
+**Фикс** ([handlers.js](backend/services/telegramBot/handlers.js)):
+- новый helper `sendOrEdit(ctx, text, opts)` — если callback от inline-кнопки, редактирует **то же** сообщение через `editMessageText`; если что-то идёт не так (web_app кнопка / message-not-modified) — фоллбэк на `reply`
+- все 7 handlers (`open_web`, `cabinet`, `buy`, `referrals`, `offer`, `faq`, `support`) переведены на `sendOrEdit`
+- хелпер `withBackButton(kb)` добавляет кнопку «◀️ Назад в меню» в любой клавиатуре
+- новый callback `menu:back` — перерисовывает приветствие + главное меню в том же сообщении
+
+В итоге: одно сообщение в чате, навигация туда-обратно без скролла.
+
+### Админ-уведомления о VPS — теперь работают
+
+Уведомления `admin_vps_expiring` (истечение оплаты) раньше зависели от env'а `TG_VPS_NOTIFY_ENABLED=true`, который никто не выставлял — поэтому ничего и не приходило. Уведомлений «VPS недоступен / снова в строю» вообще не было.
+
+**Что добавлено:**
+
+1. **[backend/cron/vpsExpiry.js](backend/cron/vpsExpiry.js)** — отдельный cron модуль вместо встроенного в `admin-vps.js`. Запускается из `index.js`, всегда. Управляется флагом `notifications_enabled.admin_vps_expiring` в `telegram_settings` (то есть из `/admin/telegram → Админ-уведомления`). Час отправки настраивается env `VPS_EXPIRY_NOTIFY_HOUR_UTC` (по умолчанию 10:00 UTC). Сводка покрывает окно `[-3..+7 дней]` от текущей даты.
+
+2. **[backend/cron/vpsHealth.js](backend/cron/vpsHealth.js)** — новый cron, раз в 5 минут (env `VPS_HEALTH_INTERVAL_MIN`) пингует все `active` VPS на TCP-22 (env `VPS_HEALTH_PING_PORT`) с retry'ем. При смене состояния:
+   - `ok → unreachable`: уведомление `admin_vps_unreachable`
+   - `unreachable → ok`: уведомление `admin_vps_back_online` с расчётом длительности простоя
+
+   Параллельность ограничена 8 серверами одновременно (защищает сетевой стек). Можно полностью отключить через `VPS_HEALTH_CHECK_ENABLED=false`.
+
+3. **Миграция [`0015_vps_health`](backend/migrations/0015_vps_health.up.sql)** — поля `is_reachable`, `last_health_check`, `last_unreachable_at` в `vps_servers` + дефолты для новых ключей `admin_vps_unreachable` / `admin_vps_back_online` в `telegram_settings.notifications_enabled` (без затирания уже настроенных).
+
+4. **[notify.js](backend/services/telegramBot/notify.js)** — добавлены DEFAULT_TEXTS для двух новых ключей.
+
+5. **[AdminTelegram.jsx](frontend/src/pages/AdminTelegram.jsx)** — таб «Админ-уведомления» теперь показывает все 5 типов: VPS истекает / недоступен / снова в строю / Платёж / Новый юзер. Шаблоны редактируются с подсказкой о доступных плейсхолдерах.
+
+### После деплоя
+
+1. Миграция `0015` накатится автоматически.
+2. Проверь в `/admin/telegram → Админ-уведомления` что галочки на `admin_vps_expiring`, `admin_vps_unreachable`, `admin_vps_back_online` стоят.
+3. Убедись что `admin_chat_id` задан там же (без него уведомления некуда слать).
+4. Health-check начнётся через 30 сек после старта backend; первый цикл считает текущее состояние «как было всегда» (не спамит уведомлениями про сразу все серверы).
+
+---
+
 ## v0.1.22 — Hotfix: rate-limit съедал info/poll-endpoints → 429 везде
 
 После v0.1.19 на `/auth/*` стоял глобальный `authLimiter` — 20 запросов / 15 минут на IP. Это рушит сразу несколько фич, добавленных в v0.1.19:

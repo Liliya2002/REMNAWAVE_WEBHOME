@@ -19,7 +19,9 @@ const USER_NOTIFICATION_KEYS = [
 ]
 
 const ADMIN_NOTIFICATION_KEYS = [
-  { key: 'admin_vps_expiring',         label: 'VPS истекает',               hint: 'Cron 1 раз в день — какие VPS скоро не оплачены' },
+  { key: 'admin_vps_expiring',         label: 'VPS — истекает оплата',      hint: 'Сводка раз в день: серверы с paid_until в окне -3..+7 дней' },
+  { key: 'admin_vps_unreachable',      label: 'VPS — недоступен',           hint: 'TCP-пинг порта 22 не проходит (cron каждые 5 мин)' },
+  { key: 'admin_vps_back_online',      label: 'VPS — снова в строю',        hint: 'Когда сервер снова отвечает после простоя' },
   { key: 'admin_payment_received',     label: 'Платёж получен',             hint: 'После любого успешного платежа от юзера' },
   { key: 'admin_user_registered',      label: 'Новый юзер',                 hint: 'Спам-уведомление при каждой регистрации (по умолчанию off)' },
 ]
@@ -40,6 +42,8 @@ const TEMPLATE_HINTS = {
   user_referral_bonus:        '{amount}, {balance}, {days}',
   user_traffic_blocked:       '{usedGb}, {limitGb}, {node}',
   admin_vps_expiring:         '{lines}, {count}',
+  admin_vps_unreachable:      '{name}, {ip}, {provider}, {port}',
+  admin_vps_back_online:      '{name}, {ip}, {provider}, {downtime}',
   admin_payment_received:     '{login}, {amount}, {plan}',
   admin_user_registered:      '{login}, {source}',
 }

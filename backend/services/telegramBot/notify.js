@@ -47,7 +47,19 @@ const DEFAULT_TEXTS = {
     'Подожди до начала следующего периода или купи дополнительный трафик.',
 
   admin_vps_expiring:
-    '⚠️ <b>VPS — истечение оплаты</b>\n\n{lines}\n\n_Всего: {count} серв._',
+    '⚠️ <b>VPS — истечение оплаты</b>\n\n{lines}\n\n<i>Всего: {count} серв.</i>',
+
+  admin_vps_unreachable:
+    '🔴 <b>VPS недоступен</b>\n\n' +
+    '<b>{name}</b> ({provider})\n' +
+    'IP: <code>{ip}</code>\n' +
+    'TCP/{port} не отвечает.',
+
+  admin_vps_back_online:
+    '🟢 <b>VPS снова в строю</b>\n\n' +
+    '<b>{name}</b> ({provider})\n' +
+    'IP: <code>{ip}</code>\n' +
+    'Простой: {downtime}',
 
   admin_user_registered:
     '👤 <b>Новый юзер</b>\nЛогин: {login}\nИсточник: {source}',

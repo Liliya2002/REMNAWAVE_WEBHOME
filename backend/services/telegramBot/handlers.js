@@ -386,6 +386,37 @@ function fmtMoney(n) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Helper: редактируем существующее сообщение если callback пришёл от inline-кнопки,
+// иначе отправляем новое (когда вызвали по команде/тексту).
+//
+// Telegram запрещает editMessageText на сообщениях с web_app кнопкой и на
+// «фото-сообщениях» — в этом случае ловим ошибку и фоллбэкаемся на reply.
+// ────────────────────────────────────────────────────────────────────────────
+
+async function sendOrEdit(ctx, text, opts = {}) {
+  const isCallback = !!ctx.callbackQuery
+  if (isCallback) {
+    try {
+      return await ctx.editMessageText(text, opts)
+    } catch (err) {
+      // «Bad Request: message is not modified» / «message can't be edited» —
+      // fallback на отправку нового сообщения.
+      console.warn('[TG bot] editMessageText fallback:', err.description || err.message)
+    }
+  }
+  return ctx.reply(text, opts)
+}
+
+/**
+ * Добавить кнопку «◀️ Назад в меню» в самый низ inline-клавиатуры.
+ */
+function withBackButton(kb) {
+  if (!kb) kb = new InlineKeyboard()
+  kb.row().text('◀️ Назад в меню', 'menu:back')
+  return kb
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // 🌐 Веб-Панель
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -397,8 +428,8 @@ async function handleOpenWeb(ctx) {
   const url = `${FRONTEND_URL}/tg-login?t=${token}`
   const ttlMin = Math.round((expiresAt - Date.now()) / 60000)
 
-  const kb = new InlineKeyboard().url('🌐 Открыть веб-панель', url)
-  await ctx.reply(
+  const kb = withBackButton(new InlineKeyboard().url('🌐 Открыть веб-панель', url))
+  await sendOrEdit(ctx,
     `Жми кнопку чтобы открыть кабинет в браузере без логина.\n` +
     `<i>Ссылка одноразовая, действует ${ttlMin} мин.</i>`,
     { reply_markup: kb, parse_mode: 'HTML' }
@@ -470,8 +501,9 @@ async function handleCabinet(ctx) {
   // Кнопка «Перейти в веб» — авто-логин
   const { token } = await tokens.createAutoLoginToken(user.id)
   kb.url('🌐 Открыть в браузере', `${FRONTEND_URL}/tg-login?t=${token}`)
+  withBackButton(kb)
 
-  await ctx.reply(lines.join('\n'), { reply_markup: kb, parse_mode: 'HTML' })
+  await sendOrEdit(ctx, lines.join('\n'), { reply_markup: kb, parse_mode: 'HTML' })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -529,8 +561,9 @@ async function handleBuy(ctx) {
     const priceLabel = p.price_monthly != null ? `${fmtMoney(p.price_monthly)} ₽/мес` : 'выбрать'
     kb.url(`${p.name} · ${priceLabel}`, url).row()
   }
+  withBackButton(kb)
 
-  await ctx.reply(lines.join('\n'), { reply_markup: kb, parse_mode: 'HTML' })
+  await sendOrEdit(ctx, lines.join('\n'), { reply_markup: kb, parse_mode: 'HTML' })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -586,7 +619,8 @@ async function handleReferrals(ctx) {
     lines.push('⚠️ Не удалось получить реф-ссылку. Попробуй позже.')
   }
 
-  await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' })
+  const kb = withBackButton(new InlineKeyboard())
+  await sendOrEdit(ctx, lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -597,7 +631,8 @@ async function handleOffer(ctx) {
   const settings = await getSettings()
   const text = settings.texts?.offer ||
     'Текст оферты пока не задан. Админ может настроить его в /admin/telegram → Тексты.'
-  await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true })
+  const kb = withBackButton(new InlineKeyboard())
+  await sendOrEdit(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: kb })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -608,7 +643,8 @@ async function handleFaq(ctx) {
   const settings = await getSettings()
   const text = settings.texts?.faq ||
     '<b>Вопросы и ответы</b>\n\nРаздел пока пустой. Админ настраивает FAQ в /admin/telegram → Тексты.'
-  await ctx.reply(text, { parse_mode: 'HTML', disable_web_page_preview: true })
+  const kb = withBackButton(new InlineKeyboard())
+  await sendOrEdit(ctx, text, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: kb })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -629,14 +665,32 @@ async function handleSupport(ctx) {
     '💬 <b>Поддержка</b>\n\nНапиши нам — отвечаем по будням. Опиши проблему как можно подробнее: что делал, на каком устройстве, скриншот ошибки если есть.'
 
   if (username) {
-    const kb = new InlineKeyboard().url(`💬 Написать @${username}`, `https://t.me/${username}`)
-    await ctx.reply(introText, { parse_mode: 'HTML', reply_markup: kb })
+    const kb = withBackButton(new InlineKeyboard().url(`💬 Написать @${username}`, `https://t.me/${username}`))
+    await sendOrEdit(ctx, introText, { parse_mode: 'HTML', reply_markup: kb })
   } else {
-    await ctx.reply(
+    const kb = withBackButton(new InlineKeyboard())
+    await sendOrEdit(ctx,
       `${introText}\n\n<i>⚠️ Контакт поддержки не настроен. Админу: укажи @username в /admin/telegram → Тексты → support_contact.</i>`,
-      { parse_mode: 'HTML' }
+      { parse_mode: 'HTML', reply_markup: kb }
     )
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// ◀️ Назад в главное меню — перерисовывает welcome+menu
+// ────────────────────────────────────────────────────────────────────────────
+
+async function handleBack(ctx) {
+  const settings = await getSettings()
+  const user = await getUserByTg(ctx.from.id)
+  const texts = settings.texts || {}
+  const tpl = texts.welcome_back || 'С возвращением, {name}! 👋\nИспользуй меню для быстрого доступа.'
+  const text = renderTemplate(tpl, {
+    name: ctx.from?.first_name || ctx.from?.username || 'друг',
+    login: user?.login || '',
+  })
+  const kb = buildMainMenu(settings.menu_buttons || [], settings)
+  await sendOrEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -654,6 +708,7 @@ const MENU_HANDLERS = {
   offer:     handleOffer,
   faq:       handleFaq,
   support:   handleSupport,
+  back:      handleBack,
 }
 
 async function handleMenuCallback(ctx) {

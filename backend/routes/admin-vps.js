@@ -9,10 +9,8 @@ const { encrypt, decrypt } = require('../services/encryption')
 const audit = require('../services/auditLog')
 const trafficAgent = require('../services/trafficAgentInstaller')
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || ''
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || ''
-const TG_CRON_HOUR = parseInt(process.env.TG_VPS_NOTIFY_HOUR || '10', 10)
-const TG_CRON_ENABLED = process.env.TG_VPS_NOTIFY_ENABLED === 'true'
+// Cron уведомлений вынесен в backend/cron/vpsExpiry.js (запускается из index.js).
+// Включается флагом notifications_enabled.admin_vps_expiring в telegram_settings.
 
 const NETWORK_STATUS_CMD = [
   'set +e;',
@@ -393,37 +391,20 @@ router.post('/', async (req, res) => {
  */
 router.post('/notify-expiring', async (req, res) => {
   try {
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-      return res.status(400).json({ error: 'Telegram бот не настроен. Добавьте TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID в .env' })
-    }
-
-    const { rows } = await db.query(
-      `SELECT * FROM vps_servers
-       WHERE paid_until IS NOT NULL
-         AND paid_until <= CURRENT_DATE + INTERVAL '7 days'
-         AND paid_until >= CURRENT_DATE - INTERVAL '3 days'
-       ORDER BY paid_until ASC`
-    )
-
+    const vpsExpiry = require('../cron/vpsExpiry')
+    const rows = await vpsExpiry.fetchExpiringVps()
     if (rows.length === 0) {
       return res.json({ sent: false, message: 'Нет серверов, истекающих в ближайшие 7 дней' })
     }
 
-    const lines = rows.map(v => {
-      const d = Math.ceil((new Date(v.paid_until) - new Date()) / 86400000)
-      const status = d <= 0 ? '🔴 Просрочен' : d <= 3 ? '🟠 Срочно' : '🟡 Скоро'
-      return `${status} <b>${v.name}</b> (${v.hosting_provider || '—'})\n   IP: <code>${v.ip_address || '—'}</code> · До: ${new Date(v.paid_until).toLocaleDateString('ru-RU')} (${d <= 0 ? 'просрочен' : d + ' дн.'})`
-    })
-
     const tgNotify = require('../services/telegramBot/notify')
     const result = await tgNotify.notifyAdmin('admin_vps_expiring', {
-      lines: lines.join('\n\n'),
+      lines: vpsExpiry.formatExpiryLines(rows),
       count: rows.length,
     })
     if (!result.ok) {
       return res.status(500).json({ error: `Telegram: ${result.error || result.skipped || 'не отправлено'}` })
     }
-
     res.json({ sent: true, count: rows.length })
   } catch (err) {
     console.error('[AdminVPS] notify error:', err.message)
@@ -1005,48 +986,8 @@ router.get('/:id/history', async (req, res) => {
   }
 })
 
-// ─── Cron: авто-уведомление в Telegram ───
-async function sendExpiryNotification() {
-  try {
-    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return
-
-    const { rows } = await db.query(
-      `SELECT * FROM vps_servers
-       WHERE paid_until IS NOT NULL
-         AND paid_until <= CURRENT_DATE + INTERVAL '7 days'
-         AND paid_until >= CURRENT_DATE - INTERVAL '3 days'
-       ORDER BY paid_until ASC`
-    )
-    if (rows.length === 0) return
-
-    const lines = rows.map(v => {
-      const d = Math.ceil((new Date(v.paid_until) - new Date()) / 86400000)
-      const status = d <= 0 ? '🔴 Просрочен' : d <= 3 ? '🟠 Срочно' : '🟡 Скоро'
-      return `${status} <b>${v.name}</b> (${v.hosting_provider || '—'})\n   IP: <code>${v.ip_address || '—'}</code> · До: ${new Date(v.paid_until).toLocaleDateString('ru-RU')} (${d <= 0 ? 'просрочен' : d + ' дн.'})`
-    })
-
-    const tgNotify = require('../services/telegramBot/notify')
-    const r = await tgNotify.notifyAdmin('admin_vps_expiring', {
-      lines: lines.join('\n\n'),
-      count: rows.length,
-    })
-    if (r.ok) console.log(`[VPS Cron] Отправлено уведомление: ${rows.length} серверов`)
-    else console.warn(`[VPS Cron] notifyAdmin: ${r.error || r.skipped}`)
-  } catch (err) {
-    console.error('[VPS Cron] Ошибка:', err.message)
-  }
-}
-
-if (TG_CRON_ENABLED) {
-  // Проверяем каждый час, отправляем в TG_CRON_HOUR по UTC
-  setInterval(() => {
-    const now = new Date()
-    if (now.getUTCHours() === TG_CRON_HOUR && now.getUTCMinutes() < 5) {
-      sendExpiryNotification()
-    }
-  }, 5 * 60 * 1000) // проверка каждые 5 минут
-  console.log(`[VPS Cron] Авто-уведомления включены, час отправки: ${TG_CRON_HOUR}:00 UTC`)
-}
+// Auto-cron реализован в backend/cron/vpsExpiry.js — здесь оставлен только
+// ручной endpoint (POST /api/admin/vps/notify-expiring) для немедленной отправки.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Traffic Agent — автоматическая установка SSH-агента на ноду
