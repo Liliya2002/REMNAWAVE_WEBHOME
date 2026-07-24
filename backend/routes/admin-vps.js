@@ -4,7 +4,6 @@ const { Client } = require('ssh2')
 const { verifyToken, verifyAdmin } = require('../middleware')
 const db = require('../db')
 const remnwave = require('../services/remnwave')
-const net = require('net')
 const { encrypt, decrypt } = require('../services/encryption')
 const audit = require('../services/auditLog')
 const trafficAgent = require('../services/trafficAgentInstaller')
@@ -451,32 +450,26 @@ router.get('/analytics', async (req, res) => {
 })
 
 /**
- * POST /api/admin/vps/ping/:id
- * Проверить доступность VPS по TCP-порту 22
+ * POST /api/admin/vps/:id/external-check
+ * Внешняя проверка доступности TCP-порта через check-host.net (мультилокация).
+ * Body: { port? } — по умолчанию ssh_port или 22.
+ * Долгий запрос (~10-15с из-за опроса результатов).
  */
-router.post('/ping/:id', async (req, res) => {
+router.post('/:id/external-check', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT ip_address, ssh_port FROM vps_servers WHERE id = $1', [req.params.id])
     if (rows.length === 0) return res.status(404).json({ error: 'VPS не найден' })
     const vps = rows[0]
     if (!vps.ip_address) return res.status(400).json({ error: 'IP не указан' })
 
-    const port = vps.ssh_port || 22
-    const start = Date.now()
-    const alive = await new Promise((resolve) => {
-      const sock = new net.Socket()
-      sock.setTimeout(5000)
-      sock.on('connect', () => { sock.destroy(); resolve(true) })
-      sock.on('timeout', () => { sock.destroy(); resolve(false) })
-      sock.on('error', () => { sock.destroy(); resolve(false) })
-      sock.connect(port, vps.ip_address)
-    })
-    const ms = Date.now() - start
-
-    res.json({ alive, ms, ip: vps.ip_address, port })
+    const port = Number(req.body?.port) || vps.ssh_port || 22
+    const externalCheck = require('../services/externalCheck')
+    const r = await externalCheck.checkTcp(vps.ip_address, port, { maxNodes: 8 })
+    if (!r.ok) return res.status(502).json({ error: r.error })
+    res.json(r)
   } catch (err) {
-    console.error('[AdminVPS] ping error:', err.message)
-    res.status(500).json({ error: 'Ошибка проверки' })
+    console.error('[AdminVPS] external-check error:', err.message)
+    res.status(500).json({ error: 'Ошибка внешней проверки' })
   }
 })
 

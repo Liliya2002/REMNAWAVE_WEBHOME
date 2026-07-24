@@ -1,57 +1,33 @@
 /**
- * Cron: health-check VPS-серверов через TCP-пинг порта 22 (SSH).
+ * Cron: health-check VPS-серверов через ВНЕШНЮЮ проверку (check-host.net).
  *
- * Раз в N минут (по умолчанию 5) пингует все vps_servers со status='active' и
- * ip_address. Результат сохраняется в vps_servers.is_reachable + last_health_check.
+ * Раз в N минут (по умолчанию 10) проверяет доступность TCP-порта каждого
+ * active-VPS с нескольких узлов по миру. Сервер считается доступным, если
+ * отвечает хотя бы с одного узла. Результат → vps_servers.is_reachable +
+ * last_health_check.
  *
- * При смене состояния (был ok → стал unreachable, или наоборот) шлёт админу
- * уведомление в Telegram. Уведомления управляются флагами в admin-телеграме:
- *   notifications_enabled.admin_vps_unreachable
- *   notifications_enabled.admin_vps_back_online
+ * Почему внешняя, а не TCP-пинг с бэкенда: бэкенд может не иметь сетевого
+ * доступа к VPS (NAT/файрвол/блокировки), из-за чего локальный пинг давал
+ * ложные «недоступен». Внешняя проверка отражает реальную достижимость.
  *
- * Чтобы избежать ложных срабатываний (один пакет потерян → паника) — проверяем
- * с retry: 2 попытки, между ними 3 секунды.
+ * При смене состояния шлёт админу уведомление в Telegram:
+ *   notifications_enabled.admin_vps_unreachable / admin_vps_back_online
  *
- * Включить/выключить весь cron можно env'ом VPS_HEALTH_CHECK_ENABLED=false.
+ * Если сам сервис проверки недоступен — цикл для этого сервера пропускается
+ * (статус не меняется, алерт не шлётся), чтобы не было ложных срабатываний.
+ *
+ * Включить/выключить: VPS_HEALTH_CHECK_ENABLED=false.
  */
-const net = require('net')
 const db = require('../db')
 const tgNotify = require('../services/telegramBot/notify')
+const externalCheck = require('../services/externalCheck')
 
-const TICK_MINUTES   = parseInt(process.env.VPS_HEALTH_INTERVAL_MIN || '5', 10)
+const TICK_MINUTES   = parseInt(process.env.VPS_HEALTH_INTERVAL_MIN || '10', 10)
 const PING_PORT      = parseInt(process.env.VPS_HEALTH_PING_PORT     || '22', 10)
-const PING_TIMEOUT_MS = parseInt(process.env.VPS_HEALTH_PING_TIMEOUT_MS || '4000', 10)
-const RETRY_DELAY_MS  = 3000
-const ENABLED         = process.env.VPS_HEALTH_CHECK_ENABLED !== 'false'
-const PARALLELISM     = 8
-
-/**
- * TCP-пинг: пытаемся открыть соединение на host:port.
- * Возвращает true если успех, false если timeout/refused/etc.
- */
-function pingTcp(host, port = PING_PORT, timeoutMs = PING_TIMEOUT_MS) {
-  return new Promise((resolve) => {
-    const sock = new net.Socket()
-    let done = false
-    const finish = (ok) => {
-      if (done) return
-      done = true
-      try { sock.destroy() } catch {}
-      resolve(ok)
-    }
-    sock.setTimeout(timeoutMs)
-    sock.once('connect', () => finish(true))
-    sock.once('timeout', () => finish(false))
-    sock.once('error',   () => finish(false))
-    try { sock.connect(port, host) } catch { finish(false) }
-  })
-}
-
-async function pingWithRetry(host) {
-  if (await pingTcp(host)) return true
-  await new Promise(r => setTimeout(r, RETRY_DELAY_MS))
-  return pingTcp(host)
-}
+const CHECK_NODES    = parseInt(process.env.VPS_HEALTH_CHECK_NODES    || '3', 10)
+const ENABLED        = process.env.VPS_HEALTH_CHECK_ENABLED !== 'false'
+// Бережём внешний сервис от rate-limit: невысокая параллельность.
+const PARALLELISM    = parseInt(process.env.VPS_HEALTH_PARALLELISM || '2', 10)
 
 function fmtDuration(ms) {
   if (!ms || ms < 0) return '<1 мин'
@@ -73,7 +49,12 @@ function escapeHtml(s) {
 }
 
 async function checkOne(vps) {
-  const reachable = await pingWithRetry(vps.ip_address)
+  // Внешняя проверка. Если сам сервис недоступен — пропускаем (статус не трогаем).
+  const chk = await externalCheck.isReachable(vps.ip_address, PING_PORT, { maxNodes: CHECK_NODES })
+  if (!chk.ok) {
+    return { changed: false, reachable: vps.is_reachable, skipped: true }
+  }
+  const reachable = chk.reachable
   const now = new Date()
   const wasReachable = vps.is_reachable
   // Никогда не проверяли (NULL) → считаем что предыдущий статус совпадает с текущим,
@@ -143,13 +124,15 @@ async function tick() {
 
     // Ограничиваем параллельность чтобы не выжигать сетевой стек.
     const queue = rows.slice()
-    let stats = { ok: 0, fail: 0, changed: 0 }
+    let stats = { ok: 0, fail: 0, changed: 0, skipped: 0 }
     const workers = Array.from({ length: Math.min(PARALLELISM, queue.length) }, async () => {
       while (queue.length) {
         const v = queue.shift()
         try {
           const r = await checkOne(v)
-          if (r.reachable) stats.ok++; else stats.fail++
+          if (r.skipped) stats.skipped++
+          else if (r.reachable) stats.ok++
+          else stats.fail++
           if (r.changed) stats.changed++
         } catch (err) {
           console.warn(`[VPS-health] checkOne(${v.name}) error:`, err.message)
@@ -157,8 +140,8 @@ async function tick() {
       }
     })
     await Promise.all(workers)
-    if (stats.changed > 0) {
-      console.log(`[VPS-health cron] tick: ok=${stats.ok}, fail=${stats.fail}, changed=${stats.changed}`)
+    if (stats.changed > 0 || stats.skipped > 0) {
+      console.log(`[VPS-health cron] tick: ok=${stats.ok}, fail=${stats.fail}, changed=${stats.changed}, skipped=${stats.skipped}`)
     }
   } catch (err) {
     console.error('[VPS-health cron] tick error:', err.message)
@@ -173,7 +156,7 @@ function start() {
   // Первый прогон через 30 сек после старта — даём backend'у дойти до зрелого состояния.
   setTimeout(tick, 30 * 1000)
   setInterval(tick, TICK_MINUTES * 60 * 1000)
-  console.log(`[VPS-health cron] запущен, интервал ${TICK_MINUTES} мин, ping TCP/${PING_PORT}`)
+  console.log(`[VPS-health cron] запущен, интервал ${TICK_MINUTES} мин, внешняя проверка TCP/${PING_PORT} (check-host.net)`)
 }
 
-module.exports = { start, tick, pingTcp, pingWithRetry }
+module.exports = { start, tick }

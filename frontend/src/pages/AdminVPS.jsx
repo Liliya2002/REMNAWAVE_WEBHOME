@@ -155,6 +155,7 @@ export default function AdminVPS() {
   const [menuOpen, setMenuOpen] = useState(null)  // vps id with «···» menu open
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 }) // позиция «···»-меню (fixed, чтобы не обрезалось overflow-hidden)
   const [ctxMenu, setCtxMenu] = useState(null)    // { x, y, vps } — контекстное меню (правый клик)
+  const [extCheck, setExtCheck] = useState({})    // { [vpsId]: { loading, data, error } } — внешняя проверка check-host.net
   const [customProvider, setCustomProvider] = useState(false)
   const [sshOpen, setSshOpen] = useState(null) // vps id with SSH open
   const [sshResult, setSshResult] = useState({}) // { [vpsId]: { output, error, loading, cmd } }
@@ -373,18 +374,35 @@ export default function AdminVPS() {
     } finally { setTgSending(false) }
   }
 
+  // Быстрый индикатор доступности — через внешнюю проверку (check-host.net).
+  // alive = отвечает хотя бы с одного узла; ms = минимальная задержка среди ответивших.
   async function pingVps(vpsId) {
     setPingStatus(prev => ({ ...prev, [vpsId]: { loading: true } }))
     try {
-      const res = await fetch(`${API}/api/admin/vps/ping/${vpsId}`, { method: 'POST', headers })
+      const res = await fetch(`${API}/api/admin/vps/${vpsId}/external-check`, { method: 'POST', headers })
       const data = await res.json()
       if (res.ok) {
-        setPingStatus(prev => ({ ...prev, [vpsId]: { alive: data.alive, ms: data.ms } }))
+        const upNodes = (data.nodes || []).filter(n => n.alive === true)
+        const minMs = upNodes.length ? Math.min(...upNodes.map(n => n.ms)) : null
+        setPingStatus(prev => ({ ...prev, [vpsId]: { alive: data.up > 0, ms: minMs, up: data.up, total: data.total } }))
       } else {
         setPingStatus(prev => ({ ...prev, [vpsId]: { alive: false, error: data.error } }))
       }
     } catch {
       setPingStatus(prev => ({ ...prev, [vpsId]: { alive: false, error: 'Ошибка сети' } }))
+    }
+  }
+
+  // Внешняя проверка доступности через check-host.net (мультилокация). Долгая (~10-15с).
+  async function runExternalCheck(vpsId) {
+    setExtCheck(prev => ({ ...prev, [vpsId]: { loading: true } }))
+    try {
+      const res = await fetch(`${API}/api/admin/vps/${vpsId}/external-check`, { method: 'POST', headers })
+      const data = await res.json()
+      if (res.ok) setExtCheck(prev => ({ ...prev, [vpsId]: { loading: false, data } }))
+      else setExtCheck(prev => ({ ...prev, [vpsId]: { loading: false, error: data.error || 'Ошибка' } }))
+    } catch {
+      setExtCheck(prev => ({ ...prev, [vpsId]: { loading: false, error: 'Ошибка сети' } }))
     }
   }
 
@@ -1588,6 +1606,17 @@ export default function AdminVPS() {
                         {syncNodeState[vps.id]?.loading ? 'Проверка...' : 'Проверить Node на сервере'}
                       </button>
                     )}
+                    {vps.ip_address && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); runExternalCheck(vps.id) }}
+                        disabled={extCheck[vps.id]?.loading}
+                        title="Проверить доступность снаружи (check-host.net, мультилокация)"
+                        className="flex items-center gap-1.5 px-4 py-2 bg-slate-800/60 border border-slate-700/50 hover:border-blue-500/40 hover:text-blue-300 rounded-xl text-xs font-semibold text-slate-300 transition-all disabled:opacity-50"
+                      >
+                        {extCheck[vps.id]?.loading ? <RefreshCcw className="w-3.5 h-3.5 animate-spin" /> : <Globe2 className="w-3.5 h-3.5" />}
+                        {extCheck[vps.id]?.loading ? 'Проверка снаружи…' : 'Проверка снаружи'}
+                      </button>
+                    )}
 
                     {/* Правая группа — менеджмент: частое действие + «···» + удаление */}
                     <div className="flex flex-wrap items-center gap-2 ml-auto">
@@ -1643,6 +1672,36 @@ export default function AdminVPS() {
                     </div>
                   )}
 
+                  {/* Внешняя проверка (check-host.net) */}
+                  {extCheck[vps.id]?.error && (
+                    <div className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs bg-red-500/10 border border-red-500/30 text-red-300">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" /> Внешняя проверка: {extCheck[vps.id].error}
+                    </div>
+                  )}
+                  {extCheck[vps.id]?.data && (() => {
+                    const d = extCheck[vps.id].data
+                    return (
+                      <div className="rounded-xl border border-slate-700/40 bg-slate-950/40 p-3">
+                        <div className="flex items-center justify-between mb-2 gap-2">
+                          <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 min-w-0">
+                            <Globe2 className="w-3.5 h-3.5 text-blue-400 shrink-0" /> Доступность снаружи · <span className="font-mono text-slate-400 truncate">{d.target}</span>
+                          </span>
+                          <span className={`text-xs font-bold shrink-0 ${d.up === d.total ? 'text-emerald-400' : d.up === 0 ? 'text-rose-400' : 'text-amber-400'}`}>{d.up}/{d.total} онлайн</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                          {d.nodes.map(n => (
+                            <div key={n.node} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg bg-slate-800/40 border border-slate-700/30">
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${n.alive === true ? 'bg-emerald-400 dot-glow-emerald' : n.alive === false ? 'bg-rose-500 dot-glow-rose' : 'bg-slate-600'}`} />
+                              <span className="text-slate-300 truncate" title={`${n.country}${n.error ? ' · ' + n.error : ''}`}>{n.countryCode}{n.city ? ` · ${n.city}` : ''}</span>
+                              <span className="ml-auto font-mono text-[10px] text-slate-500 shrink-0">{n.alive === true ? `${n.ms}ms` : n.alive === false ? 'нет' : '…'}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <a href={d.permanentLink} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-[11px] text-blue-400 hover:text-blue-300">Полный отчёт на check-host.net →</a>
+                      </div>
+                    )
+                  })()}
+
                   {/* Payment History */}
                   {historyOpen === vps.id && (
                     <div className="bg-slate-950/40 rounded-xl border border-amber-500/20 p-4">
@@ -1697,6 +1756,9 @@ export default function AdminVPS() {
               <CtxItem Icon={Terminal} label="SSH в новой вкладке" onClick={() => { window.open(`ssh://${ctxMenu.vps.ssh_user || 'root'}@${ctxMenu.vps.ip_address}`, '_blank'); setCtxMenu(null) }} />
             )}
             <CtxItem Icon={Radio} label="Обновить статус" onClick={() => { pingVps(ctxMenu.vps.id); setCtxMenu(null) }} />
+            {ctxMenu.vps.ip_address && (
+              <CtxItem Icon={Globe2} label="Проверка снаружи" onClick={() => { runExternalCheck(ctxMenu.vps.id); setViewMode('grid'); setExpandedId(ctxMenu.vps.id); setCtxMenu(null) }} />
+            )}
             <CtxItem Icon={RefreshCcw} label="Продлить" onClick={() => { setRenewModal({ vpsId: ctxMenu.vps.id, name: ctxMenu.vps.name, months: 1, note: '' }); setCtxMenu(null) }} />
             <CtxItem Icon={Pencil} label="Редактировать" onClick={() => { openEdit(ctxMenu.vps); setCtxMenu(null) }} />
             <div className="border-t border-slate-800 my-1" />
