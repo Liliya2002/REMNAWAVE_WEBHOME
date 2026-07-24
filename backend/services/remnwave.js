@@ -482,6 +482,80 @@ async function disableHosts(uuids) {
   return apiRequest('POST', '/api/hosts/bulk/disable', { uuids })
 }
 
+// ─── Node management (создание, удаление, restart-all, reset-traffic) ─────────
+
+/**
+ * Создать ноду. payload — CreateNodeRequestDto:
+ *   { name, address, port?, countryCode?, configProfile: { activeConfigProfileUuid, activeInbounds[] },
+ *     providerUuid?, tags[]?, isTrafficTrackingActive?, trafficLimitBytes?,
+ *     trafficResetDay?, notifyPercent?, consumptionMultiplier?, activePluginUuid? }
+ *
+ * configProfile.activeInbounds — массив UUID inbound'ов которые активируются
+ * на этой ноде. Без них Remnawave вернёт 400.
+ */
+async function createNode(payload) {
+  return apiRequest('POST', '/api/nodes', payload)
+}
+
+/**
+ * Удалить ноду. Это отключит всех онлайн-юзеров — UI должен сделать confirm.
+ */
+async function deleteNode(uuid) {
+  return apiRequest('DELETE', `/api/nodes/${uuid}`)
+}
+
+/**
+ * Сбросить счётчик трафика конкретной ноды (для quota tracking).
+ */
+async function resetNodeTraffic(uuid) {
+  return apiRequest('POST', `/api/nodes/${uuid}/actions/reset-traffic`)
+}
+
+/**
+ * Restart всех нод сразу. force=true передаёт это в Remnawave для жёсткого
+ * рестарта (graceful по умолчанию).
+ */
+async function restartAllNodes(forceRestart = false) {
+  return apiRequest('POST', '/api/nodes/actions/restart-all', { forceRestart })
+}
+
+// ─── Config Profiles & Infra Providers (для формы создания ноды) ──────────────
+
+/**
+ * Список всех config-профилей с их инбаундами и привязанными нодами.
+ * Используется фронтом для выбора профиля при создании ноды (Шаг 1 формы).
+ */
+async function listConfigProfiles() {
+  return apiRequest('GET', '/api/config-profiles', null, null)
+}
+
+/**
+ * Инбаунды конкретного профиля. Возвращается отдельным endpoint'ом
+ * чтобы не таскать все инбаунды всех профилей если фронту нужен только один.
+ */
+async function getConfigProfileInbounds(uuid) {
+  return apiRequest('GET', `/api/config-profiles/${uuid}/inbounds`, null, null)
+}
+
+/**
+ * Список infra-billing провайдеров (опциональное поле providerUuid у ноды).
+ * Если у юзера их нет — список пустой, фронт скрывает выбор провайдера.
+ */
+async function listInfraProviders() {
+  return apiRequest('GET', '/api/infra-billing/providers', null, null)
+}
+
+/**
+ * Публичный ключ панели (он же SSL_CERT). Один на всю панель — ставится в .env
+ * каждого remnawave-node контейнера для аутентификации с панелью.
+ *
+ * Возвращает { pubKey: string }. Кэшируется на уровне Remnawave (это статика —
+ * меняется только при ротации ключа панели), на нашей стороне кэш не нужен.
+ */
+async function getPanelPubKey() {
+  return apiRequest('GET', '/api/keygen', null, null)
+}
+
 module.exports = {
   getNodes,
   getHosts,
@@ -512,6 +586,14 @@ module.exports = {
   enableNode,
   disableNode,
   restartNode,
+  createNode,
+  deleteNode,
+  resetNodeTraffic,
+  restartAllNodes,
+  listConfigProfiles,
+  getConfigProfileInbounds,
+  listInfraProviders,
+  getPanelPubKey,
   enableHosts,
   disableHosts,
   getUserBandwidthStats,

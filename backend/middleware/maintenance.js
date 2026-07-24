@@ -1,13 +1,15 @@
 /**
- * maintenanceGuard — режет публичный доступ когда включён maintenance_mode.
+ * maintenanceGuard — режет публичный доступ когда включён maintenance_mode
+ * ИЛИ admin_only_mode («Админский режим»).
  *
  * Логика:
- *   1. Если maintenance OFF → пропускаем всё.
- *   2. Если ON:
+ *   1. Если оба OFF → пропускаем всё.
+ *   2. Если включён любой:
  *      - Whitelisted пути (ниже) пропускаются всегда — например /auth/login,
  *        /api/admin/*, /api/maintenance/status, /api/health, статика.
  *      - Для остальных пытаемся декодировать JWT и проверить is_admin → пропускаем.
- *      - Иначе — 503 с JSON { maintenance: true, message }.
+ *      - Иначе: admin_only_mode → 403 { adminOnly: true }; maintenance → 503 { maintenance: true }.
+ *        admin_only_mode приоритетнее (проект закрыт для всех, кроме админов).
  *
  * Применяется в index.js до всех "защищаемых" роутов.
  */
@@ -50,13 +52,24 @@ async function maintenanceGuard(req, res, next) {
     return next() // fail-open
   }
 
-  if (!status.maintenance) return next()
+  // Ничего не включено — пропускаем всё.
+  if (!status.maintenance && !status.adminOnly) return next()
 
+  // Whitelisted пути доступны всегда (нужны чтобы админ мог войти и работать).
   for (const re of ALLOWED) {
     if (re.test(req.path)) return next()
   }
 
+  // Админам всё открыто в обоих режимах.
   if (await isAdminFromToken(req)) return next()
+
+  // Админский режим приоритетнее техработ: проект закрыт для всех не-админов.
+  if (status.adminOnly) {
+    return res.status(403).json({
+      adminOnly: true,
+      message: 'Доступ ограничен: проект работает в административном режиме',
+    })
+  }
 
   return res.status(503).json({
     maintenance: true,

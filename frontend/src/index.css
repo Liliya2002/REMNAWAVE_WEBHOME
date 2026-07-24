@@ -23,12 +23,200 @@
   display: none;
 }
 
+/* Тонкий тёмный скроллбар в тон тёмного интерфейса (сайдбар админки и т.п.).
+   Виден аккуратно, ярче при наведении на контейнер. */
+.thin-scroll {
+  scrollbar-width: thin;                    /* Firefox */
+  scrollbar-color: transparent transparent; /* Firefox: скрыт пока нет hover */
+}
+.thin-scroll:hover {
+  scrollbar-color: #334155 transparent;     /* Firefox: thumb / track */
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+.thin-scroll:hover::-webkit-scrollbar-thumb {
+  background: #1e293b;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
 body {
   background-image: radial-gradient(ellipse at 20% 10%, rgba(34,197,94,0.06), transparent 20%), radial-gradient(ellipse at 80% 90%, rgba(59,130,246,0.04), transparent 20%);
 }
 
 .neon {
   text-shadow: 0 0 8px rgba(99,102,241,0.6), 0 0 24px rgba(99,102,241,0.15);
+}
+
+/* === Dev-стиль: моноширинный шрифт для технических параметров ===
+   IP, порты, id, хеши, команды. Стек с приоритетом «программистских» шрифтов,
+   с безопасным фолбэком на системные. */
+.font-mono,
+code, kbd, samp, pre {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Geist Mono',
+    'SF Mono', ui-monospace, Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+/* === Свечение статус-точек (online/offline/просрочено) === */
+.dot-glow-emerald { box-shadow: 0 0 6px 0 rgba(52, 211, 153, 0.75); }
+.dot-glow-rose    { box-shadow: 0 0 6px 0 rgba(244, 63, 94, 0.75); }
+.dot-glow-amber   { box-shadow: 0 0 6px 0 rgba(251, 191, 36, 0.7); }
+.dot-glow-teal    { box-shadow: 0 0 6px 0 rgba(45, 212, 191, 0.7); }
+
+/* === Верхняя «подсветка» рамки — эффект источника света сверху === */
+.top-lit { box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06); }
+
+/* Комбинация: hover-glow для карточек серверов (мягкое голубое размытие) */
+.card-hover-glow:hover {
+  box-shadow: 0 0 22px -6px rgba(59, 130, 246, 0.18), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+/* === Очень лёгкий точечный паттерн для крупных блоков === */
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+/* === Анимированный фон: звёзды + метеоры (SiteBackground) === */
+/* Базовый тёмный градиент под звёздами (виден только в тёмной теме). */
+.site-bg {
+  background:
+    radial-gradient(ellipse at 20% -10%, rgba(59, 130, 246, 0.10), transparent 45%),
+    radial-gradient(ellipse at 85% 110%, rgba(139, 92, 246, 0.10), transparent 45%),
+    linear-gradient(180deg, #060913 0%, #0a0f1e 50%, #060913 100%);
+}
+/* Мерцающая звезда. */
+.star {
+  position: absolute;
+  border-radius: 9999px;
+  background: #fff;
+  animation: twinkle var(--dur, 3s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  will-change: opacity, transform;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.85); }
+  50%      { opacity: 1;    transform: scale(1.15); }
+}
+/* Метеор: яркая голова + светящийся хвост, летит по диагонали вниз-влево. */
+.meteor {
+  position: absolute;
+  top: -10%;
+  width: 2px;
+  height: 2px;
+  border-radius: 9999px;
+  background: #cfe8ff;
+  box-shadow: 0 0 6px 1px rgba(191, 219, 254, 0.7);
+  transform: rotate(35deg);
+  animation: meteor-fall var(--m-dur, 3.2s) linear infinite;
+  animation-delay: var(--m-delay, 0s);
+  will-change: transform, opacity;
+}
+/* Хвост метеора. */
+.meteor::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 140px;
+  height: 1.5px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(191, 219, 254, 0.9), rgba(139, 92, 246, 0.15), transparent);
+}
+@keyframes meteor-fall {
+  0%   { opacity: 0; transform: rotate(35deg) translateX(0); }
+  8%   { opacity: 1; }
+  100% { opacity: 0; transform: rotate(35deg) translateX(-1400px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .star, .meteor { animation: none; }
+  .meteor { display: none; }
+}
+/* Светлая тема: прозрачная подложка (виден светлый фон сайта) + тёмные частицы. */
+html:not(.dark) .site-bg { background: transparent; }
+html:not(.dark) .site-bg .star {
+  background: #64748b;               /* slate-500 */
+}
+html:not(.dark) .site-bg .meteor {
+  background: #475569;               /* slate-600 */
+  box-shadow: 0 0 6px 1px rgba(71, 85, 105, 0.35);
+}
+html:not(.dark) .site-bg .meteor::after {
+  background: linear-gradient(90deg, rgba(71, 85, 105, 0.6), rgba(99, 102, 241, 0.12), transparent);
+}
+
+/* === Интерактивное свечение под курсором (CursorGlow) === */
+/* Большое мягкое пятно-«прожектор», лениво тянется за мышью. */
+.cursor-spot {
+  position: fixed;
+  top: 0; left: 0;
+  width: 520px; height: 520px;
+  margin: -260px 0 0 -260px;      /* центрируем по точке (transform двигает верхний-левый угол) */
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 15;
+  background: radial-gradient(circle,
+    rgba(56, 189, 248, 0.10) 0%,
+    rgba(59, 130, 246, 0.06) 35%,
+    transparent 60%);
+  mix-blend-mode: screen;
+  will-change: transform;
+  transition: opacity .3s ease;
+}
+/* Вторичное вращающееся пятно — даёт эффект «лучей»/движения света. */
+.cursor-rays {
+  position: fixed;
+  top: 0; left: 0;
+  width: 360px; height: 360px;
+  margin: -180px 0 0 -180px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 15;
+  background: conic-gradient(from 0deg,
+    rgba(125, 211, 252, 0.08), transparent 25%,
+    rgba(59, 130, 246, 0.08) 50%, transparent 75%,
+    rgba(125, 211, 252, 0.08));
+  mix-blend-mode: screen;
+  filter: blur(14px);
+  will-change: transform;
+}
+/* Яркая свеча-точка с ореолом — тянется за курсором вплотную. */
+.cursor-dot {
+  position: fixed;
+  top: 0; left: 0;
+  width: 12px; height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 9998;
+  background: radial-gradient(circle,
+    rgba(186, 230, 253, 0.95) 0%,
+    rgba(56, 189, 248, 0.55) 45%,
+    transparent 72%);
+  box-shadow: 0 0 12px 2px rgba(56, 189, 248, 0.55), 0 0 28px 6px rgba(59, 130, 246, 0.25);
+  will-change: transform;
+}
+/* Тонкое кольцо, следует с бОльшим лагом — «инерция». */
+.cursor-ring {
+  position: fixed;
+  top: 0; left: 0;
+  width: 34px; height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 9999px;
+  pointer-events: none;
+  z-index: 9997;
+  border: 1.5px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 0 10px 0 rgba(56, 189, 248, 0.15) inset;
+  will-change: transform;
 }
 
 /* === Лендинг-страницы: восстанавливаем браузерные дефолты === */

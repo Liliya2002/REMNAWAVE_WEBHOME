@@ -198,6 +198,8 @@ app.post('/api/tg/webhook', express.json(), async (req, res) => {
 // /api/health — публичный, без auth/limiter (для health-check'ов)
 app.use('/api/health', healthRoutes)
 app.use('/api/landings', landingsRoutes)
+// /api/countries — публичный справочник стран ISO 3166-1
+app.use('/api/countries', require('./routes/countries'))
 app.use('/api/admin', adminLimiter, adminTemplatesRoutes)
 app.use('/api/notifications', notificationsRoutes)
 

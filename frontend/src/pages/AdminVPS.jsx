@@ -7,7 +7,8 @@ import {
   BarChart3, AlertTriangle, Send, Activity, RefreshCcw, ChevronDown,
   Copy, Radio, Trash2, Search, FileCode2, RotateCw, Square, Zap,
   PauseCircle, PlayCircle, History, Filter, Database, Coins, Rocket,
-  ShieldCheck, Wifi, WifiOff, Shield, FileText
+  ShieldCheck, Wifi, WifiOff, Shield, FileText, Rows3, Clock3,
+  ArrowUpDown, ChevronUp, MoreHorizontal
 } from 'lucide-react'
 
 const API = import.meta.env.VITE_API_URL || ''
@@ -30,6 +31,51 @@ function formatCost(cost, currency) {
   const symbols = { RUB: '₽', USD: '$', EUR: '€', USDT: '₮' }
   const n = Number(cost) || 0
   return `${n.toLocaleString('ru-RU')} ${symbols[currency] || currency}`
+}
+
+// Добавляет единицу измерения к «голому» числу (2 → «2 GB»); текст с единицами
+// оставляет как есть (админ мог ввести «Ubuntu 24.04» или «2 GB» сам).
+function withUnit(v, unit) {
+  const s = String(v ?? '').trim()
+  if (!s) return ''
+  return /^\d+(\.\d+)?$/.test(s) ? `${s} ${unit}` : s
+}
+
+// Компактный статус оплаты по числу оставшихся дней.
+// Палитра: в норме — emerald, истекает — amber, просрочено — rose.
+function paymentStatusInfo(days) {
+  if (days === null) return { label: 'Дата не указана', color: 'text-slate-400', chip: 'bg-slate-700/50 border-slate-600/40 text-slate-400', dot: 'bg-slate-500', glow: '' }
+  if (days <= 0)  return { label: 'Просрочено',         color: 'text-rose-400',    chip: 'bg-rose-500/10 border-rose-500/30 text-rose-400',       dot: 'bg-rose-500',    glow: 'dot-glow-rose' }
+  if (days <= 3)  return { label: `${days} дн — скоро`, color: 'text-amber-400',   chip: 'bg-amber-500/10 border-amber-500/30 text-amber-400',    dot: 'bg-amber-400',   glow: 'dot-glow-amber' }
+  if (days <= 14) return { label: `${days} дн осталось`, color: 'text-amber-400',  chip: 'bg-amber-500/10 border-amber-500/30 text-amber-400',    dot: 'bg-amber-400',   glow: 'dot-glow-amber' }
+  return { label: `${days} дн осталось`, color: 'text-emerald-400', chip: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400', dot: 'bg-emerald-400', glow: 'dot-glow-emerald' }
+}
+
+// Иконка сортировки в заголовке колонки таблицы.
+function SortIcon({ active, dir }) {
+  if (!active) return <ArrowUpDown className="w-3 h-3 text-slate-600" />
+  return dir === 'asc'
+    ? <ChevronUp className="w-3 h-3 text-violet-300" />
+    : <ChevronDown className="w-3 h-3 text-violet-300" />
+}
+
+// Пульсирующая точка доступности сервера (health/ping).
+function HealthDot({ alive }) {
+  if (alive === true) return <span className="relative flex w-2 h-2 shrink-0" title="Доступен"><span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" /><span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-400 dot-glow-emerald" /></span>
+  if (alive === false) return <span className="w-2 h-2 rounded-full bg-rose-500 shrink-0 dot-glow-rose" title="Недоступен" />
+  return <span className="w-2 h-2 rounded-full bg-slate-600 shrink-0" title="Статус неизвестен" />
+}
+
+// Пункт контекстного меню.
+function CtxItem({ Icon, label, onClick, danger }) {
+  return (
+    <button onClick={onClick}
+      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-xs transition-colors ${
+        danger ? 'text-rose-400 hover:bg-rose-500/10' : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+      }`}>
+      <Icon className={`w-3.5 h-3.5 ${danger ? '' : 'text-slate-400'}`} /> {label}
+    </button>
+  )
 }
 
 // Полоса прогресса до истечения оплаты
@@ -100,6 +146,15 @@ export default function AdminVPS() {
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [filter, setFilter] = useState('all') // all, active, expiring, expired
   const [expandedId, setExpandedId] = useState(null)
+  const [viewMode, setViewMode] = useState(() => { // grid | table
+    try { return localStorage.getItem('admin_vps_view') === 'table' ? 'table' : 'grid' } catch { return 'grid' }
+  })
+  const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState(null)   // 'name' | 'paid' | null
+  const [sortDir, setSortDir] = useState('asc')  // 'asc' | 'desc'
+  const [menuOpen, setMenuOpen] = useState(null)  // vps id with «···» menu open
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 }) // позиция «···»-меню (fixed, чтобы не обрезалось overflow-hidden)
+  const [ctxMenu, setCtxMenu] = useState(null)    // { x, y, vps } — контекстное меню (правый клик)
   const [customProvider, setCustomProvider] = useState(false)
   const [sshOpen, setSshOpen] = useState(null) // vps id with SSH open
   const [sshResult, setSshResult] = useState({}) // { [vpsId]: { output, error, loading, cmd } }
@@ -652,8 +707,56 @@ export default function AdminVPS() {
     if (filterProvider !== 'all') list = list.filter(v => v.hosting_provider === filterProvider)
     // По типу сервиса
     if (filterType !== 'all') list = list.filter(v => (v.service_type || '') === filterType)
+    // Быстрый поиск по названию / IP / провайдеру / локации
+    const q = search.trim().toLowerCase()
+    if (q) list = list.filter(v =>
+      (v.name || '').toLowerCase().includes(q) ||
+      (v.ip_address || '').toLowerCase().includes(q) ||
+      (v.hosting_provider || '').toLowerCase().includes(q) ||
+      (v.location || '').toLowerCase().includes(q)
+    )
+    // Сортировка (в табличном виде)
+    if (sortKey) {
+      const dir = sortDir === 'asc' ? 1 : -1
+      list = [...list].sort((a, b) => {
+        if (sortKey === 'name') return dir * (a.name || '').localeCompare(b.name || '', 'ru')
+        if (sortKey === 'paid') {
+          const da = a.paid_until ? new Date(a.paid_until).getTime() : Infinity
+          const db2 = b.paid_until ? new Date(b.paid_until).getTime() : Infinity
+          return dir * (da - db2)
+        }
+        return 0
+      })
+    }
     return list
-  }, [vpsList, filter, filterProvider, filterType])
+  }, [vpsList, filter, filterProvider, filterType, search, sortKey, sortDir])
+
+  function toggleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  // Контекстное меню по правому клику на карточке/строке.
+  function openCtxMenu(e, vps) {
+    e.preventDefault()
+    const x = Math.min(e.clientX, window.innerWidth - 220)
+    const y = Math.min(e.clientY, window.innerHeight - 260)
+    setCtxMenu({ x, y, vps })
+  }
+
+  useEffect(() => {
+    if (!ctxMenu && menuOpen == null) return
+    const close = () => { setCtxMenu(null); setMenuOpen(null) }
+    const onKey = (e) => { if (e.key === 'Escape') close() }
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [ctxMenu, menuOpen])
 
   // Мультивалютная статистика
   const costByCurrency = useMemo(() => {
@@ -668,6 +771,7 @@ export default function AdminVPS() {
   const uniqueProviders = useMemo(() => [...new Set(vpsList.map(v => v.hosting_provider).filter(Boolean))].sort(), [vpsList])
 
   const totalMonthlyCost = vpsList.reduce((s, v) => s + (Number(v.monthly_cost) || 0), 0)
+  const activeCount = vpsList.filter(v => { const d = daysLeft(v.paid_until); return d === null || d > 14 }).length
   const expiringCount = vpsList.filter(v => { const d = daysLeft(v.paid_until); return d !== null && d > 0 && d <= 14 }).length
   const expiredCount = vpsList.filter(v => { const d = daysLeft(v.paid_until); return d !== null && d <= 0 }).length
   const alertServers = vpsList.filter(v => { const d = daysLeft(v.paid_until); return d !== null && d <= 7 && d >= -3 })
@@ -921,10 +1025,10 @@ export default function AdminVPS() {
           Фильтр:
         </div>
         {[
-          { v: 'all',      l: 'Все',         dot: 'bg-slate-500' },
-          { v: 'active',   l: 'Оплачены',    dot: 'bg-emerald-400' },
-          { v: 'expiring', l: 'Истекают',    dot: 'bg-amber-400' },
-          { v: 'expired',  l: 'Просрочены',  dot: 'bg-red-400' },
+          { v: 'all',      l: 'Все',         dot: 'bg-slate-500',    count: vpsList.length },
+          { v: 'active',   l: 'Оплачены',    dot: 'bg-emerald-400',  count: activeCount },
+          { v: 'expiring', l: 'Истекают',    dot: 'bg-amber-400',    count: expiringCount },
+          { v: 'expired',  l: 'Просрочены',  dot: 'bg-rose-500',     count: expiredCount },
         ].map(f => (
           <button key={f.v} onClick={() => setFilter(f.v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
@@ -934,6 +1038,7 @@ export default function AdminVPS() {
             }`}>
             <span className={`w-1.5 h-1.5 rounded-full ${f.dot}`} />
             {f.l}
+            <span className={`ml-0.5 px-1.5 py-px rounded text-[10px] font-bold ${filter === f.v ? 'bg-violet-500/30 text-violet-100' : 'bg-slate-700/60 text-slate-400'}`}>{f.count}</span>
           </button>
         ))}
 
@@ -953,36 +1058,191 @@ export default function AdminVPS() {
           {SERVICE_TYPES.filter(s => s.value).map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
 
-        <span className="ml-auto text-xs text-slate-500">
-          Найдено: <span className="text-slate-300 font-semibold">{filtered.length}</span>
-          {filtered.length !== vpsList.length && <span className="text-slate-600"> из {vpsList.length}</span>}
-        </span>
+        {/* Быстрый поиск по IP / названию */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по IP / названию…"
+            className="w-48 pl-8 pr-7 py-1.5 rounded-lg text-xs bg-slate-800/60 border border-slate-700/50 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-violet-500/50 transition-all"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} title="Очистить"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs text-slate-500">
+            Найдено: <span className="text-slate-300 font-semibold">{filtered.length}</span>
+            {filtered.length !== vpsList.length && <span className="text-slate-600"> из {vpsList.length}</span>}
+          </span>
+          {/* Переключатель вида: карточки / компактная таблица */}
+          <div className="flex rounded-lg border border-slate-700/50 bg-slate-800/60 p-0.5">
+            {[
+              { v: 'grid',  Icon: LayoutGrid, title: 'Карточки' },
+              { v: 'table', Icon: Rows3,      title: 'Таблица' },
+            ].map(({ v, Icon, title }) => (
+              <button key={v} onClick={() => { setViewMode(v); try { localStorage.setItem('admin_vps_view', v) } catch {} }}
+                title={title} aria-pressed={viewMode === v}
+                className={`flex items-center justify-center w-8 h-7 rounded-md transition-all ${
+                  viewMode === v ? 'bg-violet-500/25 text-violet-200' : 'text-slate-400 hover:text-slate-200'
+                }`}>
+                <Icon className="w-4 h-4" />
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* ===== VPS Cards ===== */}
       <div className="space-y-3">
-        {filtered.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 px-4 rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/30">
-            <div className="w-16 h-16 rounded-2xl bg-slate-800/60 border border-slate-700/40 flex items-center justify-center mb-4">
-              <Database className="w-7 h-7 text-slate-600" />
+        {filtered.length === 0 && (() => {
+          // Контекстные пустые состояния
+          const empty = vpsList.length === 0
+            ? { Icon: Database, iconCls: 'text-slate-600 bg-slate-800/60 border-slate-700/40', title: 'Пока нет ни одного VPS', hint: 'Нажмите кнопку «Добавить VPS» чтобы начать' }
+            : search.trim()
+            ? { Icon: Search, iconCls: 'text-slate-500 bg-slate-800/60 border-slate-700/40', title: `Ничего не найдено по «${search.trim()}»`, hint: 'Проверьте запрос или сбросьте поиск' }
+            : filter === 'expired'
+            ? { Icon: CheckCircle2, iconCls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25', title: 'Просроченных серверов нет', hint: 'Все серверы оплачены — так держать 👍' }
+            : filter === 'expiring'
+            ? { Icon: ShieldCheck, iconCls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/25', title: 'Нет серверов, требующих внимания', hint: 'Ни один сервер не истекает в ближайшие 14 дней' }
+            : { Icon: Database, iconCls: 'text-slate-600 bg-slate-800/60 border-slate-700/40', title: 'Нет VPS по выбранному фильтру', hint: 'Попробуйте сбросить фильтры' }
+          const EIcon = empty.Icon
+          return (
+            <div className="flex flex-col items-center justify-center py-20 px-4 rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/30">
+              <div className={`w-16 h-16 rounded-2xl border flex items-center justify-center mb-4 ${empty.iconCls}`}>
+                <EIcon className="w-7 h-7" />
+              </div>
+              <p className="text-slate-300 font-medium">{empty.title}</p>
+              <p className="text-xs text-slate-500 mt-1">{empty.hint}</p>
+              {vpsList.length === 0 && (
+                <button onClick={openAdd}
+                  className="mt-4 flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-500/30 transition-all">
+                  <Plus className="w-4 h-4" /> Добавить первый VPS
+                </button>
+              )}
+              {vpsList.length > 0 && (search.trim() || filter !== 'all') && (
+                <button onClick={() => { setSearch(''); setFilter('all'); setFilterProvider('all'); setFilterType('all') }}
+                  className="mt-4 flex items-center gap-1.5 px-4 py-2 bg-slate-800/60 border border-slate-700/50 hover:border-slate-600 text-slate-300 rounded-xl text-sm font-semibold transition-all">
+                  <RefreshCcw className="w-4 h-4" /> Сбросить фильтры
+                </button>
+              )}
             </div>
-            <p className="text-slate-400 font-medium">
-              {vpsList.length === 0 ? 'Пока нет ни одного VPS' : 'Нет VPS по выбранному фильтру'}
-            </p>
-            <p className="text-xs text-slate-600 mt-1">
-              {vpsList.length === 0 ? 'Нажмите кнопку «Добавить VPS» чтобы начать' : 'Попробуйте сбросить фильтры'}
-            </p>
-            {vpsList.length === 0 && (
-              <button onClick={openAdd}
-                className="mt-4 flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-500/30 transition-all">
-                <Plus className="w-4 h-4" /> Добавить первый VPS
-              </button>
-            )}
+          )
+        })()}
+
+        {/* ===== Компактная таблица (для работы со многими серверами) ===== */}
+        {viewMode === 'table' && filtered.length > 0 && (
+          <div className="overflow-x-auto rounded-2xl border border-slate-700/40 bg-slate-900/40">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-700/50">
+                  <th className="px-4 py-3 font-semibold">
+                    <button onClick={() => toggleSort('name')} className="inline-flex items-center gap-1 hover:text-slate-300 transition-colors uppercase">
+                      Название / IP <SortIcon active={sortKey === 'name'} dir={sortDir} />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 font-semibold">Провайдер</th>
+                  <th className="px-4 py-3 font-semibold">Конфиг</th>
+                  <th className="px-4 py-3 font-semibold">
+                    <button onClick={() => toggleSort('paid')} className="inline-flex items-center gap-1 hover:text-slate-300 transition-colors uppercase">
+                      Оплата <SortIcon active={sortKey === 'paid'} dir={sortDir} />
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 font-semibold">Статус ноды</th>
+                  <th className="px-4 py-3 font-semibold text-right">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(vps => {
+                  const days = daysLeft(vps.paid_until)
+                  const ps = paymentStatusInfo(days)
+                  const specs = typeof vps.specs === 'string' ? JSON.parse(vps.specs) : (vps.specs || {})
+                  const st = SERVICE_TYPES.find(s => s.value === (vps.service_type || ''))
+                  const linkedNode = vps.node_uuid ? nodes.find(n => n.uuid === vps.node_uuid) : null
+                  const cfg = [
+                    specs.cpu && withUnit(specs.cpu, 'vCPU'),
+                    specs.ram && `${withUnit(specs.ram, 'GB')} RAM`,
+                    specs.disk && withUnit(specs.disk, 'GB'),
+                  ].filter(Boolean).join(' · ')
+                  return (
+                    <tr key={vps.id} onContextMenu={(e) => openCtxMenu(e, vps)} className="border-b border-slate-800/40 last:border-0 hover:bg-slate-800/30 transition-colors">
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-semibold text-white truncate max-w-[220px]">{vps.name}</div>
+                        {vps.ip_address && (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <HealthDot alive={pingStatus[vps.id]?.alive ?? vps.is_reachable ?? null} />
+                            <span className="font-mono text-xs text-slate-400">{vps.ip_address}</span>
+                            <button onClick={() => copyIp(vps.ip_address)} title="Скопировать IP"
+                              className="p-0.5 rounded text-slate-600 hover:text-violet-300 hover:bg-slate-700/60 transition-colors">
+                              {copiedIp === vps.ip_address ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="text-slate-300">{vps.hosting_provider || '—'}</div>
+                        {vps.location && <div className="text-xs text-slate-500 mt-0.5">{vps.location}</div>}
+                      </td>
+                      <td className="px-4 py-3 align-top text-xs text-slate-400 whitespace-nowrap">{cfg || '—'}</td>
+                      <td className="px-4 py-3 align-top whitespace-nowrap">
+                        <div className="text-slate-300">{formatCost(vps.monthly_cost, vps.currency)}/мес</div>
+                        <span className={`inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded border text-[10px] font-bold ${ps.chip}`}>
+                          <span className={`w-1 h-1 rounded-full ${ps.dot} ${ps.glow}`} /> {ps.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 align-top whitespace-nowrap">
+                        {st && st.value ? (
+                          <div className="flex items-center gap-1.5 text-xs text-slate-300">
+                            <st.Icon className="w-3.5 h-3.5 text-slate-400" /> {st.label}
+                          </div>
+                        ) : <span className="text-xs text-slate-600 italic">—</span>}
+                        {vps.service_type === 'node' && linkedNode && (
+                          <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5">
+                            <span className={`w-1.5 h-1.5 rounded-full ${linkedNode.isConnected ? 'bg-teal-400' : 'bg-slate-600'}`} />
+                            {linkedNode.isConnected ? 'Онлайн' : 'Офф'}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <button onClick={() => setRenewModal({ vpsId: vps.id, name: vps.name, months: 1, note: '' })}
+                            title="Продлить" className="w-8 h-8 flex items-center justify-center rounded-lg text-emerald-400 hover:bg-slate-700/70 transition-colors">
+                            <RefreshCcw className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => openEdit(vps)}
+                            title="Редактировать" className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-violet-300 hover:bg-slate-700/70 transition-colors">
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          {deleteConfirm === vps.id ? (
+                            <span className="inline-flex items-center gap-1 ml-1">
+                              <button onClick={() => handleDelete(vps.id)} className="px-2 py-1 rounded-lg bg-rose-500/20 border border-rose-500/50 text-[11px] font-bold text-rose-300 hover:bg-rose-500/30">Да</button>
+                              <button onClick={() => setDeleteConfirm(null)} className="px-2 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[11px] text-slate-300">Нет</button>
+                            </span>
+                          ) : (
+                            <button onClick={() => setDeleteConfirm(vps.id)}
+                              title="Удалить" className="w-8 h-8 flex items-center justify-center rounded-lg text-rose-400 hover:bg-slate-700/70 transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
 
-        {filtered.map(vps => {
+        {viewMode === 'grid' && filtered.map(vps => {
           const days = daysLeft(vps.paid_until)
+          const ps = paymentStatusInfo(days)
           const isExpanded = expandedId === vps.id
           const specs = typeof vps.specs === 'string' ? JSON.parse(vps.specs) : (vps.specs || {})
           const linkedNode = vps.node_uuid ? nodes.find(n => n.uuid === vps.node_uuid) : null
@@ -1008,45 +1268,53 @@ export default function AdminVPS() {
           const StIcon = st?.Icon || Server
 
           return (
-            <div key={vps.id} className={`group relative border ${borderAccent} rounded-2xl bg-gradient-to-br from-slate-800/50 via-slate-900/60 to-slate-900/80 overflow-hidden transition-all hover:border-slate-600/60 hover:shadow-xl hover:shadow-violet-500/5`}>
+            <div key={vps.id}
+              onContextMenu={(e) => openCtxMenu(e, vps)}
+              className={`group relative border ${borderAccent} rounded-2xl bg-gradient-to-br from-slate-800/50 via-slate-900/60 to-slate-900/80 overflow-hidden transition-all hover:border-slate-600/60 card-hover-glow top-lit`}>
               {/* Левая цветная полоса-индикатор */}
               <div className={`absolute left-0 top-0 bottom-0 w-1 ${accentBar}`} />
 
-              {/* Card header — always visible */}
-              <div className="pl-5 pr-4 sm:pl-6 sm:pr-5 py-4 sm:py-5 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : vps.id)}>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                  {/* Avatar + info */}
-                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${stColor.icon}`}>
-                    <StIcon className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1 min-w-0 space-y-2">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h4 className="text-lg font-bold text-white truncate">{vps.name}</h4>
-                      {vps.hosting_provider && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-violet-500/15 border border-violet-500/30 rounded-full text-[11px] font-semibold text-violet-300">
-                          <Globe2 className="w-3 h-3" /> {vps.hosting_provider}
-                        </span>
-                      )}
-                      {vps.yc_instance_id && (
-                        <a href="/admin/yandex-cloud" title={`Управляется через Yandex Cloud (instance ${vps.yc_instance_id})`}
-                          className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-500/15 border border-blue-500/30 rounded-full text-[11px] font-semibold text-blue-300 hover:bg-blue-500/25">
-                          ☁ Yandex Cloud
-                        </a>
-                      )}
-                      {vps.status === 'inactive' && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/80 border border-slate-600/50 rounded-full text-[11px] text-slate-400">
-                          <PauseCircle className="w-3 h-3" /> Неактивен
-                        </span>
-                      )}
+              {/* Card header — плотный модуль, вся ключевая инфа видна сразу */}
+              <div className="pl-5 pr-4 sm:pl-6 sm:pr-5 py-4 space-y-2.5">
+                {/* Ряд 1: идентификация + статусы справа */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${stColor.icon}`}>
+                      <StIcon className="w-5 h-5" />
                     </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-lg font-bold text-white truncate">{vps.name}</h4>
+                        {vps.location && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/50 border border-slate-600/40 rounded-full text-[11px] font-medium text-slate-300">
+                            <MapPin className="w-3 h-3" /> {vps.location}
+                          </span>
+                        )}
+                        {vps.hosting_provider && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-violet-500/15 border border-violet-500/30 rounded-full text-[11px] font-semibold text-violet-300">
+                            <Globe2 className="w-3 h-3" /> {vps.hosting_provider}
+                          </span>
+                        )}
+                        {vps.yc_instance_id && (
+                          <a href="/admin/yandex-cloud" title={`Управляется через Yandex Cloud (instance ${vps.yc_instance_id})`}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-blue-500/15 border border-blue-500/30 rounded-full text-[11px] font-semibold text-blue-300 hover:bg-blue-500/25">
+                            ☁ Yandex Cloud
+                          </a>
+                        )}
+                        {vps.status === 'inactive' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-700/80 border border-slate-600/50 rounded-full text-[11px] text-slate-400">
+                            <PauseCircle className="w-3 h-3" /> Неактивен
+                          </span>
+                        )}
+                      </div>
 
-                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500">
+                      {/* IP + копирование + ping */}
                       {vps.ip_address && (
-                        <span className="inline-flex items-center gap-1">
-                          <Hash className="w-3 h-3 text-slate-600" />
+                        <div className="mt-1.5 flex items-center gap-1.5 text-xs">
+                          <HealthDot alive={pingStatus[vps.id]?.alive ?? vps.is_reachable ?? null} />
                           <span className="font-mono text-slate-300">{vps.ip_address}</span>
                           <button onClick={(e) => { e.stopPropagation(); copyIp(vps.ip_address) }}
-                            className="ml-0.5 p-1 rounded bg-slate-800/80 hover:bg-violet-500/20 border border-slate-700/50 hover:border-violet-500/40 text-slate-500 hover:text-violet-300 transition-all"
+                            className="p-1 rounded bg-slate-800/80 hover:bg-violet-500/20 border border-slate-700/50 hover:border-violet-500/40 text-slate-500 hover:text-violet-300 transition-all"
                             title="Скопировать IP">
                             {copiedIp === vps.ip_address ? <CheckCircle2 className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                           </button>
@@ -1063,111 +1331,79 @@ export default function AdminVPS() {
                               : pingStatus[vps.id]?.alive === false ? <><WifiOff className="w-3 h-3" /> offline</>
                               : <Radio className="w-3 h-3" />}
                           </button>
-                        </span>
+                        </div>
                       )}
-                      {vps.location && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-slate-600" /> {vps.location}
+                    </div>
+                  </div>
+
+                  {/* Справа: единый мини-блок статусов (нода + оплата) */}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <div className="inline-flex items-center gap-2 rounded-lg bg-slate-800/50 border border-slate-700/50 px-2.5 py-1 text-xs">
+                      {st && st.value ? (
+                        <span className="inline-flex items-center gap-1.5 font-semibold text-slate-200">
+                          <StIcon className="w-3.5 h-3.5 text-slate-400" /> {st.label}
                         </span>
+                      ) : (
+                        <span className="text-slate-500 italic">Сервис не указан</span>
                       )}
-                      <span className="inline-flex items-center gap-1 font-bold text-violet-300">
-                        <Wallet className="w-3 h-3" /> {formatCost(vps.monthly_cost, vps.currency)}/мес
+                      <span className="w-px h-3.5 bg-slate-700" />
+                      <span className={`inline-flex items-center gap-1.5 font-bold ${ps.color}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${ps.dot} ${ps.glow} ${days !== null && days <= 0 ? 'animate-pulse' : ''}`} /> {ps.label}
                       </span>
                     </div>
-
-                    {/* Payment bar */}
-                    <PaymentBar paidUntil={vps.paid_until} paidMonths={vps.paid_months} />
-                  </div>
-
-                  {/* Right: service type + expand */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    {st && st.value ? (
-                      <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border ${stColor.wrap}`}>
-                        <StIcon className="w-4 h-4 shrink-0" />
-                        <div>
-                          <div className="font-bold leading-tight">{st.label}</div>
-                          {vps.service_type === 'node' && linkedNode && (
-                            <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                              <span className={`w-1.5 h-1.5 rounded-full ${linkedNode.isConnected ? 'bg-teal-400 animate-pulse' : 'bg-slate-600'}`} />
-                              {linkedNode.name} · {linkedNode.isConnected ? 'Онлайн' : 'Офф'}
-                            </div>
-                          )}
-                        </div>
+                    {vps.service_type === 'node' && linkedNode && (
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1 justify-end pr-1">
+                        <span className={`w-1.5 h-1.5 rounded-full ${linkedNode.isConnected ? 'bg-teal-400 animate-pulse' : 'bg-slate-600'}`} />
+                        {linkedNode.name} · {linkedNode.isConnected ? 'Онлайн' : 'Офф'}
                       </div>
-                    ) : (
-                      <span className="text-xs text-slate-600 italic">Сервис не указан</span>
                     )}
-                    <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                   </div>
                 </div>
+
+                {/* Ряд 2: характеристики — pill-теги (с единицами измерения) */}
+                {(specs.cpu || specs.ram || specs.disk || specs.os) && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-300">
+                    {specs.cpu && <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800/50 border border-slate-700/40"><Cpu className="w-3.5 h-3.5 text-emerald-400/80" /> {withUnit(specs.cpu, 'vCPU')}</span>}
+                    {specs.ram && <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800/50 border border-slate-700/40"><MemoryStick className="w-3.5 h-3.5 text-emerald-400/80" /> {withUnit(specs.ram, 'GB')} RAM</span>}
+                    {specs.disk && <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800/50 border border-slate-700/40"><HardDrive className="w-3.5 h-3.5 text-emerald-400/80" /> {withUnit(specs.disk, 'GB')}</span>}
+                    {specs.os && <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800/50 border border-slate-700/40"><Disc3 className="w-3.5 h-3.5 text-emerald-400/80" /> {specs.os}</span>}
+                  </div>
+                )}
+
+                {/* Ряд 3: оплата */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-violet-300"><Wallet className="w-3.5 h-3.5" /> {formatCost(vps.monthly_cost, vps.currency)}/мес</span>
+                  <span className="inline-flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5 text-slate-500" /> Оплата до: <span className="text-slate-200 font-medium">{formatDate(vps.paid_until)}</span>{vps.paid_months ? <span className="text-slate-500"> (куплено {vps.paid_months} мес.)</span> : null}</span>
+                </div>
+
+                {/* Ряд 4: сетевые статусы — pill-теги */}
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800/50 border border-slate-700/40 text-slate-400"><Rocket className="w-3.5 h-3.5 text-slate-500" /> BBR: <b className={`font-semibold ${vps.bbr_enabled === true ? 'text-emerald-400' : vps.bbr_enabled === false ? 'text-amber-400' : 'text-slate-400'}`}>{vps.bbr_enabled === true ? 'Вкл' : vps.bbr_enabled === false ? 'Выкл' : '—'}</b></span>
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800/50 border border-slate-700/40 text-slate-400"><Globe2 className="w-3.5 h-3.5 text-slate-500" /> IPv6: <b className={`font-semibold ${vps.ipv6_disabled === true ? 'text-emerald-400' : vps.ipv6_disabled === false ? 'text-slate-300' : 'text-slate-400'}`}>{vps.ipv6_disabled === true ? 'Выкл' : vps.ipv6_disabled === false ? 'Вкл' : '—'}</b></span>
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-800/50 border border-slate-700/40 text-slate-400"><ShieldCheck className="w-3.5 h-3.5 text-slate-500" /> Порты: <b className={`font-semibold ${vps.firewall_ssh_only === true ? 'text-emerald-400' : 'text-slate-400'}`}>{vps.firewall_ssh_only === true ? 'Только 22' : vps.firewall_ssh_only === false ? 'Открыты' : '—'}</b></span>
+                </div>
+
+                {/* Ряд 5: заметка */}
+                {vps.notes && (
+                  <div className="flex items-start gap-1.5 text-xs text-slate-400">
+                    <StickyNote className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" />
+                    <span className="line-clamp-2 whitespace-pre-wrap">{vps.notes}</span>
+                  </div>
+                )}
+
+                {/* Привязанная нода — детально (только для node) */}
+                {vps.service_type === 'node' && linkedNode && (
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 pt-1">
+                    <span className="inline-flex items-center gap-1.5"><Network className="w-3.5 h-3.5 text-teal-400/80" /> Нода: <span className="text-slate-300">{linkedNode.name}</span></span>
+                    <span className="inline-flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-slate-500" /> Онлайн: <span className="text-slate-300">{linkedNode.usersOnline || 0}</span></span>
+                    <span className="inline-flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-slate-500" /> Xray: <span className="text-slate-300">{linkedNode.xrayVersion || '—'}</span></span>
+                  </div>
+                )}
               </div>
 
-              {/* Expanded details */}
-              {isExpanded && (
-                <div className="border-t border-slate-700/40 p-4 sm:p-5 bg-slate-950/30 space-y-5 animate-in fade-in slide-in-from-top-2 duration-200">
-                  {/* Specs grid */}
-                  {(specs.cpu || specs.ram || specs.disk || specs.os) && (
-                    <SectionTitle Icon={Cpu} title="Характеристики" accent="emerald">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                        {specs.cpu && <SpecBadge Icon={Cpu} label="CPU" value={specs.cpu} />}
-                        {specs.ram && <SpecBadge Icon={MemoryStick} label="RAM" value={specs.ram} />}
-                        {specs.disk && <SpecBadge Icon={HardDrive} label="Диск" value={specs.disk} />}
-                        {specs.os && <SpecBadge Icon={Disc3} label="ОС" value={specs.os} />}
-                      </div>
-                    </SectionTitle>
-                  )}
-
-                  {/* Payment details */}
-                  <SectionTitle Icon={Wallet} title="Оплата" accent="amber">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                      <SpecBadge Icon={Wallet} label="Стоимость" value={formatCost(vps.monthly_cost, vps.currency)} />
-                      <SpecBadge Icon={Calendar} label="Куплено мес." value={vps.paid_months || '—'} />
-                      <SpecBadge Icon={Calendar} label="Оплачено до" value={formatDate(vps.paid_until)} />
-                    </div>
-                  </SectionTitle>
-
-                  <SectionTitle Icon={ShieldCheck} title="Сетевые статусы" accent="blue">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                      <SpecBadge
-                        Icon={Rocket}
-                        label="BBR"
-                        value={vps.bbr_enabled === true ? 'Включен' : vps.bbr_enabled === false ? 'Выключен' : 'Неизвестно'}
-                        valueColor={vps.bbr_enabled === true ? 'text-emerald-300' : vps.bbr_enabled === false ? 'text-amber-300' : undefined}
-                      />
-                      <SpecBadge
-                        Icon={Globe2}
-                        label="IPv6"
-                        value={vps.ipv6_disabled === true ? 'Выключен' : vps.ipv6_disabled === false ? 'Включен' : 'Неизвестно'}
-                        valueColor={vps.ipv6_disabled === true ? 'text-emerald-300' : undefined}
-                      />
-                      <SpecBadge
-                        Icon={ShieldCheck}
-                        label="Порты"
-                        value={vps.firewall_ssh_only === true ? 'Только 22 открыт' : vps.firewall_ssh_only === false ? 'Не ограничены' : 'Неизвестно'}
-                        valueColor={vps.firewall_ssh_only === true ? 'text-emerald-300' : undefined}
-                      />
-                    </div>
-                  </SectionTitle>
-
-                  {/* Linked node info (only for node service type) */}
-                  {vps.service_type === 'node' && linkedNode && (
-                    <SectionTitle Icon={Network} title="Привязанная нода" accent="teal">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                        <SpecBadge Icon={Tag} label="Имя" value={linkedNode.name} />
-                        <SpecBadge Icon={Globe2} label="Адрес" value={linkedNode.address || '—'} />
-                        <SpecBadge Icon={Activity} label="Онлайн" value={linkedNode.usersOnline || 0} />
-                        <SpecBadge Icon={Zap} label="Xray" value={linkedNode.xrayVersion || '—'} />
-                      </div>
-                    </SectionTitle>
-                  )}
-
-                  {/* Notes */}
-                  {vps.notes && (
-                    <SectionTitle Icon={StickyNote} title="Заметки" accent="violet">
-                      <p className="text-sm text-slate-300 whitespace-pre-wrap bg-slate-900/60 rounded-xl p-3 border border-slate-700/40">{vps.notes}</p>
-                    </SectionTitle>
-                  )}
-
+              {/* Панели и действия — всегда доступны */}
+              {true && (
+                <div className="border-t border-slate-700/40 p-4 sm:p-5 bg-slate-950/30 space-y-4">
                   {/* SSH Terminal */}
                   {vps.ip_address && (vps.ssh_password || vps.ssh_key) && (
                     <div>
@@ -1339,8 +1575,9 @@ export default function AdminVPS() {
                     </div>
                   )}
 
-                  {/* Actions */}
-                  <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-800/50">
+                  {/* Actions — управление (системные утилиты — в блоке SSH выше) */}
+                  <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-800/50">
+                    <span className="text-xs text-slate-600 font-mono self-center">id:{vps.id}</span>
                     {vps.service_type !== 'node' && (
                       <button
                         onClick={(e) => { e.stopPropagation(); syncNodeStatus(vps.id) }}
@@ -1351,40 +1588,46 @@ export default function AdminVPS() {
                         {syncNodeState[vps.id]?.loading ? 'Проверка...' : 'Проверить Node на сервере'}
                       </button>
                     )}
-                    <button onClick={(e) => { e.stopPropagation(); setRenewModal({ vpsId: vps.id, name: vps.name, months: 1, note: '' }) }}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 rounded-xl text-xs font-bold text-emerald-300 transition-all">
-                      <RefreshCcw className="w-3.5 h-3.5" /> Продлить
-                    </button>
-                    <button onClick={(e) => {
-                      e.stopPropagation()
-                      if (historyOpen === vps.id) { setHistoryOpen(null) } else { setHistoryOpen(vps.id); fetchHistory(vps.id) }
-                    }}
-                      className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-all border ${
-                        historyOpen === vps.id
-                          ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                          : 'bg-slate-800/60 border-slate-700/50 text-slate-300 hover:border-amber-500/40 hover:text-amber-300'
-                      }`}>
-                      <History className="w-3.5 h-3.5" /> История оплат
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); openEdit(vps) }}
-                      className="flex items-center gap-1.5 px-4 py-2 bg-slate-800/60 border border-slate-700/50 hover:border-violet-500/50 hover:bg-violet-500/10 rounded-xl text-xs font-semibold text-slate-300 hover:text-violet-300 transition-all">
-                      <Pencil className="w-3.5 h-3.5" /> Редактировать
-                    </button>
-                    {deleteConfirm === vps.id ? (
-                      <div className="flex items-center gap-1.5 px-2 rounded-xl bg-red-500/10 border border-red-500/40">
-                        <span className="text-xs text-red-300 font-medium">Удалить?</span>
-                        <button onClick={() => handleDelete(vps.id)}
-                          className="px-2.5 py-1.5 bg-red-500/20 border border-red-500/50 rounded-lg text-xs font-bold text-red-300 hover:bg-red-500/30 transition-all">Да, удалить</button>
-                        <button onClick={() => setDeleteConfirm(null)}
-                          className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 hover:text-white transition-all">Отмена</button>
-                      </div>
-                    ) : (
-                      <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(vps.id) }}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-slate-800/60 border border-slate-700/50 hover:border-red-500/50 hover:bg-red-500/10 rounded-xl text-xs font-semibold text-slate-300 hover:text-red-300 transition-all">
-                        <Trash2 className="w-3.5 h-3.5" /> Удалить
+
+                    {/* Правая группа — менеджмент: частое действие + «···» + удаление */}
+                    <div className="flex flex-wrap items-center gap-2 ml-auto">
+                      <button onClick={(e) => { e.stopPropagation(); setRenewModal({ vpsId: vps.id, name: vps.name, months: 1, note: '' }) }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500/15 border border-emerald-500/40 hover:bg-emerald-500/25 rounded-xl text-xs font-bold text-emerald-300 transition-all shadow-sm shadow-emerald-500/10">
+                        <RefreshCcw className="w-3.5 h-3.5" /> Продлить
                       </button>
-                    )}
-                    <span className="ml-auto text-xs text-slate-600 font-mono self-center">id:{vps.id}</span>
+
+                      {/* More actions «···» — меню рендерится fixed, чтобы не обрезалось overflow-hidden карточки */}
+                      <button onClick={(e) => {
+                          e.stopPropagation()
+                          if (menuOpen === vps.id) { setMenuOpen(null); return }
+                          const r = e.currentTarget.getBoundingClientRect()
+                          setMenuPos({ x: r.right, y: r.bottom })
+                          setMenuOpen(vps.id)
+                        }}
+                        title="Ещё действия"
+                        className={`flex items-center justify-center w-9 h-9 rounded-xl border transition-all ${
+                          menuOpen === vps.id
+                            ? 'bg-slate-700/60 border-slate-600 text-white'
+                            : 'bg-slate-800/60 border-slate-700/50 text-slate-300 hover:border-slate-600 hover:text-white'
+                        }`}>
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+
+                      {deleteConfirm === vps.id ? (
+                        <div className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-rose-500/10 border border-rose-500/40">
+                          <span className="text-xs text-rose-300 font-medium">Удалить?</span>
+                          <button onClick={() => handleDelete(vps.id)}
+                            className="px-2.5 py-1.5 bg-rose-500/20 border border-rose-500/50 rounded-lg text-xs font-bold text-rose-300 hover:bg-rose-500/30 transition-all">Да</button>
+                          <button onClick={() => setDeleteConfirm(null)}
+                            className="px-2.5 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-xs text-slate-300 hover:text-white transition-all">Отмена</button>
+                        </div>
+                      ) : (
+                        <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(vps.id) }}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-transparent border border-rose-500/20 hover:border-rose-500/40 hover:bg-rose-500/10 rounded-xl text-xs font-semibold text-rose-400 hover:text-rose-300 transition-all">
+                          <Trash2 className="w-3.5 h-3.5" /> Удалить
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {(syncNodeState[vps.id]?.message || syncNodeState[vps.id]?.error) && (
@@ -1438,6 +1681,45 @@ export default function AdminVPS() {
           )
         })}
       </div>
+
+      {/* ===== Контекстное меню (правый клик по карточке/строке) ===== */}
+      {ctxMenu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null) }} />
+          <div className="fixed z-[61] w-52 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/60 py-1 top-lit animate-in fade-in zoom-in-95 duration-100"
+            style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+            <div className="px-3 py-1.5 text-[11px] font-semibold text-slate-500 border-b border-slate-800 truncate">{ctxMenu.vps.name}</div>
+            {ctxMenu.vps.ip_address && (
+              <CtxItem Icon={Copy} label="Скопировать IP" onClick={() => { copyIp(ctxMenu.vps.ip_address); setCtxMenu(null) }} />
+            )}
+            <CtxItem Icon={Terminal} label="SSH-терминал" onClick={() => { setViewMode('grid'); setSshOpen(ctxMenu.vps.id); setExpandedId(ctxMenu.vps.id); setCtxMenu(null) }} />
+            {ctxMenu.vps.ip_address && (
+              <CtxItem Icon={Terminal} label="SSH в новой вкладке" onClick={() => { window.open(`ssh://${ctxMenu.vps.ssh_user || 'root'}@${ctxMenu.vps.ip_address}`, '_blank'); setCtxMenu(null) }} />
+            )}
+            <CtxItem Icon={Radio} label="Обновить статус" onClick={() => { pingVps(ctxMenu.vps.id); setCtxMenu(null) }} />
+            <CtxItem Icon={RefreshCcw} label="Продлить" onClick={() => { setRenewModal({ vpsId: ctxMenu.vps.id, name: ctxMenu.vps.name, months: 1, note: '' }); setCtxMenu(null) }} />
+            <CtxItem Icon={Pencil} label="Редактировать" onClick={() => { openEdit(ctxMenu.vps); setCtxMenu(null) }} />
+            <div className="border-t border-slate-800 my-1" />
+            <CtxItem Icon={Trash2} label="Удалить" danger onClick={() => { setDeleteConfirm(ctxMenu.vps.id); setCtxMenu(null) }} />
+          </div>
+        </>
+      )}
+
+      {/* ===== «···»-меню карточки (fixed, чтобы не резалось overflow-hidden) ===== */}
+      {menuOpen != null && (() => {
+        const mv = vpsList.find(v => v.id === menuOpen)
+        if (!mv) return null
+        return (
+          <>
+            <div className="fixed inset-0 z-[55]" onClick={() => setMenuOpen(null)} onContextMenu={(e) => { e.preventDefault(); setMenuOpen(null) }} />
+            <div className="fixed z-[56] w-48 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/60 py-1 top-lit animate-in fade-in zoom-in-95 duration-100"
+              style={{ left: Math.max(8, menuPos.x - 192), top: menuPos.y + 4 }}>
+              <CtxItem Icon={History} label="История оплат" onClick={() => { setMenuOpen(null); if (historyOpen === mv.id) { setHistoryOpen(null) } else { setHistoryOpen(mv.id); fetchHistory(mv.id) } }} />
+              <CtxItem Icon={Pencil} label="Редактировать" onClick={() => { setMenuOpen(null); openEdit(mv) }} />
+            </div>
+          </>
+        )
+      })()}
 
       {/* ===== Renew Modal ===== */}
       {renewModal && (

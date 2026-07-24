@@ -530,6 +530,13 @@ async function handleCabinet(ctx) {
   if (sub?.is_active && sub.subscription_url) {
     kb.url('📲 Подключить VPN', sub.subscription_url).row()
   }
+  // Кнопка активации тестового периода — если не использован и нет активной подписки
+  try {
+    const usedTrial = await db.query(`SELECT 1 FROM subscriptions WHERE user_id = $1 AND plan_name = 'FREE_TRIAL' LIMIT 1`, [user.id])
+    if (!sub?.is_active && usedTrial.rows.length === 0) {
+      kb.text('🎁 Активировать тестовый период', 'menu:trial').row()
+    }
+  } catch { /* ignore */ }
   // Кнопка «Перейти в веб» — авто-логин
   const { token } = await tokens.createAutoLoginToken(user.id)
   kb.url('🌐 Открыть в браузере', `${FRONTEND_URL}/tg-login?t=${token}`)
@@ -583,19 +590,156 @@ async function handleBuy(ctx) {
     if (extras.length) lines.push(`   <i>${extras.join(' · ')}</i>`)
     lines.push('')
   }
-  lines.push('Жми кнопку с нужным тарифом — откроется оплата на сайте.')
+  lines.push('Выбери тариф — дальше укажешь срок и получишь ссылку на оплату.')
 
-  // Inline-кнопки: deeplink на /pricing с pre-selected тарифом + автологин
-  const { token } = await tokens.createAutoLoginToken(user.id)
+  // Inline-кнопки: нативный выбор тарифа прямо в боте
   const kb = new InlineKeyboard()
   for (const p of r.rows) {
-    const url = `${FRONTEND_URL}/tg-login?t=${token}&redirect=/pricing?plan=${p.id}`
     const priceLabel = p.price_monthly != null ? `${fmtMoney(p.price_monthly)} ₽/мес` : 'выбрать'
-    kb.url(`${p.name} · ${priceLabel}`, url).row()
+    kb.text(`${p.name} · ${priceLabel}`, `menu:buyplan:${p.id}`).row()
   }
   withBackButton(kb)
 
   await sendOrEdit(ctx, lines.join('\n'), { reply_markup: kb, parse_mode: 'HTML' })
+}
+
+// Экран тарифа — выбор срока оплаты.
+async function handleBuyPlan(ctx, planId) {
+  const user = await getUserByTg(ctx.from.id)
+  if (!user) return ctx.reply('Сначала нажми /start.')
+
+  const r = await db.query(
+    `SELECT id, name, description, traffic_gb, hwid_device_limit, price_monthly, price_quarterly, price_yearly
+       FROM plans WHERE id = $1 AND is_active = true AND is_trial = false`, [planId]
+  )
+  if (r.rows.length === 0) {
+    const kb = withBackButton(new InlineKeyboard().text('◀️ К тарифам', 'menu:buy').row())
+    return sendOrEdit(ctx, '⚠️ Тариф не найден или недоступен.', { parse_mode: 'HTML', reply_markup: kb })
+  }
+  const p = r.rows[0]
+  const traffic = p.traffic_gb ? `${p.traffic_gb} GB` : '∞ GB'
+  const devices = p.hwid_device_limit ? `${p.hwid_device_limit} устр.` : '∞ устр.'
+
+  const lines = [`🛒 <b>${escapeHtml(p.name)}</b>`, '', `📊 Трафик: <b>${traffic}</b>`, `📱 Устройства: <b>${devices}</b>`]
+  if (p.description) lines.push('', escapeHtml(p.description))
+  lines.push('', 'Выбери срок оплаты:')
+
+  const kb = new InlineKeyboard()
+  if (p.price_monthly != null)   kb.text(`Месяц · ${fmtMoney(p.price_monthly)} ₽`, `menu:buypay:${p.id}:monthly`).row()
+  if (p.price_quarterly != null) kb.text(`3 месяца · ${fmtMoney(p.price_quarterly)} ₽`, `menu:buypay:${p.id}:quarterly`).row()
+  if (p.price_yearly != null)    kb.text(`Год · ${fmtMoney(p.price_yearly)} ₽`, `menu:buypay:${p.id}:yearly`).row()
+  kb.text('◀️ К тарифам', 'menu:buy').row()
+  withBackButton(kb)
+
+  await sendOrEdit(ctx, lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb })
+}
+
+// Создание счёта + ссылка на оплату.
+async function handleBuyPay(ctx, planId, period) {
+  const user = await getUserByTg(ctx.from.id)
+  if (!user) return ctx.reply('Сначала нажми /start.')
+
+  await sendOrEdit(ctx, '⏳ Создаю счёт на оплату…', { parse_mode: 'HTML' })
+
+  const { createSubscriptionPayment } = require('../paymentCreate')
+  let r
+  try {
+    r = await createSubscriptionPayment(user.id, parseInt(planId, 10), period)
+  } catch (err) {
+    console.error('[TG bot] buy payment error:', err.message)
+    r = { ok: false, error: 'Внутренняя ошибка. Попробуй позже.' }
+  }
+
+  if (!r.ok) {
+    const kb = withBackButton(new InlineKeyboard().text('◀️ К тарифам', 'menu:buy').row())
+    return sendOrEdit(ctx, `⚠️ ${escapeHtml(r.error)}`, { parse_mode: 'HTML', reply_markup: kb })
+  }
+
+  const labels = { monthly: 'месяц', quarterly: '3 месяца', yearly: 'год' }
+  const mins = Math.max(1, Math.round((new Date(r.expiresAt) - Date.now()) / 60000))
+  const lines = [
+    '💳 <b>Счёт на оплату создан</b>', '',
+    `Тариф: <b>${escapeHtml(r.planName)}</b>`,
+    `Период: <b>${labels[period] || period}</b>`,
+    `Сумма: <b>${fmtMoney(r.amount)} ₽</b>`, '',
+    `Ссылка действует ~${mins} мин. После оплаты подписка активируется автоматически.`,
+  ]
+  const kb = new InlineKeyboard()
+  if (r.paymentUrl) kb.url('💳 Перейти к оплате', r.paymentUrl).row()
+  kb.text('👤 Личный кабинет', 'menu:cabinet').text('◀️ К тарифам', 'menu:buy').row()
+  withBackButton(kb)
+  await sendOrEdit(ctx, lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb })
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 🎁 Тестовый период
+// ────────────────────────────────────────────────────────────────────────────
+
+async function handleTrialInfo(ctx) {
+  const user = await getUserByTg(ctx.from.id)
+  if (!user) return ctx.reply('Сначала нажми /start.')
+
+  const cfg = require('../../config')
+  const [usedTrial, activeSub, trialPlan] = await Promise.all([
+    db.query(`SELECT 1 FROM subscriptions WHERE user_id = $1 AND plan_name = 'FREE_TRIAL' LIMIT 1`, [user.id]),
+    db.query(`SELECT 1 FROM subscriptions WHERE user_id = $1 AND is_active = true LIMIT 1`, [user.id]),
+    db.query(`SELECT id FROM plans WHERE is_trial = true AND is_active = true LIMIT 1`),
+  ])
+
+  const back = withBackButton(new InlineKeyboard())
+  if (usedTrial.rows.length) {
+    return sendOrEdit(ctx, '🎁 <b>Тестовый период</b>\n\nТы уже активировал пробный период ранее. Оформи платный тариф — жми «🛒 Купить подписку».', { parse_mode: 'HTML', reply_markup: back })
+  }
+  if (activeSub.rows.length) {
+    return sendOrEdit(ctx, '🎁 <b>Тестовый период</b>\n\nУ тебя уже есть активная подписка — тестовый период не нужен.', { parse_mode: 'HTML', reply_markup: back })
+  }
+  if (!trialPlan.rows.length) {
+    return sendOrEdit(ctx, '🎁 <b>Тестовый период</b>\n\nСейчас недоступен (не настроен администратором).', { parse_mode: 'HTML', reply_markup: back })
+  }
+
+  const text =
+    '🎁 <b>Бесплатный тестовый период</b>\n\n' +
+    `• Срок: <b>${cfg.FREE_TRIAL_DAYS} дней</b>\n` +
+    `• Трафик: <b>${cfg.FREE_TRIAL_TRAFFIC_GB} GB</b>\n\n` +
+    'Активируется мгновенно. Даётся один раз на аккаунт.'
+  const kb = new InlineKeyboard().text('✅ Активировать', 'menu:trialgo').row()
+  withBackButton(kb)
+  await sendOrEdit(ctx, text, { parse_mode: 'HTML', reply_markup: kb })
+}
+
+async function handleTrialActivate(ctx) {
+  const user = await getUserByTg(ctx.from.id)
+  if (!user) return ctx.reply('Сначала нажми /start.')
+
+  await sendOrEdit(ctx, '⏳ Активирую тестовый период…', { parse_mode: 'HTML' })
+
+  const { activateTrial } = require('../trialActivation')
+  let r
+  try {
+    r = await activateTrial(user.id)
+  } catch (err) {
+    console.error('[TG bot] trial activate error:', err.message)
+    r = { ok: false, error: 'Внутренняя ошибка. Попробуй позже.' }
+  }
+
+  if (!r.ok) {
+    const kb = new InlineKeyboard().text('👤 Личный кабинет', 'menu:cabinet').row()
+    withBackButton(kb)
+    return sendOrEdit(ctx, `⚠️ ${escapeHtml(r.error)}`, { parse_mode: 'HTML', reply_markup: kb })
+  }
+
+  const exp = r.subscription.expiresAt ? new Date(r.subscription.expiresAt).toLocaleDateString('ru-RU') : '—'
+  const lines = [
+    '✅ <b>Тестовый период активирован!</b>', '',
+    `⏳ Срок: <b>${r.days} дней</b> (до ${exp})`,
+    `📊 Трафик: <b>${r.trafficGb} GB</b>`,
+    '', 'Подключайся 👇',
+  ]
+  const kb = new InlineKeyboard()
+  if (r.subscription.subscriptionUrl) kb.url('📲 Подключить VPN', r.subscription.subscriptionUrl).row()
+  kb.text('👤 Личный кабинет', 'menu:cabinet').row()
+  withBackButton(kb)
+  await sendOrEdit(ctx, lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb })
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -736,6 +880,8 @@ const MENU_HANDLERS = {
   open_web:  handleOpenWeb,
   cabinet:   handleCabinet,
   buy:       handleBuy,
+  trial:     handleTrialInfo,
+  trialgo:   handleTrialActivate,
   referrals: handleReferrals,
   offer:     handleOffer,
   faq:       handleFaq,
@@ -750,6 +896,12 @@ async function handleMenuCallback(ctx) {
 
   const data = ctx.callbackQuery?.data || ''
   const action = data.startsWith('menu:') ? data.slice(5) : data
+
+  // Многосоставные действия: buyplan:<id>, buypay:<id>:<period>
+  const [head, a1, a2] = action.split(':')
+  if (head === 'buyplan') return handleBuyPlan(ctx, a1)
+  if (head === 'buypay')  return handleBuyPay(ctx, a1, a2)
+
   const handler = MENU_HANDLERS[action]
   if (!handler) {
     return ctx.reply('🚧 Неизвестное действие. Нажми /start чтобы обновить меню.')
@@ -777,12 +929,24 @@ async function handleAdminCallbackEntry(ctx) {
   return adminHandlers.handleAdminCallback(ctx, sendOrEdit)
 }
 
+// Текстовые сообщения (не команды): используются для ввода при редактировании
+// VPS в админке. Если админ не в состоянии ожидания ввода — ничего не делаем.
+async function handleTextMessage(ctx) {
+  const adminHandlers = require('./adminHandlers')
+  try {
+    await adminHandlers.handleAdminTextInput(ctx)
+  } catch (err) {
+    console.warn('[TG bot] text input error:', err.message)
+  }
+}
+
 module.exports = {
   handleStart,
   handleMenuCallback,
   handleMyId,
   handleAdminCommand,
   handleAdminCallbackEntry,
+  handleTextMessage,
   // Экспорт по отдельности — на случай прямых вызовов
   handleOpenWeb,
   handleCabinet,

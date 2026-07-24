@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useSiteConfig } from './contexts/SiteConfigContext'
+import { AdminUiProvider, useAdminUi } from './contexts/AdminUiContext'
+import { EffectsProvider } from './contexts/EffectsContext'
+import { BgToggle } from './components/EffectsToggles'
 import Home from './pages/Home'
 import Pricing from './pages/Pricing'
 import Dashboard from './pages/Dashboard'
@@ -15,7 +18,7 @@ import ResetPassword from './pages/ResetPassword'
 import Connect from './pages/Connect'
 import ProtectedRoute from './components/ProtectedRoute'
 import ProtectedAdminRoute from './components/ProtectedAdminRoute'
-import AdminLayout from './components/AdminLayout'
+import AdminLayoutSwitch from './components/AdminLayoutSwitch'
 import AdminOverview from './pages/AdminOverview'
 import AdminStats from './pages/AdminStats'
 import AdminUsers from './pages/AdminUsers'
@@ -41,6 +44,7 @@ import TemplateBuilder from './components/TemplateBuilder'
 import NotificationBell from './components/NotificationBell'
 import MaintenanceGate from './components/MaintenanceGate'
 import ThemeToggle from './components/ThemeToggle'
+import SiteBackground from './components/SiteBackground'
 
 function Navigation(){
   const [isAuth, setIsAuth] = useState(!!localStorage.getItem('token'))
@@ -49,6 +53,11 @@ function Navigation(){
   const [landingMenu, setLandingMenu] = useState([])
   const navigate = useNavigate()
   const location = useLocation()
+  const { config } = useSiteConfig()
+
+  // В админском режиме проект закрыт: скрываем пользовательские ссылки и
+  // регистрацию для всех, кроме админов (жёсткую защиту обеспечивает бэкенд).
+  const adminOnly = !!config?.admin_only_mode && !isAdmin
 
   // Грузим лендинги для меню один раз при монтировании
   useEffect(() => {
@@ -107,9 +116,9 @@ function Navigation(){
   const navLinks = (
     <>
       <NavLink to="/" className={navLinkClass} onClick={() => setMenuOpen(false)}>Главная</NavLink>
-      <NavLink to="/pricing" className={navLinkClass} onClick={() => setMenuOpen(false)}>Тарифы</NavLink>
-      <NavLink to="/servers" className={navLinkClass} onClick={() => setMenuOpen(false)}>Серверы</NavLink>
-      {landingMenu.map(l => (
+      {!adminOnly && <NavLink to="/pricing" className={navLinkClass} onClick={() => setMenuOpen(false)}>Тарифы</NavLink>}
+      {!adminOnly && <NavLink to="/servers" className={navLinkClass} onClick={() => setMenuOpen(false)}>Серверы</NavLink>}
+      {!adminOnly && landingMenu.map(l => (
         <NavLink key={l.slug} to={`/p/${l.slug}`} className={navLinkClass} onClick={() => setMenuOpen(false)}>
           {l.title}
         </NavLink>
@@ -134,6 +143,7 @@ function Navigation(){
 
       {/* Auth buttons */}
       <div className="hidden md:flex items-center gap-2">
+        <BgToggle />
         <ThemeToggle />
         {isAuth && <NotificationBell />}
         {isAuth ? (
@@ -141,13 +151,14 @@ function Navigation(){
         ) : (
           <>
             <NavLink to="/login" className={({isActive}) => `px-4 py-2 transition-colors ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-sky-700 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'}`}>Войти</NavLink>
-            <NavLink to="/register" className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg hover:shadow-lg hover:shadow-blue-500/50 transition-all">Регистрация</NavLink>
+            {!adminOnly && <NavLink to="/register" className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg hover:shadow-lg hover:shadow-blue-500/50 transition-all">Регистрация</NavLink>}
           </>
         )}
       </div>
 
       {/* Mobile: theme + bell + hamburger */}
       <div className="md:hidden flex items-center gap-1">
+        <BgToggle />
         <ThemeToggle />
         {isAuth && <NotificationBell />}
         <button
@@ -175,7 +186,7 @@ function Navigation(){
               ) : (
                 <>
                   <NavLink to="/login" onClick={() => setMenuOpen(false)} className="w-full py-3 text-center rounded-lg text-sky-700 bg-sky-100 hover:bg-slate-200 dark:text-slate-300 dark:bg-slate-800/50 dark:hover:bg-slate-700/50 transition-all">Войти</NavLink>
-                  <NavLink to="/register" onClick={() => setMenuOpen(false)} className="w-full py-3 text-center rounded-lg text-white bg-gradient-to-r from-blue-500 to-cyan-500 hover:shadow-lg hover:shadow-blue-500/50 transition-all">Регистрация</NavLink>
+                  {!adminOnly && <NavLink to="/register" onClick={() => setMenuOpen(false)} className="w-full py-3 text-center rounded-lg text-white bg-gradient-to-r from-blue-500 to-cyan-500 hover:shadow-lg hover:shadow-blue-500/50 transition-all">Регистрация</NavLink>}
                 </>
               )}
             </div>
@@ -186,8 +197,15 @@ function Navigation(){
   )
 }
 
-export default function App(){
+function AppShell(){
   const { config } = useSiteConfig()
+  const location = useLocation()
+  const { version } = useAdminUi()
+
+  // В новом (v2) виде админки публичный header/footer скрываем — админка
+  // занимает весь экран (свой сайдбар + топ-бар). В классическом виде публичная
+  // шапка остаётся как раньше.
+  const hideChrome = location.pathname.startsWith('/admin') && version === 'v2'
 
   // Динамические значения из конфигурации
   const siteTitle = config?.site_title || 'VPN Webhome'
@@ -198,9 +216,9 @@ export default function App(){
   const logoUrl = config?.site_logo_url || '/logo.svg'
 
   return (
-    <BrowserRouter>
-      <MaintenanceGate>
-      <div className="relative min-h-screen overflow-x-hidden bg-sky-100 text-sky-900 dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-200 font-sans">
+      <div className="relative min-h-screen overflow-x-hidden bg-sky-100 text-sky-900 dark:bg-transparent dark:text-slate-200 font-sans">
+        {/* Анимированный фон (звёзды + метеоры) — только в тёмной теме */}
+        <SiteBackground />
         {/* Декоративные blur-пятна — только в светлой теме для "живого" эффекта */}
         <div aria-hidden className="dark:hidden pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -top-20 -left-32 w-[40rem] h-[40rem] bg-sky-300/30 rounded-full blur-3xl" />
@@ -209,7 +227,7 @@ export default function App(){
         </div>
         <div className="relative z-10">
         {/* Header */}
-        <header className="sticky top-0 z-40 border-b border-sky-200 bg-sky-50/80 dark:border-slate-800/50 dark:bg-slate-950/80 backdrop-blur-xl">
+        {!hideChrome && <header className="sticky top-0 z-40 border-b border-sky-200 bg-sky-50/80 dark:border-slate-800/50 dark:bg-slate-950/80 backdrop-blur-xl">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
             <div
               onClick={() => window.location.href = '/'}
@@ -220,7 +238,7 @@ export default function App(){
             </div>
             <Navigation />
           </div>
-        </header>
+        </header>}
 
         {/* Main Content */}
         <main className="w-full">
@@ -236,7 +254,7 @@ export default function App(){
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/connect" element={<ProtectedRoute><Connect /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedAdminRoute><AdminLayout /></ProtectedAdminRoute>}>
+            <Route path="/admin" element={<ProtectedAdminRoute><AdminLayoutSwitch /></ProtectedAdminRoute>}>
               <Route index element={<AdminOverview />} />
               <Route path="stats" element={<AdminStats />} />
               <Route path="users" element={<AdminUsers />} />
@@ -267,7 +285,7 @@ export default function App(){
         </main>
 
         {/* Footer */}
-        <footer className="border-t border-sky-200 bg-sky-50 dark:border-slate-800/50 dark:bg-slate-950/50 py-8 sm:py-12 px-4 sm:px-6 lg:px-8 mt-12 sm:mt-24">
+        {!hideChrome && <footer className="border-t border-sky-200 bg-sky-50 dark:border-slate-800/50 dark:bg-slate-950/50 py-8 sm:py-12 px-4 sm:px-6 lg:px-8 mt-12 sm:mt-24">
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-8">
               <div className="col-span-2 md:col-span-1">
@@ -321,10 +339,22 @@ export default function App(){
               <p className="text-sm text-sky-700 dark:text-slate-400">Made with ❤ for privacy</p>
             </div>
           </div>
-        </footer>
+        </footer>}
         </div>
       </div>
-      </MaintenanceGate>
-    </BrowserRouter>
+  )
+}
+
+export default function App(){
+  return (
+    <EffectsProvider>
+      <AdminUiProvider>
+        <BrowserRouter>
+          <MaintenanceGate>
+            <AppShell />
+          </MaintenanceGate>
+        </BrowserRouter>
+      </AdminUiProvider>
+    </EffectsProvider>
   )
 }

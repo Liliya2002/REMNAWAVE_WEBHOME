@@ -8,6 +8,7 @@ const { notifyWelcome } = require('../services/notifications')
 const emailService = require('../services/email')
 const { createSession } = require('./sessions')
 const { checkBannedIp } = require('../middleware/ipBan')
+const maint = require('../services/maintenance')
 
 const router = express.Router()
 
@@ -155,6 +156,11 @@ router.post('/register', checkBannedIp, async (req, res) => {
   const email = normEmail(req.body.email)
   if (!login || !email || !password) return res.status(400).json({ error: 'Missing fields' })
 
+  // Админский режим: регистрация новых пользователей закрыта.
+  if ((await maint.getStatus()).adminOnly) {
+    return res.status(403).json({ error: 'Регистрация временно недоступна', adminOnly: true })
+  }
+
   // Валидация логина
   if (login.length < 3 || login.length > 30) {
     return res.status(400).json({ error: 'Логин должен быть от 3 до 30 символов' })
@@ -269,6 +275,13 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' })
     }
     clearLoginAttempts(login)
+
+    // Админский режим: проект закрыт, токен выдаётся только администраторам.
+    const { adminOnly } = await maint.getStatus()
+    if (adminOnly && !user.is_admin) {
+      return res.status(403).json({ error: 'Сайт временно закрыт', adminOnly: true })
+    }
+
     const token = jwt.sign({ id: user.id, login: user.login, is_admin: user.is_admin }, process.env.JWT_SECRET, { expiresIn: '8h' })
     // Сохраняем сессию
     createSession(user.id, token, req).catch(err => console.error('Session create error:', err))
@@ -299,6 +312,11 @@ router.post('/register/start', checkBannedIp, async (req, res) => {
     const login = normLogin(req.body.login)
     const email = normEmail(req.body.email)
     if (!login || !email || !password) return res.status(400).json({ error: 'Missing fields' })
+
+    // Админский режим: регистрация (в т.ч. через Telegram) закрыта.
+    if ((await maint.getStatus()).adminOnly) {
+      return res.status(403).json({ error: 'Регистрация временно недоступна', adminOnly: true })
+    }
 
     if (login.length < 3 || login.length > 30) {
       return res.status(400).json({ error: 'Логин должен быть от 3 до 30 символов' })
@@ -666,6 +684,15 @@ router.get('/telegram/callback', async (req, res) => {
     // /dashboard → Безопасность).
     let userId
     const existing = await db.query('SELECT * FROM users WHERE telegram_oidc_sub = $1', [oidcSub])
+
+    // Админский режим: не создаём новых юзеров и не пускаем не-админов.
+    if ((await maint.getStatus()).adminOnly) {
+      const isAdm = existing.rows.length > 0 && existing.rows[0].is_admin
+      if (!isAdm) {
+        return res.status(403).send('Сайт временно закрыт: доступ только для администраторов.')
+      }
+    }
+
     if (existing.rows.length > 0) {
       const u = existing.rows[0]
       if (!u.is_active) return res.status(403).send('Аккаунт заблокирован.')
@@ -730,6 +757,12 @@ router.get('/tg-login', async (req, res) => {
     if (userRes.rows.length === 0) return res.status(404).json({ error: 'Юзер не найден' })
     const user = userRes.rows[0]
     if (!user.is_active) return res.status(403).json({ error: 'Аккаунт заблокирован' })
+
+    // Админский режим: вход через Telegram доступен только администраторам.
+    const { adminOnly } = await maint.getStatus()
+    if (adminOnly && !user.is_admin) {
+      return res.status(403).json({ error: 'Сайт временно закрыт', adminOnly: true })
+    }
 
     const token = jwt.sign(
       { id: user.id, login: user.login, is_admin: user.is_admin },

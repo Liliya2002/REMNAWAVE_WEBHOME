@@ -13,16 +13,17 @@ async function getStatus() {
   }
   let value
   try {
-    const r = await db.query('SELECT maintenance_mode, maintenance_message FROM site_config LIMIT 1')
+    const r = await db.query('SELECT maintenance_mode, maintenance_message, admin_only_mode FROM site_config LIMIT 1')
     const row = r.rows[0] || {}
     value = {
       maintenance: !!row.maintenance_mode,
       message: row.maintenance_message || 'Ведутся технические работы',
+      adminOnly: !!row.admin_only_mode,
     }
   } catch {
-    // БД недоступна — считаем, что не в техработах (fail-open),
+    // БД недоступна — считаем, что не в техработах и не в админ-режиме (fail-open),
     // чтоб не отрезать сайт от пользователей, если упала только конфиг-таблица.
-    value = { maintenance: false, message: '' }
+    value = { maintenance: false, message: '', adminOnly: false }
   }
   cache = { value, ts: Date.now() }
   return value

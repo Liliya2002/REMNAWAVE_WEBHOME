@@ -52,6 +52,15 @@ async function ensureSettingsSchema() {
 
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS maintenance_mode BOOLEAN DEFAULT false`)
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS maintenance_message TEXT DEFAULT 'Ведутся технические работы'`)
+  // admin_only_mode — «Админский режим»: проект доступен только администраторам,
+  // вход обычных пользователей и регистрация отключены (жёстко, на уровне бэкенда).
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS admin_only_mode BOOLEAN DEFAULT false`)
+
+  // Анимированный фон (звёзды + метеоры) — глобальные настройки внешнего вида.
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS enable_starfield BOOLEAN DEFAULT true`)
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS starfield_light BOOLEAN DEFAULT false`)
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS starfield_parallax BOOLEAN DEFAULT true`)
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS starfield_density VARCHAR(16) DEFAULT 'medium'`)
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS require_email_confirmation BOOLEAN DEFAULT false`)
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS session_timeout_minutes INTEGER DEFAULT 1440`)
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS max_login_attempts INTEGER DEFAULT 5`)
@@ -304,8 +313,9 @@ router.get('/config', verifyToken, verifyAdmin, async (req, res) => {
               project_tagline, support_email, support_telegram, default_currency,
               timezone, enable_registration, enable_payments, enable_referrals,
               enable_notifications, allow_trial_plan, maintenance_mode,
-              maintenance_message, require_email_confirmation,
+              maintenance_message, admin_only_mode, require_email_confirmation,
               session_timeout_minutes, max_login_attempts,
+              enable_starfield, starfield_light, starfield_parallax, starfield_density,
               remnwave_api_url, remnwave_api_token, remnwave_secret_key,
               webhook_secret, verify_webhooks
        FROM site_config LIMIT 1`
@@ -353,8 +363,9 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
       project_tagline, support_email, support_telegram, default_currency,
       timezone, enable_registration, enable_payments, enable_referrals,
       enable_notifications, allow_trial_plan, maintenance_mode,
-      maintenance_message, require_email_confirmation,
+      maintenance_message, admin_only_mode, require_email_confirmation,
       session_timeout_minutes, max_login_attempts,
+      enable_starfield, starfield_light, starfield_parallax, starfield_density,
       remnwave_api_url, remnwave_api_token, remnwave_secret_key,
       webhook_secret, verify_webhooks
     } = req.body
@@ -400,6 +411,11 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
            remnwave_secret_key = COALESCE($37, remnwave_secret_key),
            webhook_secret = COALESCE($38, webhook_secret),
            verify_webhooks = COALESCE($39, verify_webhooks),
+           admin_only_mode = COALESCE($40, admin_only_mode),
+           enable_starfield = COALESCE($41, enable_starfield),
+           starfield_light = COALESCE($42, starfield_light),
+           starfield_parallax = COALESCE($43, starfield_parallax),
+           starfield_density = COALESCE($44, starfield_density),
            updated_at = NOW()
        WHERE id = (SELECT id FROM site_config LIMIT 1)
        RETURNING *`,
@@ -415,7 +431,8 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
         maintenance_message, require_email_confirmation,
         session_timeout_minutes, max_login_attempts,
         remnwave_api_url, remnwave_api_token, remnwave_secret_key,
-        webhook_secret, verify_webhooks
+        webhook_secret, verify_webhooks, admin_only_mode,
+        enable_starfield, starfield_light, starfield_parallax, starfield_density
       ]
     )
     
@@ -428,6 +445,7 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
         color_primary,
         layout_width,
         maintenance_mode,
+        admin_only_mode,
         enable_registration,
         enable_payments,
         support_telegram,
@@ -499,8 +517,9 @@ router.get('/public/config', async (req, res) => {
               project_tagline, support_email, support_telegram, default_currency,
               timezone, enable_registration, enable_payments, enable_referrals,
               enable_notifications, allow_trial_plan, maintenance_mode,
-              maintenance_message, require_email_confirmation,
-              session_timeout_minutes, max_login_attempts
+              maintenance_message, admin_only_mode, require_email_confirmation,
+              session_timeout_minutes, max_login_attempts,
+              enable_starfield, starfield_light, starfield_parallax, starfield_density
        FROM site_config LIMIT 1`
     )
     

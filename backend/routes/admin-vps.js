@@ -398,10 +398,7 @@ router.post('/notify-expiring', async (req, res) => {
     }
 
     const tgNotify = require('../services/telegramBot/notify')
-    const result = await tgNotify.notifyAdmin('admin_vps_expiring', {
-      lines: vpsExpiry.formatExpiryLines(rows),
-      count: rows.length,
-    })
+    const result = await tgNotify.notifyAdmin('admin_vps_expiring', vpsExpiry.buildExpiryData(rows))
     if (!result.ok) {
       return res.status(500).json({ error: `Telegram: ${result.error || result.skipped || 'не отправлено'}` })
     }

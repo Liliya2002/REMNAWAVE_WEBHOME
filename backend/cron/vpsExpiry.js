@@ -32,21 +32,64 @@ async function fetchExpiringVps() {
   return rows
 }
 
-function formatExpiryLines(rows) {
-  return rows.map(v => {
-    const days = Math.ceil((new Date(v.paid_until) - Date.now()) / 86400000)
-    let icon, label
-    if (days < 0)       { icon = '🔴'; label = `${Math.abs(days)} дн. просрочен` }
-    else if (days === 0){ icon = '🔴'; label = 'истекает сегодня' }
-    else if (days <= 2) { icon = '🟠'; label = `${days} дн.` }
-    else if (days <= 7) { icon = '🟡'; label = `${days} дн.` }
-    else                { icon = '🟢'; label = `${days} дн.` }
+function daysLeftOf(v) {
+  return Math.ceil((new Date(v.paid_until) - Date.now()) / 86400000)
+}
 
-    const provider = v.hosting_provider ? ` (${v.hosting_provider})` : ''
-    const ip = v.ip_address ? `<code>${v.ip_address}</code>` : '—'
-    const date = new Date(v.paid_until).toLocaleDateString('ru-RU')
-    return `${icon} <b>${escapeHtml(v.name)}</b>${escapeHtml(provider)}\n   IP: ${ip} · до ${date} · <i>${label}</i>`
-  }).join('\n\n')
+// Секции по срочности (порядок = приоритет отображения).
+const SECTIONS = [
+  { key: 'overdue', icon: '🔴', title: 'Просрочено',            match: d => d < 0 },
+  { key: 'soon',    icon: '🟠', title: 'Скоро (сегодня–2 дня)', match: d => d >= 0 && d <= 2 },
+  { key: 'week',    icon: '🟡', title: 'На неделе',             match: d => d >= 3 && d <= 7 },
+]
+
+// Одна компактная запись сервера (2 строки) внутри секции.
+function serverLine(v) {
+  const d = daysLeftOf(v)
+  const name = escapeHtml(v.name || 'VPS')
+  const provider = v.hosting_provider ? `  <i>${escapeHtml(v.hosting_provider)}</i>` : ''
+  const ip = v.ip_address ? `<code>${escapeHtml(v.ip_address)}</code>` : '<i>IP не указан</i>'
+  const dshort = new Date(v.paid_until).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+  const phrase = d < 0 ? `<b>${Math.abs(d)} дн</b>` : d === 0 ? '<b>сегодня</b>' : d <= 2 ? `<b>${d} дн</b>` : `${d} дн`
+  return `• <b>${name}</b>${provider}\n  ${ip} · до ${dshort} · ${phrase}`
+}
+
+// Группировка по секциям с заголовками (вариант A).
+function groupedSections(rows) {
+  return SECTIONS
+    .map(s => {
+      const items = rows.filter(v => s.match(daysLeftOf(v)))
+      if (!items.length) return null
+      return `${s.icon} <b>${s.title}</b> · ${items.length}\n` + items.map(serverLine).join('\n')
+    })
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+// Строка-сводка: всего + просрочено + сегодня.
+function summaryLine(rows) {
+  const overdue = rows.filter(v => daysLeftOf(v) < 0).length
+  const today = rows.filter(v => daysLeftOf(v) === 0).length
+  const parts = [`📊 Всего: <b>${rows.length}</b>`]
+  if (overdue) parts.push(`🔴 просрочено: <b>${overdue}</b>`)
+  if (today) parts.push(`🟠 сегодня: <b>${today}</b>`)
+  return parts.join(' · ')
+}
+
+// Полное сообщение — Вариант B: компактная шапка-сводка + спойлер с секциями
+// (детали раскрываются тапом). Единый формат для любого числа серверов.
+function buildExpiryMessage(rows) {
+  const title = '⚠️ <b>Истекает оплата VPS</b>'
+  const sections = groupedSections(rows)
+  return `${title}\n${summaryLine(rows)}\n\n<blockquote expandable>${sections}</blockquote>`
+}
+
+// Данные для notifyAdmin. Текст генерируется кодом (группировка/спойлер нельзя
+// выразить простым шаблоном), поэтому отдаём готовый text — notifyAdmin его
+// использует напрямую, минуя DEFAULT_TEXTS. Ключ 'admin_vps_expiring' всё равно
+// передаётся вызывающим — для проверки toggle notifications_enabled.
+function buildExpiryData(rows) {
+  return { text: buildExpiryMessage(rows) }
 }
 
 async function tick() {
@@ -63,10 +106,7 @@ async function tick() {
       return
     }
 
-    const r = await tgNotify.notifyAdmin('admin_vps_expiring', {
-      lines: formatExpiryLines(rows),
-      count: rows.length,
-    })
+    const r = await tgNotify.notifyAdmin('admin_vps_expiring', buildExpiryData(rows))
 
     if (r.ok) {
       lastNotifiedDate = today
@@ -99,4 +139,4 @@ function start() {
   console.log(`[VPS-expiry cron] запущен, час отправки: ${NOTIFY_HOUR_UTC}:00 UTC, интервал проверки ${TICK_MINUTES} мин`)
 }
 
-module.exports = { start, tick, fetchExpiringVps, formatExpiryLines }
+module.exports = { start, tick, fetchExpiringVps, buildExpiryData, buildExpiryMessage }

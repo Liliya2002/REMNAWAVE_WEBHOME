@@ -48,6 +48,95 @@ const TEMPLATE_HINTS = {
   admin_user_registered:      '{login}, {source}',
 }
 
+// Уведомления, чей текст генерируется кодом (группировка/спойлер) — шаблон не применяется.
+const AUTO_GENERATED_KEYS = new Set(['admin_vps_expiring'])
+
+// Дефолтные шаблоны (зеркало backend DEFAULT_TEXTS) — для предпросмотра, когда
+// пользователь не переопределил текст.
+const DEFAULT_TEMPLATES = {
+  user_subscription_expiring:
+    '⏰ <b>Подписка скоро истечёт</b>\n\nТариф: <b>{plan}</b>\nОсталось: <b>{daysLeft}</b> дн.\nИстекает: {expiresAt}\n\nПродли подписку чтобы не потерять доступ.',
+  user_payment_received:
+    '✅ <b>Платёж получен</b>\n\nСумма: <b>{amount} ₽</b>\n{plan, select, _ "" other "Тариф: {plan}\n"}Спасибо! 🙌',
+  user_referral_bonus:
+    '🎁 <b>Бонус за реферала</b>\n\nТебе начислено: <b>{amount} ₽</b>\nТекущий баланс: <b>{balance} ₽</b>',
+  user_traffic_blocked:
+    '🚫 <b>Доступ заблокирован: превышен лимит трафика</b>\n\nЛимит: <b>{limitGb} GB</b>\nИспользовано: <b>{usedGb} GB</b>\n\nПодожди до начала следующего периода или купи дополнительный трафик.',
+  admin_vps_unreachable:
+    '🔴 <b>VPS недоступен</b>\n\n<b>{name}</b> ({provider})\nIP: <code>{ip}</code>\nTCP/{port} не отвечает.',
+  admin_vps_back_online:
+    '🟢 <b>VPS снова в строю</b>\n\n<b>{name}</b> ({provider})\nIP: <code>{ip}</code>\nПростой: {downtime}',
+  admin_user_registered:
+    '👤 <b>Новый юзер</b>\nЛогин: {login}\nИсточник: {source}',
+  admin_payment_received:
+    '💰 <b>Платёж получен</b>\nЮзер: {login}\nСумма: {amount} ₽\nТариф: {plan}',
+}
+
+// Демо-данные для предпросмотра/теста по каждому ключу.
+const SAMPLE_DATA = {
+  user_subscription_expiring: { name: 'Иван', plan: 'Premium', daysLeft: 2, expiresAt: '27.07.2026' },
+  user_payment_received:      { name: 'Иван', amount: '299', plan: 'Premium' },
+  user_referral_bonus:        { name: 'Иван', amount: '50', balance: '150', days: '7' },
+  user_traffic_blocked:       { name: 'Иван', usedGb: '52', limitGb: '50', node: 'Finland-1' },
+  admin_vps_unreachable:      { name: '🇩🇪 Германия', ip: '45.131.214.225', provider: 'Mhost', port: '22' },
+  admin_vps_back_online:      { name: '🇩🇪 Германия', ip: '45.131.214.225', provider: 'Mhost', downtime: '12 мин' },
+  admin_payment_received:     { login: 'ivan', amount: '299', plan: 'Premium' },
+  admin_user_registered:      { login: 'ivan', source: 'сайт' },
+}
+
+// Встроенные пресеты-варианты (кроме дефолта). Пользователь может «Применить» и/или отредактировать.
+const BUILTIN_PRESETS = {
+  user_subscription_expiring: [
+    { name: 'Компактный', text: '⏰ <b>{plan}</b> истекает через <b>{daysLeft} дн.</b> ({expiresAt}). Продли, чтобы не потерять доступ 🙏' },
+    { name: 'Тревожный',   text: '🚨 <b>Внимание!</b>\n\nПодписка <b>{plan}</b> заканчивается через <b>{daysLeft} дн.</b>\n📅 {expiresAt}\n\n👉 Продли сейчас, чтобы VPN не отключился.' },
+  ],
+  user_payment_received: [
+    { name: 'Компактный', text: '✅ Оплата <b>{amount} ₽</b> получена. Спасибо! 🙌' },
+    { name: 'Тёплый',     text: '🎉 <b>Спасибо за оплату!</b>\n\n💳 Сумма: <b>{amount} ₽</b>\n{plan, select, _ "" other "📦 Тариф: <b>{plan}</b>\n"}\nПриятного пользования 🚀' },
+  ],
+  user_referral_bonus: [
+    { name: 'Компактный', text: '🎁 Реферальный бонус <b>+{amount} ₽</b>. Баланс: <b>{balance} ₽</b>' },
+  ],
+  user_traffic_blocked: [
+    { name: 'Мягкий', text: '⚠️ <b>Лимит трафика достигнут</b>\n\nИспользовано <b>{usedGb}</b> из <b>{limitGb} GB</b>.\nДоступ приостановлен до следующего периода. Можно докупить трафик в кабинете.' },
+  ],
+  admin_vps_unreachable: [
+    { name: 'Строгий', text: '🔴 <b>СЕРВЕР УПАЛ</b>\n\n<b>{name}</b> · {provider}\n<code>{ip}</code> · порт {port} не отвечает\n\n⏱ Проверь сервер.' },
+  ],
+  admin_vps_back_online: [
+    { name: 'Строгий', text: '🟢 <b>Сервер восстановлен</b>\n\n<b>{name}</b> · {provider}\n<code>{ip}</code>\nПростой составил: <b>{downtime}</b>' },
+  ],
+  admin_payment_received: [
+    { name: 'Компактный', text: '💰 <b>+{amount} ₽</b> от <code>{login}</code> · {plan}' },
+  ],
+  admin_user_registered: [
+    { name: 'Компактный', text: '👤 Регистрация: <code>{login}</code> ({source})' },
+  ],
+}
+
+// Клиентский рендер шаблона (зеркало backend renderTemplate): select + {placeholder}.
+function renderTemplate(tpl, data) {
+  if (!tpl) return ''
+  let s = String(tpl)
+  s = s.replace(/\{(\w+),\s*select,\s*_\s*"([^"]*)"\s+other\s*"([^"]*)"\s*\}/g,
+    (_, key, empty, other) => (data[key] == null || data[key] === '' ? empty : other))
+  s = s.replace(/\{(\w+)\}/g, (_, key) => (data[key] != null ? String(data[key]) : `{${key}}`))
+  return s
+}
+
+// Конвертирует Telegram-HTML в безопасный HTML для предпросмотра: экранируем всё,
+// затем возвращаем только разрешённые теги.
+function telegramHtmlToPreview(s) {
+  let e = String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  e = e
+    .replace(/&lt;(\/?)(b|strong|i|em|u|s|code|pre)&gt;/g, '<$1$2>')
+    .replace(/&lt;blockquote(?: expandable)?&gt;/g, '<blockquote class="border-l-2 border-slate-500 pl-2 my-1 text-slate-300">')
+    .replace(/&lt;\/blockquote&gt;/g, '</blockquote>')
+    .replace(/&lt;a href="([^"]*)"&gt;/g, '<a class="text-cyan-400 underline">')
+    .replace(/&lt;\/a&gt;/g, '</a>')
+  return e.replace(/\n/g, '<br>')
+}
+
 const TABS = [
   { id: 'connection', label: 'Подключение', Icon: Plug },
   { id: 'user-notifs', label: 'Юзер-уведомления', Icon: Bell },
@@ -113,6 +202,7 @@ export default function AdminTelegram() {
         admin_chat_id: settings.admin_chat_id,
         notifications_enabled: settings.notifications_enabled,
         texts: settings.texts,
+        texts_presets: settings.texts_presets,
         menu_buttons: settings.menu_buttons,
         web_app_url: settings.web_app_url,
         oidc_enabled: settings.oidc_enabled,
@@ -637,26 +727,130 @@ function NotifsTab({ settings, setField, setNested, keys, kind }) {
 
       {keys.map(({ key, label, hint }) => (
         <Card key={key} icon={<Bell className="w-4 h-4 text-cyan-300" />} title={label} subtitle={hint}>
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={enabled[key] !== false}
                 onChange={e => setNested('notifications_enabled', key, e.target.checked)}
                 className="w-4 h-4 accent-emerald-500" />
               <span className="text-sm text-slate-200">Отправлять</span>
             </label>
-            <details>
-              <summary className="text-[11px] text-slate-500 cursor-pointer hover:text-slate-300">
-                Шаблон сообщения {TEMPLATE_HINTS[key] && <span className="text-cyan-400">· плейсхолдеры: {TEMPLATE_HINTS[key]}</span>}
-              </summary>
-              <textarea value={texts[key] || ''} onChange={e => setNested('texts', key, e.target.value)}
-                rows={5}
-                placeholder={`(по умолчанию из DEFAULT_TEXTS — переопредели если нужно)`}
-                className="mt-2 w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-blue-500 focus:outline-none resize-y" />
-              <p className="text-[10px] text-slate-500 mt-1">HTML-разметка: &lt;b&gt;, &lt;i&gt;, &lt;code&gt;, &lt;a href&gt;</p>
-            </details>
+            {AUTO_GENERATED_KEYS.has(key) ? (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-slate-800/40 border border-slate-700/50 text-xs text-slate-400">
+                <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-cyan-400" />
+                Текст генерируется автоматически (сводка + спойлер со списком серверов, сгруппированным по срочности). Шаблон здесь не применяется.
+              </div>
+            ) : (
+              <TemplateEditor settingsKey={key} settings={settings} setNested={setNested} setField={setField} />
+            )}
           </div>
         </Card>
       ))}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Редактор шаблона: пресеты (встроенные + свои) · редактирование · предпросмотр · тест
+// ────────────────────────────────────────────────────────────────────────────
+
+function TemplateEditor({ settingsKey: key, settings, setNested, setField }) {
+  const [testing, setTesting] = useState(false)
+  const [testMsg, setTestMsg] = useState(null)
+
+  const current = (settings.texts || {})[key] || ''
+  const effective = current || DEFAULT_TEMPLATES[key] || ''
+  const userPresets = (settings.texts_presets || {})[key] || []
+  const builtin = BUILTIN_PRESETS[key] || []
+  const sample = SAMPLE_DATA[key] || {}
+  const previewHtml = telegramHtmlToPreview(renderTemplate(effective, sample))
+
+  function apply(text) { setNested('texts', key, text) }
+
+  function saveAsPreset() {
+    const name = window.prompt('Название пресета:')
+    if (!name || !name.trim()) return
+    const text = effective
+    const list = [...userPresets, { name: name.trim(), text }]
+    setField('texts_presets', { ...(settings.texts_presets || {}), [key]: list })
+  }
+  function deletePreset(i) {
+    const list = userPresets.filter((_, idx) => idx !== i)
+    setField('texts_presets', { ...(settings.texts_presets || {}), [key]: list })
+  }
+
+  async function sendTest() {
+    const chatId = settings.admin_chat_id
+    if (!chatId) { setTestMsg({ error: 'Сначала укажи Admin Chat ID (вкладка «Админ-уведомления»)' }); return }
+    setTesting(true); setTestMsg(null)
+    try {
+      const text = renderTemplate(effective, sample)
+      const r = await authFetch('/api/admin/telegram/test', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      })
+      const d = await r.json()
+      setTestMsg(r.ok ? { ok: true } : { error: d.error || 'Ошибка отправки' })
+    } catch (e) { setTestMsg({ error: e.message }) }
+    finally { setTesting(false); setTimeout(() => setTestMsg(null), 4000) }
+  }
+
+  const chip = (active) => `px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all ${
+    active ? 'bg-blue-500/20 border-blue-500/50 text-blue-200' : 'bg-slate-800/60 border-slate-700/50 text-slate-300 hover:border-slate-600'
+  }`
+
+  return (
+    <div className="space-y-3">
+      {/* Пресеты */}
+      <div>
+        <div className="text-[11px] text-slate-500 mb-1.5">Шаблоны:</div>
+        <div className="flex flex-wrap gap-1.5">
+          <button onClick={() => apply('')} className={chip(current === '')}>★ Стандартный</button>
+          {builtin.map((p, i) => (
+            <button key={'b' + i} onClick={() => apply(p.text)} className={chip(current === p.text)}>{p.name}</button>
+          ))}
+          {userPresets.map((p, i) => (
+            <span key={'u' + i} className={`inline-flex items-center gap-1 ${chip(current === p.text)}`}>
+              <button onClick={() => apply(p.text)}>{p.name}</button>
+              <button onClick={() => deletePreset(i)} title="Удалить пресет" className="text-slate-500 hover:text-red-400"><X className="w-3 h-3" /></button>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* Редактор */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] text-slate-500">Текст шаблона {TEMPLATE_HINTS[key] && <span className="text-cyan-400">· {TEMPLATE_HINTS[key]}</span>}</span>
+        </div>
+        <textarea value={current} onChange={e => setNested('texts', key, e.target.value)}
+          rows={5}
+          placeholder="(пусто = стандартный шаблон)"
+          className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-blue-500 focus:outline-none resize-y" />
+        <p className="text-[10px] text-slate-500 mt-1">HTML: &lt;b&gt; &lt;i&gt; &lt;u&gt; &lt;s&gt; &lt;code&gt; &lt;a href&gt; &lt;blockquote&gt;</p>
+      </div>
+
+      {/* Предпросмотр */}
+      <div>
+        <div className="text-[11px] text-slate-500 mb-1.5">Предпросмотр (демо-данные):</div>
+        <div className="rounded-xl bg-[#0e1621] border border-slate-800 p-3">
+          <div className="inline-block max-w-full rounded-lg rounded-tl-sm bg-[#182533] px-3 py-2 text-[13px] text-slate-100 leading-snug"
+            dangerouslySetInnerHTML={{ __html: previewHtml }} />
+        </div>
+      </div>
+
+      {/* Действия */}
+      <div className="flex flex-wrap items-center gap-2">
+        <button onClick={saveAsPreset}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800/60 border border-slate-700/50 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300 transition-all">
+          <Save className="w-3.5 h-3.5" /> Сохранить как пресет
+        </button>
+        <button onClick={sendTest} disabled={testing}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-500/15 border border-blue-500/40 text-blue-200 hover:bg-blue-500/25 transition-all disabled:opacity-50">
+          {testing ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} Тест в Telegram
+        </button>
+        {testMsg?.ok && <span className="text-[11px] text-emerald-400 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> Отправлено</span>}
+        {testMsg?.error && <span className="text-[11px] text-red-400 flex items-center gap-1"><AlertCircle className="w-3.5 h-3.5" /> {testMsg.error}</span>}
+      </div>
     </div>
   )
 }

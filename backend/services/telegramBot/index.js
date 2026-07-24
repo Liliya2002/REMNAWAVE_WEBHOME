@@ -38,8 +38,13 @@ function buildBot(token) {
 
   // Главное меню — InlineKeyboard под сообщением (data="menu:<action>")
   bot.callbackQuery(/^menu:/,  handlers.handleMenuCallback)
-  // Админ-панель — admin:home, admin:vps, admin:vps:<id>
+  // Админ-панель — admin:home, admin:vps, admin:vps:<id>[:action[:sub]]
   bot.callbackQuery(/^admin:/, handlers.handleAdminCallbackEntry)
+
+  // Текстовые сообщения (не команды) — ввод при редактировании VPS в админке.
+  // Регистрируем ПОСЛЕ команд: команды матчатся первыми, сюда падает только
+  // обычный текст. Если админ не ждёт ввода — обработчик молча ничего не делает.
+  bot.on('message:text', handlers.handleTextMessage)
 
   // Глобальный обработчик ошибок — чтобы вылет на одном update не клал бота
   bot.catch((err) => {

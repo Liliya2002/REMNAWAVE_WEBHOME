@@ -28,6 +28,7 @@ async function getSettings() {
       admin_chat_id: null,
       notifications_enabled: {},
       texts: {},
+      texts_presets: {},
       menu_buttons: [],
       oidc_enabled: false,
       oidc_client_id: null,
@@ -70,7 +71,7 @@ async function getSettingsSafe() {
 async function updateSettings(patch) {
   const allowed = [
     'is_enabled', 'bot_username', 'mode', 'webhook_url',
-    'admin_chat_id', 'notifications_enabled', 'texts', 'menu_buttons',
+    'admin_chat_id', 'notifications_enabled', 'texts', 'texts_presets', 'menu_buttons',
     'web_app_url',
     'oidc_enabled', 'oidc_client_id', 'oidc_redirect_uri',
   ]
@@ -100,7 +101,7 @@ async function updateSettings(patch) {
     if (!(k in patch)) continue
     sets.push(`${k} = $${idx++}`)
     let v = patch[k]
-    if (k === 'notifications_enabled' || k === 'texts' || k === 'menu_buttons') {
+    if (k === 'notifications_enabled' || k === 'texts' || k === 'texts_presets' || k === 'menu_buttons') {
       v = JSON.stringify(v ?? {})
     }
     values.push(v)

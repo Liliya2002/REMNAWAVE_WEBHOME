@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   // page
-  Globe, RefreshCw, Search, X, ChevronDown,
+  Globe, RefreshCw, Search, X, ChevronDown, Plus,
   // tabs
   Server, Layers, Users as UsersIcon,
   // stats
@@ -10,8 +10,11 @@ import {
   CheckCircle, XCircle, PauseCircle, PlayCircle, Pause,
   RotateCcw, Pencil, Check, Plug, AlertTriangle, Link2,
   HardDrive, Gauge, ArrowDownUp, MapPin,
+  Trash2, Recycle, Zap,
 } from 'lucide-react'
 import RwUsersPanel from '../components/RwUsersPanel'
+import AddNodeModal from '../components/AddNodeModal'
+import ConfirmByTypeModal from '../components/ConfirmByTypeModal'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -160,6 +163,12 @@ export default function AdminServers() {
   const [editingSquadId, setEditingSquadId] = useState(null)
   const [editSquadName, setEditSquadName] = useState('')
 
+  // Модалки управления нодой
+  const [addModalOpen, setAddModalOpen] = useState(false)
+  const [restartAllConfirm, setRestartAllConfirm] = useState(false)
+  const [deleteNodeConfirm, setDeleteNodeConfirm] = useState(null)        // server | null
+  const [resetTrafficConfirm, setResetTrafficConfirm] = useState(null)    // server | null
+
   const token = localStorage.getItem('token')
   const authHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
 
@@ -276,6 +285,32 @@ export default function AdminServers() {
     } catch {} finally {
       setActionLoading(p => ({ ...p, ['restart_' + uuid]: false }))
     }
+  }
+
+  // Удалить ноду (вызывается из ConfirmByTypeModal — он уже спросил подтверждение)
+  async function deleteNode(uuid) {
+    const res = await fetch(`${API_URL}/api/admin/servers/${uuid}`, { method: 'DELETE', headers: authHeaders })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+    fetchServers()
+  }
+
+  // Сбросить счётчик трафика ноды (только числа, юзеры не отвалятся)
+  async function resetNodeTraffic(uuid) {
+    const res = await fetch(`${API_URL}/api/admin/servers/${uuid}/reset-traffic`, { method: 'POST', headers: authHeaders })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+    fetchServers()
+  }
+
+  // Restart всех нод одновременно (опасно — двойной confirm)
+  async function restartAllNodes() {
+    const res = await fetch(`${API_URL}/api/admin/servers/actions/restart-all`, {
+      method: 'POST', headers: authHeaders, body: JSON.stringify({ force: false })
+    })
+    const d = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(d.error || `HTTP ${res.status}`)
+    fetchServers()
   }
 
   async function toggleHost(hostUuid, currentDisabled) {
@@ -452,6 +487,24 @@ export default function AdminServers() {
       {/* TAB: NODES ─────────────────────────────────────────────────────── */}
       {activeTab === 'nodes' && (
         <div className="space-y-4">
+          {/* Action buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setAddModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-violet-500 hover:bg-violet-600 text-white rounded-lg text-sm font-bold transition-colors"
+            >
+              <Plus className="w-4 h-4" /> Добавить ноду
+            </button>
+            {servers.length > 0 && (
+              <button
+                onClick={() => setRestartAllConfirm(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-yellow-500/15 border border-yellow-500/40 text-yellow-300 hover:bg-yellow-500/25 rounded-lg text-sm font-medium transition-all"
+              >
+                <Zap className="w-4 h-4" /> Restart all
+              </button>
+            )}
+          </div>
+
           {/* Summary */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <SummaryCard icon={Server}       accent="slate"   label="Всего"      value={servers.length} />
@@ -549,6 +602,8 @@ export default function AdminServers() {
                   onSaveName={() => updateServerName(server.uuid)}
                   onToggleNode={() => toggleNode(server.uuid, server.isDisabled)}
                   onRestartNode={() => restartNode(server.uuid)}
+                  onResetTraffic={() => setResetTrafficConfirm(server)}
+                  onDelete={() => setDeleteNodeConfirm(server)}
                   onToggleHost={(hostUuid, disabled) => toggleHost(hostUuid, disabled)}
                   onToggleUsers={() => fetchServerUsers(server.uuid)}
                   users={serverUsers[server.uuid]}
@@ -618,6 +673,67 @@ export default function AdminServers() {
           <RwUsersPanel />
         </div>
       )}
+
+      {/* ─── Модалки управления нодой ──────────────────────────────────── */}
+      <AddNodeModal
+        open={addModalOpen}
+        onClose={() => setAddModalOpen(false)}
+        onCreated={() => fetchServers()}
+      />
+
+      <ConfirmByTypeModal
+        open={!!deleteNodeConfirm}
+        onClose={() => setDeleteNodeConfirm(null)}
+        onConfirm={() => deleteNode(deleteNodeConfirm.uuid)}
+        title="Удалить ноду"
+        description={
+          <div className="space-y-2">
+            <p>Будет удалена нода <code className="text-cyan-300 font-mono">{deleteNodeConfirm?.name}</code>.</p>
+            {deleteNodeConfirm?.usersOnline > 0 && (
+              <p className="text-amber-300">
+                ⚠️ Сейчас на ноде {deleteNodeConfirm.usersOnline} активных юзер{deleteNodeConfirm.usersOnline === 1 ? '' : 'ов'} — они будут отключены.
+              </p>
+            )}
+            <p className="text-slate-400 text-xs">Действие необратимо. Чтобы вернуть ноду, придётся создавать заново.</p>
+          </div>
+        }
+        confirmText={deleteNodeConfirm?.name || ''}
+        confirmLabel="Удалить ноду"
+        confirmTone="danger"
+        inputLabel="Чтобы подтвердить, введи имя ноды"
+      />
+
+      <ConfirmByTypeModal
+        open={!!resetTrafficConfirm}
+        onClose={() => setResetTrafficConfirm(null)}
+        onConfirm={() => resetNodeTraffic(resetTrafficConfirm.uuid)}
+        title="Сбросить счётчик трафика"
+        description={
+          <p>
+            Счётчик использованного трафика ноды <code className="text-cyan-300 font-mono">{resetTrafficConfirm?.name}</code>
+            {' '}будет обнулён. Юзеры не пострадают, лимиты пересчитаются с нуля.
+          </p>
+        }
+        confirmText="RESET"
+        confirmLabel="Сбросить"
+        confirmTone="warning"
+      />
+
+      <ConfirmByTypeModal
+        open={restartAllConfirm}
+        onClose={() => setRestartAllConfirm(false)}
+        onConfirm={() => restartAllNodes()}
+        title="Перезагрузить все ноды"
+        description={
+          <div className="space-y-2">
+            <p>Все {servers.length} нод будут одновременно перезапущены (Xray restart).</p>
+            <p className="text-amber-300">⚠️ Все активные подключения юзеров оборвутся.</p>
+          </div>
+        }
+        confirmText="RESTART"
+        confirmLabel="Перезагрузить все"
+        confirmTone="warning"
+      />
     </div>
   )
 }
@@ -626,7 +742,7 @@ export default function AdminServers() {
 function NodeCard({
   server, expanded, onToggle,
   editingName, onStartEditName, onChangeName, onCancelEditName, onSaveName,
-  onToggleNode, onRestartNode, onToggleHost,
+  onToggleNode, onRestartNode, onResetTraffic, onDelete, onToggleHost,
   onToggleUsers, users, isLoadingUsers,
   actionLoading,
 }) {
@@ -721,6 +837,14 @@ function NodeCard({
                     <RotateCcw className="w-3.5 h-3.5" /> Рестарт Xray
                   </button>
                 )}
+                <button onClick={onResetTraffic}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/25 rounded-lg text-xs font-medium transition-all">
+                  <Recycle className="w-3.5 h-3.5" /> Сбросить трафик
+                </button>
+                <button onClick={onDelete}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 rounded-lg text-xs font-medium transition-all ml-auto">
+                  <Trash2 className="w-3.5 h-3.5" /> Удалить
+                </button>
               </>
             )}
           </div>

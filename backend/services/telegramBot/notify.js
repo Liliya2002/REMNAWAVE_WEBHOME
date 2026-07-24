@@ -47,7 +47,11 @@ const DEFAULT_TEXTS = {
     'Подожди до начала следующего периода или купи дополнительный трафик.',
 
   admin_vps_expiring:
-    '⚠️ <b>VPS — истечение оплаты</b>\n\n{lines}\n\n<i>Всего: {count} серв.</i>',
+    '⚠️ <b>Истекает оплата VPS</b>\n' +
+    '<i>напоминание об оплате серверов</i>\n\n' +
+    '{lines}\n\n' +
+    '📊 Всего серверов: <b>{count}</b>' +
+    '{overdue, select, _ "" other "\n🔴 Из них просрочено: <b>{overdue}</b>"}',
 
   admin_vps_unreachable:
     '🔴 <b>VPS недоступен</b>\n\n' +

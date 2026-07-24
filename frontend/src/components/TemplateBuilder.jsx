@@ -79,6 +79,11 @@ export default function TemplateBuilder() {
     allow_trial_plan: true,
     maintenance_mode: false,
     maintenance_message: 'Ведутся технические работы',
+    admin_only_mode: false,
+    enable_starfield: true,
+    starfield_light: false,
+    starfield_parallax: true,
+    starfield_density: 'medium',
     require_email_confirmation: false,
     session_timeout_minutes: 1440,
     max_login_attempts: 5,
@@ -368,6 +373,31 @@ export default function TemplateBuilder() {
                 <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input type="checkbox" checked={!!form.allow_trial_plan} onChange={(e) => setField('allow_trial_plan', e.target.checked)} className="accent-emerald-500 mt-0.5" />Разрешить пробный тариф</label>
               </div>
               <Field label="Сообщение при техработах"><textarea value={form.maintenance_message || ''} onChange={(e) => setField('maintenance_message', e.target.value)} rows={3} className={inputClass()} /></Field>
+              <label className={`flex items-start gap-3 p-3 rounded-lg border text-sm transition-colors ${form.admin_only_mode ? 'border-rose-500/60 bg-rose-500/10 text-rose-100' : 'border-slate-700 bg-slate-900/40 text-slate-200'}`}>
+                <input type="checkbox" checked={!!form.admin_only_mode} onChange={(e) => setField('admin_only_mode', e.target.checked)} className="accent-rose-500 mt-0.5" />
+                <span>
+                  <span className="font-semibold">🔒 Админский режим (проект закрыт)</span>
+                  <span className="block text-xs opacity-80 mt-0.5">Сайт доступен только администраторам. Вход обычных пользователей и регистрация полностью отключены на уровне сервера. Войти можно на обычной странице входа только под учётной записью администратора.</span>
+                </span>
+              </label>
+
+              {/* Анимированный фон (звёзды + метеоры) */}
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-900/40 space-y-3">
+                <div className="text-sm font-semibold text-slate-200">✨ Анимированный фон (звёзды)</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="flex items-start gap-2 text-sm text-slate-200"><input type="checkbox" checked={!!form.enable_starfield} onChange={(e) => setField('enable_starfield', e.target.checked)} className="accent-cyan-500 mt-0.5" />Включить звёздный фон (по умолчанию для сайта)</label>
+                  <label className="flex items-start gap-2 text-sm text-slate-200"><input type="checkbox" checked={!!form.starfield_light} onChange={(e) => setField('starfield_light', e.target.checked)} className="accent-cyan-500 mt-0.5" />Показывать и в светлой теме</label>
+                  <label className="flex items-start gap-2 text-sm text-slate-200"><input type="checkbox" checked={!!form.starfield_parallax} onChange={(e) => setField('starfield_parallax', e.target.checked)} className="accent-cyan-500 mt-0.5" />Параллакс от движения мыши</label>
+                  <Field label="Плотность звёзд">
+                    <select value={form.starfield_density || 'medium'} onChange={(e) => setField('starfield_density', e.target.value)} className={inputClass()}>
+                      <option value="low">Мало</option>
+                      <option value="medium">Средне</option>
+                      <option value="high">Много</option>
+                    </select>
+                  </Field>
+                </div>
+                <p className="text-xs text-slate-500">Это глобальные настройки. Каждый посетитель может выключить фон у себя кнопкой ✨ в шапке (локальное переопределение).</p>
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Таймаут сессии (минуты)"><input type="number" min="10" value={form.session_timeout_minutes || 1440} onChange={(e) => setField('session_timeout_minutes', e.target.value)} className={inputClass()} /></Field>
                 <Field label="Макс. попыток входа"><input type="number" min="1" value={form.max_login_attempts || 5} onChange={(e) => setField('max_login_attempts', e.target.value)} className={inputClass()} /></Field>
