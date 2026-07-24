@@ -100,7 +100,7 @@ export default function ResetPassword() {
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-700 dark:text-slate-400" />
-                  <input
+                  <input autoComplete="off"
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
@@ -126,7 +126,7 @@ export default function ResetPassword() {
                 </label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-sky-700 dark:text-slate-400" />
-                  <input
+                  <input autoComplete="off"
                     id="confirm"
                     type={showPassword ? 'text' : 'password'}
                     value={confirm}

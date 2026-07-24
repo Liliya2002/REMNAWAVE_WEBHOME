@@ -341,7 +341,7 @@ function PercentField({ label, hint, value, onChange, sampleAmount, sampleReward
     <div className="bg-slate-900/40 border border-slate-700/40 rounded-xl p-4">
       <label className="block text-sm font-semibold text-slate-200 mb-2">{label}</label>
       <div className="relative mb-2">
-        <input
+        <input autoComplete="off"
           type="number"
           min="0"
           max="100"
@@ -369,7 +369,7 @@ function DaysField({ label, hint, value, onChange }) {
     <div className="bg-slate-900/40 border border-slate-700/40 rounded-xl p-4">
       <label className="block text-sm font-semibold text-slate-200 mb-2">{label}</label>
       <div className="relative mb-2">
-        <input
+        <input autoComplete="off"
           type="number"
           min="0"
           step="0.5"
@@ -389,7 +389,7 @@ function MoneyField({ label, hint, value, step, onChange }) {
     <div className="bg-slate-900/40 border border-slate-700/40 rounded-xl p-4">
       <label className="block text-sm font-semibold text-slate-200 mb-2">{label}</label>
       <div className="relative mb-2">
-        <input
+        <input autoComplete="off"
           type="number"
           min="0"
           step={step}

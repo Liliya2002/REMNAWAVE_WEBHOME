@@ -297,7 +297,7 @@ export default function DeployPanel({ updates, currentVersion, onClose }) {
 
               <div>
                 <label className="block text-xs text-slate-400 uppercase font-medium mb-1.5">Версия</label>
-                <input
+                <input autoComplete="off"
                   type="text"
                   value={targetVersion}
                   onChange={e => setTargetVersion(e.target.value)}
@@ -314,11 +314,11 @@ export default function DeployPanel({ updates, currentVersion, onClose }) {
 
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                  <input type="checkbox" checked={flagNoBackup} onChange={e => setFlagNoBackup(e.target.checked)} className="rounded" />
+                  <input autoComplete="off" type="checkbox" checked={flagNoBackup} onChange={e => setFlagNoBackup(e.target.checked)} className="rounded" />
                   Пропустить бэкап БД <span className="text-xs text-amber-400">(не рекомендуется)</span>
                 </label>
                 <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                  <input type="checkbox" checked={flagSkipMig} onChange={e => setFlagSkipMig(e.target.checked)} className="rounded" />
+                  <input autoComplete="off" type="checkbox" checked={flagSkipMig} onChange={e => setFlagSkipMig(e.target.checked)} className="rounded" />
                   Пропустить миграции БД
                 </label>
               </div>

@@ -312,7 +312,7 @@ export default function AdminLandingEdit() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           <div className="md:col-span-5">
             <label className="block text-xs text-slate-400 mb-1.5">Название</label>
-            <input
+            <input autoComplete="off"
               value={form.title}
               onChange={e => setField('title', e.target.value)}
               placeholder="Например: О нас"
@@ -323,13 +323,13 @@ export default function AdminLandingEdit() {
             <label className="block text-xs text-slate-400 mb-1.5 flex items-center justify-between">
               <span>Slug (URL)</span>
               <label className="flex items-center gap-1 text-[10px] text-slate-500 cursor-pointer">
-                <input type="checkbox" checked={autoSlug} onChange={e => setAutoSlug(e.target.checked)} className="accent-blue-500" />
+                <input autoComplete="off" type="checkbox" checked={autoSlug} onChange={e => setAutoSlug(e.target.checked)} className="accent-blue-500" />
                 авто
               </label>
             </label>
             <div className="flex items-stretch">
               <span className="px-3 py-2 bg-slate-900/40 border border-slate-700 border-r-0 rounded-l-lg text-slate-500 text-sm font-mono">/p/</span>
-              <input
+              <input autoComplete="off"
                 value={form.slug}
                 onChange={e => { setField('slug', slugify(e.target.value)); setAutoSlug(false) }}
                 placeholder="about-us"
@@ -339,7 +339,7 @@ export default function AdminLandingEdit() {
           </div>
           <div className="md:col-span-2 flex items-end">
             <label className="flex items-center gap-2 px-3 py-2 w-full rounded-lg bg-slate-900/40 border border-slate-700/50 cursor-pointer hover:border-emerald-500/40 transition">
-              <input
+              <input autoComplete="off"
                 type="checkbox"
                 checked={form.is_published}
                 onChange={e => setField('is_published', e.target.checked)}
@@ -353,7 +353,7 @@ export default function AdminLandingEdit() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mt-4 pt-4 border-t border-slate-700/40">
           <div className="md:col-span-7">
             <label className="flex items-start gap-2 px-3 py-2.5 w-full rounded-lg bg-slate-900/40 border border-slate-700/50 cursor-pointer hover:border-blue-500/40 transition">
-              <input
+              <input autoComplete="off"
                 type="checkbox"
                 checked={form.show_in_menu}
                 onChange={e => setField('show_in_menu', e.target.checked)}
@@ -372,7 +372,7 @@ export default function AdminLandingEdit() {
           </div>
           <div className="md:col-span-5">
             <label className="block text-xs text-slate-400 mb-1.5">Порядок в меню</label>
-            <input
+            <input autoComplete="off"
               type="number"
               value={form.menu_order}
               onChange={e => setField('menu_order', parseInt(e.target.value) || 0)}
@@ -425,7 +425,7 @@ export default function AdminLandingEdit() {
           </h3>
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Meta Title (отображается в браузере и Google)</label>
-            <input
+            <input autoComplete="off"
               value={form.meta_title}
               onChange={e => setField('meta_title', e.target.value)}
               maxLength={255}
@@ -436,7 +436,7 @@ export default function AdminLandingEdit() {
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Meta Description</label>
-            <textarea
+            <textarea autoComplete="off"
               value={form.meta_description}
               onChange={e => setField('meta_description', e.target.value)}
               maxLength={500}
@@ -448,7 +448,7 @@ export default function AdminLandingEdit() {
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1.5">Keywords (через запятую)</label>
-            <input
+            <input autoComplete="off"
               value={form.meta_keywords}
               onChange={e => setField('meta_keywords', e.target.value)}
               maxLength={500}
@@ -460,7 +460,7 @@ export default function AdminLandingEdit() {
             <div>
               <label className="block text-xs text-slate-400 mb-1.5">OG Image (URL картинки для соцсетей)</label>
               <div className="flex gap-2">
-                <input
+                <input autoComplete="off"
                   value={form.og_image}
                   onChange={e => setField('og_image', e.target.value)}
                   placeholder="https://example.com/og.jpg или /uploads/..."
@@ -469,7 +469,7 @@ export default function AdminLandingEdit() {
                 <label className="px-3 py-2 bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 rounded-lg text-xs cursor-pointer hover:bg-cyan-500/25 transition flex items-center gap-1">
                   <ImageIcon className="w-3.5 h-3.5" />
                   {uploading ? '...' : 'Загрузить'}
-                  <input
+                  <input autoComplete="off"
                     type="file"
                     accept="image/png,image/jpeg,image/webp"
                     className="hidden"
@@ -485,7 +485,7 @@ export default function AdminLandingEdit() {
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1.5">Canonical URL</label>
-              <input
+              <input autoComplete="off"
                 value={form.canonical_url}
                 onChange={e => setField('canonical_url', e.target.value)}
                 placeholder="https://yoursite.com/p/about-us"
@@ -543,7 +543,7 @@ export default function AdminLandingEdit() {
                   <ImageIcon className="w-3.5 h-3.5" />
                   {uploading ? 'Загрузка...' : 'Картинка'}
                 </button>
-                <input
+                <input autoComplete="off"
                   ref={fileInputRef}
                   type="file"
                   accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"

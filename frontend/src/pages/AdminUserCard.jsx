@@ -503,7 +503,7 @@ export default function AdminUserCard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">Логин</label>
-                <input
+                <input autoComplete="off"
                   value={editLogin}
                   onChange={e => setEditLogin(e.target.value)}
                   className="w-full px-4 py-2.5 bg-slate-900/60 border border-slate-700 rounded-xl text-white focus:border-blue-500 focus:outline-none transition"
@@ -511,7 +511,7 @@ export default function AdminUserCard() {
               </div>
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">Email</label>
-                <input
+                <input autoComplete="off"
                   type="email"
                   value={editEmail}
                   onChange={e => setEditEmail(e.target.value)}
@@ -522,7 +522,7 @@ export default function AdminUserCard() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <label className="flex items-center gap-3 p-4 rounded-xl bg-slate-900/40 border border-slate-700/40 cursor-pointer hover:border-purple-500/40 transition">
-                <input
+                <input autoComplete="off"
                   type="checkbox"
                   checked={editIsAdmin}
                   onChange={e => setEditIsAdmin(e.target.checked)}
@@ -535,7 +535,7 @@ export default function AdminUserCard() {
               </label>
 
               <label className="flex items-center gap-3 p-4 rounded-xl bg-slate-900/40 border border-slate-700/40 cursor-pointer hover:border-green-500/40 transition">
-                <input
+                <input autoComplete="off"
                   type="checkbox"
                   checked={editIsActive}
                   onChange={e => setEditIsActive(e.target.checked)}
@@ -649,7 +649,7 @@ export default function AdminUserCard() {
                         {/* Actions */}
                         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                           <div className="flex items-center gap-2">
-                            <input
+                            <input autoComplete="off"
                               type="number"
                               min="1"
                               max="3650"
@@ -775,7 +775,7 @@ export default function AdminUserCard() {
                 <div className="space-y-3">
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Новый баланс (₽)</label>
-                    <input
+                    <input autoComplete="off"
                       type="number"
                       min="0"
                       step="1"
@@ -786,7 +786,7 @@ export default function AdminUserCard() {
                   </div>
                   <div>
                     <label className="block text-xs text-slate-400 mb-1">Причина (необязательно)</label>
-                    <input
+                    <input autoComplete="off"
                       value={balanceReason}
                       onChange={e => setBalanceReason(e.target.value)}
                       placeholder="Например: начисление бонуса"

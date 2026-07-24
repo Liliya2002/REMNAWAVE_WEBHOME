@@ -409,7 +409,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
       {/* Master toggle + статус */}
       <div className="bg-gradient-to-br from-slate-800/40 to-slate-900/50 border border-slate-700/50 rounded-2xl p-5">
         <label className="flex items-start gap-3 cursor-pointer">
-          <input type="checkbox" checked={!!settings.is_enabled}
+          <input autoComplete="off" type="checkbox" checked={!!settings.is_enabled}
             onChange={e => setField('is_enabled', e.target.checked)}
             className="w-5 h-5 mt-0.5 accent-blue-500" />
           <div className="flex-1">
@@ -427,7 +427,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
       <Card icon={<Plug className="w-4 h-4 text-blue-300" />} title="Bot Token" subtitle={settings.has_bot_token ? 'Сохранён (в БД, шифр.)' : 'Не задан — бот не запустится'}>
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <input
+            <input autoComplete="new-password"
               type={showToken ? 'text' : 'password'}
               value={tokenInput}
               onChange={e => setTokenInput(e.target.value)}
@@ -453,7 +453,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
       <Card icon={<MessageCircle className="w-4 h-4 text-cyan-300" />} title="Bot Username" subtitle="Для построения ссылок t.me/<bot>?start=ref_...">
         <div className="flex items-center gap-2">
           <span className="text-slate-500 font-mono">@</span>
-          <input value={settings.bot_username || ''} onChange={e => setField('bot_username', e.target.value.replace(/^@/, '').trim())}
+          <input autoComplete="off" value={settings.bot_username || ''} onChange={e => setField('bot_username', e.target.value.replace(/^@/, '').trim())}
             placeholder="MyVpnBot"
             className="flex-1 px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none" />
         </div>
@@ -466,7 +466,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
         title="Web App (Mini App) URL"
         subtitle="Кнопки главного меню откроют веб-кабинет прямо в Telegram"
       >
-        <input
+        <input autoComplete="off"
           value={settings.web_app_url || ''}
           onChange={e => setField('web_app_url', e.target.value.trim())}
           placeholder="https://your-domain.com"
@@ -518,7 +518,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
           <div className="space-y-3 p-3 bg-slate-950/40 border border-slate-700/40 rounded-lg">
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5">Webhook URL</label>
-              <input value={settings.webhook_url || ''} onChange={e => setField('webhook_url', e.target.value.trim())}
+              <input autoComplete="off" value={settings.webhook_url || ''} onChange={e => setField('webhook_url', e.target.value.trim())}
                 placeholder="https://your-domain.com/api/tg/webhook"
                 className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
               <p className="text-[11px] text-slate-500 mt-1">
@@ -531,7 +531,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
               </label>
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <input
+                  <input autoComplete="new-password"
                     type={showSecret ? 'text' : 'password'}
                     value={secretInput}
                     onChange={e => setSecretInput(e.target.value)}
@@ -580,7 +580,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
         }
       >
         <label className="flex items-start gap-3 cursor-pointer mb-4">
-          <input
+          <input autoComplete="off"
             type="checkbox"
             checked={!!settings.oidc_enabled}
             onChange={e => setField('oidc_enabled', e.target.checked)}
@@ -598,7 +598,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
         <div className="space-y-3">
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">Client ID</label>
-            <input
+            <input autoComplete="off"
               value={settings.oidc_client_id || ''}
               onChange={e => setField('oidc_client_id', e.target.value.trim())}
               placeholder="например 8009303824"
@@ -612,7 +612,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <input
+                <input autoComplete="new-password"
                   type={showOidcSecret ? 'text' : 'password'}
                   value={oidcSecretInput}
                   onChange={e => setOidcSecretInput(e.target.value)}
@@ -632,7 +632,7 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5">Redirect URI</label>
-            <input
+            <input autoComplete="off"
               value={settings.oidc_redirect_uri || ''}
               onChange={e => setField('oidc_redirect_uri', e.target.value.trim())}
               placeholder="https://your-domain.com/auth/telegram/callback"
@@ -662,10 +662,10 @@ function ConnectionTab({ settings, status, setField, save, restart, saving }) {
       {/* Тест-сообщение */}
       <Card icon={<Send className="w-4 h-4 text-emerald-300" />} title="Тест-сообщение" subtitle="Проверка что бот может писать">
         <div className="space-y-2">
-          <input value={testChatId} onChange={e => setTestChatId(e.target.value)}
+          <input autoComplete="off" value={testChatId} onChange={e => setTestChatId(e.target.value)}
             placeholder={settings.admin_chat_id ? `chat_id (по умолчанию admin: ${settings.admin_chat_id})` : 'chat_id'}
             className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-emerald-500 focus:outline-none" />
-          <textarea value={testText} onChange={e => setTestText(e.target.value)}
+          <textarea autoComplete="off" value={testText} onChange={e => setTestText(e.target.value)}
             placeholder="Текст сообщения (по умолчанию: тест от админ-панели)" rows={2}
             className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-emerald-500 focus:outline-none resize-none" />
           <div className="flex items-center gap-2">
@@ -715,7 +715,7 @@ function NotifsTab({ settings, setField, setNested, keys, kind }) {
     <div className="space-y-4">
       {kind === 'admin' && (
         <Card icon={<Shield className="w-4 h-4 text-amber-300" />} title="Admin Chat ID" subtitle="Куда слать админские уведомления">
-          <input value={settings.admin_chat_id || ''} onChange={e => setField('admin_chat_id', e.target.value.trim())}
+          <input autoComplete="off" value={settings.admin_chat_id || ''} onChange={e => setField('admin_chat_id', e.target.value.trim())}
             placeholder="123456789 или -1001234567890 (для группы)"
             className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
           <p className="text-[11px] text-slate-500 mt-1.5 flex items-start gap-1">
@@ -729,7 +729,7 @@ function NotifsTab({ settings, setField, setNested, keys, kind }) {
         <Card key={key} icon={<Bell className="w-4 h-4 text-cyan-300" />} title={label} subtitle={hint}>
           <div className="space-y-3">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={enabled[key] !== false}
+              <input autoComplete="off" type="checkbox" checked={enabled[key] !== false}
                 onChange={e => setNested('notifications_enabled', key, e.target.checked)}
                 className="w-4 h-4 accent-emerald-500" />
               <span className="text-sm text-slate-200">Отправлять</span>
@@ -822,7 +822,7 @@ function TemplateEditor({ settingsKey: key, settings, setNested, setField }) {
         <div className="flex items-center justify-between mb-1">
           <span className="text-[11px] text-slate-500">Текст шаблона {TEMPLATE_HINTS[key] && <span className="text-cyan-400">· {TEMPLATE_HINTS[key]}</span>}</span>
         </div>
-        <textarea value={current} onChange={e => setNested('texts', key, e.target.value)}
+        <textarea autoComplete="off" value={current} onChange={e => setNested('texts', key, e.target.value)}
           rows={5}
           placeholder="(пусто = стандартный шаблон)"
           className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-xs font-mono focus:border-blue-500 focus:outline-none resize-y" />
@@ -902,14 +902,14 @@ function ButtonsTab({ settings, setField }) {
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
               </div>
-              <input
+              <input autoComplete="off"
                 type="checkbox"
                 checked={b.enabled !== false}
                 onChange={e => update(i, { enabled: e.target.checked })}
                 className="w-4 h-4 accent-emerald-500"
                 title="Показывать в меню"
               />
-              <input value={b.label || ''} onChange={e => update(i, { label: e.target.value })}
+              <input autoComplete="off" value={b.label || ''} onChange={e => update(i, { label: e.target.value })}
                 placeholder="🌐 Лейбл кнопки"
                 className="flex-1 px-3 py-1.5 bg-slate-900/60 border border-slate-700 rounded text-white text-sm focus:border-blue-500 focus:outline-none" />
               <span className="text-[10px] text-slate-500 font-mono w-12 text-right">{b.action || '—'}</span>
@@ -932,7 +932,7 @@ function TextsTab({ settings, setNested }) {
     <div className="space-y-4">
       {TEXT_KEYS.map(({ key, label, hint, rows }) => (
         <Card key={key} icon={<FileText className="w-4 h-4 text-cyan-300" />} title={label} subtitle={hint}>
-          <textarea value={texts[key] || ''} onChange={e => setNested('texts', key, e.target.value)}
+          <textarea autoComplete="off" value={texts[key] || ''} onChange={e => setNested('texts', key, e.target.value)}
             rows={rows}
             placeholder={`(оставь пустым чтобы использовать дефолт)`}
             className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none resize-y" />

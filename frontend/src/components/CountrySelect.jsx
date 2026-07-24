@@ -125,7 +125,7 @@ export default function CountrySelect({ value = 'XX', onChange, disabled = false
           <div className="p-2 border-b border-slate-800">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-              <input
+              <input autoComplete="off"
                 type="text"
                 autoFocus
                 value={search}

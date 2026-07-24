@@ -146,7 +146,7 @@ export default function AdminNotifications() {
           {/* Заголовок */}
           <div>
             <label className="text-sm font-medium text-slate-400 mb-2 block">Заголовок</label>
-            <input
+            <input autoComplete="off"
               type="text"
               value={form.title}
               onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
@@ -159,7 +159,7 @@ export default function AdminNotifications() {
           {/* Сообщение */}
           <div>
             <label className="text-sm font-medium text-slate-400 mb-2 block">Сообщение</label>
-            <textarea
+            <textarea autoComplete="off"
               value={form.message}
               onChange={e => setForm(f => ({ ...f, message: e.target.value }))}
               placeholder="Текст уведомления..."
@@ -171,7 +171,7 @@ export default function AdminNotifications() {
           {/* Ссылка (опционально) */}
           <div>
             <label className="text-sm font-medium text-slate-400 mb-2 block">Ссылка (опционально)</label>
-            <input
+            <input autoComplete="off"
               type="text"
               value={form.link}
               onChange={e => setForm(f => ({ ...f, link: e.target.value }))}

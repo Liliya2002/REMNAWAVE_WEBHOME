@@ -191,13 +191,13 @@ export default function Register(){
                 </div>
                 <div>
                   <label htmlFor="password" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Пароль</label>
-                  <input id="password" value={password} onChange={e => setPassword(e.target.value)} type="password"
+                  <input autoComplete="new-password" id="password" value={password} onChange={e => setPassword(e.target.value)} type="password"
                     className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="••••••••" disabled={loading} required />
                 </div>
                 <div>
                   <label htmlFor="confirmPassword" className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Подтвердите пароль</label>
-                  <input id="confirmPassword" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} type="password"
+                  <input autoComplete="new-password" id="confirmPassword" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} type="password"
                     className="w-full px-4 py-3 bg-sky-100 dark:bg-slate-800/50 border border-sky-200 dark:border-slate-700/50 rounded-lg focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors text-sky-900 dark:text-slate-100 placeholder-slate-500"
                     placeholder="••••••••" disabled={loading} required />
                 </div>

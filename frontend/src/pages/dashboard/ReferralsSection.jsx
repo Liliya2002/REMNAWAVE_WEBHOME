@@ -181,7 +181,7 @@ export default function ReferralsSection() {
             <Link2 className="w-6 h-6" /> Ваша реферальная ссылка
           </h3>
           <div className="flex flex-col sm:flex-row gap-3">
-            <input
+            <input autoComplete="off"
               type="text"
               value={referralLink.url}
               readOnly

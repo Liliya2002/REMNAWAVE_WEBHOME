@@ -212,7 +212,7 @@ function GiftTrafficModal({ state, userId, subscriptionId, onClose, onSuccess })
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1">Сколько ГБ подарить</label>
-            <input
+            <input autoComplete="off"
               type="number" min="0.1" step="0.1" max="1000"
               value={gb}
               onChange={e => setGb(Math.max(0.1, Number(e.target.value) || 0))}
@@ -222,7 +222,7 @@ function GiftTrafficModal({ state, userId, subscriptionId, onClose, onSuccess })
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1">Заметка (опционально)</label>
-            <textarea
+            <textarea autoComplete="off"
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={2}

@@ -164,20 +164,20 @@ export default function AdminAudit() {
             <option value="vps">VPS</option>
             <option value="payment">Платёж</option>
           </select>
-          <input
+          <input autoComplete="off"
             type="text"
             placeholder="ID объекта"
             value={filters.targetId}
             onChange={e => { setPage(0); setFilters({ ...filters, targetId: e.target.value }) }}
             className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-200 placeholder-slate-500"
           />
-          <input
+          <input autoComplete="off"
             type="datetime-local"
             value={filters.since}
             onChange={e => { setPage(0); setFilters({ ...filters, since: e.target.value }) }}
             className="px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-200"
           />
-          <input
+          <input autoComplete="off"
             type="datetime-local"
             value={filters.until}
             onChange={e => { setPage(0); setFilters({ ...filters, until: e.target.value }) }}

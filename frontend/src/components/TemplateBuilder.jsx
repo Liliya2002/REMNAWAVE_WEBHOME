@@ -297,16 +297,16 @@ export default function TemplateBuilder() {
           {tab === 'project' && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Название проекта"><input value={form.site_title || ''} onChange={(e) => setField('site_title', e.target.value)} className={inputClass()} /></Field>
-                <Field label="Короткий слоган"><input value={form.project_tagline || ''} onChange={(e) => setField('project_tagline', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Название проекта"><input autoComplete="off" value={form.site_title || ''} onChange={(e) => setField('site_title', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Короткий слоган"><input autoComplete="off" value={form.project_tagline || ''} onChange={(e) => setField('project_tagline', e.target.value)} className={inputClass()} /></Field>
               </div>
-              <Field label="Описание проекта"><textarea value={form.site_description || ''} onChange={(e) => setField('site_description', e.target.value)} rows={3} className={inputClass()} /></Field>
+              <Field label="Описание проекта"><textarea autoComplete="off" value={form.site_description || ''} onChange={(e) => setField('site_description', e.target.value)} rows={3} className={inputClass()} /></Field>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field
                   label="Логотип (URL)"
                   hint="По умолчанию используется логотип проекта (/logo.svg). Чтобы заменить — укажи URL. Рекомендуемые размеры: SVG 64×64 (любой квадрат) или PNG 32×32 / 64×64. В шапке отображается 24×24 (mobile) или 32×32 (desktop)."
                 >
-                  <input
+                  <input autoComplete="off"
                     value={form.site_logo_url || ''}
                     onChange={(e) => setField('site_logo_url', e.target.value)}
                     placeholder="/logo.svg"
@@ -317,7 +317,7 @@ export default function TemplateBuilder() {
                   label="Favicon (URL)"
                   hint="По умолчанию используется иконка проекта (/favicon.svg). Чтобы заменить — укажи URL. Рекомендуемые размеры: SVG 64×64 (любой квадрат) или PNG 32×32 / 48×48. Для iOS home-screen — 180×180."
                 >
-                  <input
+                  <input autoComplete="off"
                     value={form.site_favicon_url || ''}
                     onChange={(e) => setField('site_favicon_url', e.target.value)}
                     placeholder="/favicon.svg"
@@ -326,8 +326,8 @@ export default function TemplateBuilder() {
                 </Field>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Email поддержки"><input value={form.support_email || ''} onChange={(e) => setField('support_email', e.target.value)} className={inputClass()} /></Field>
-                <Field label="Telegram поддержки"><input value={form.support_telegram || ''} onChange={(e) => setField('support_telegram', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Email поддержки"><input autoComplete="off" value={form.support_email || ''} onChange={(e) => setField('support_email', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Telegram поддержки"><input autoComplete="off" value={form.support_telegram || ''} onChange={(e) => setField('support_telegram', e.target.value)} className={inputClass()} /></Field>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Валюта проекта">
@@ -337,7 +337,7 @@ export default function TemplateBuilder() {
                     <option value="EUR">EUR</option>
                   </select>
                 </Field>
-                <Field label="Часовой пояс"><input value={form.timezone || ''} onChange={(e) => setField('timezone', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Часовой пояс"><input autoComplete="off" value={form.timezone || ''} onChange={(e) => setField('timezone', e.target.value)} className={inputClass()} /></Field>
               </div>
             </>
           )}
@@ -345,36 +345,36 @@ export default function TemplateBuilder() {
           {tab === 'design' && (
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                <Field label="Primary"><input type="color" value={form.color_primary || '#3b82f6'} onChange={(e) => setField('color_primary', e.target.value)} className={inputClass('h-10')} /></Field>
-                <Field label="Secondary"><input type="color" value={form.color_secondary || '#06b6d4'} onChange={(e) => setField('color_secondary', e.target.value)} className={inputClass('h-10')} /></Field>
-                <Field label="Accent"><input type="color" value={form.color_accent || '#f59e0b'} onChange={(e) => setField('color_accent', e.target.value)} className={inputClass('h-10')} /></Field>
-                <Field label="Danger"><input type="color" value={form.color_danger || '#ef4444'} onChange={(e) => setField('color_danger', e.target.value)} className={inputClass('h-10')} /></Field>
-                <Field label="Success"><input type="color" value={form.color_success || '#10b981'} onChange={(e) => setField('color_success', e.target.value)} className={inputClass('h-10')} /></Field>
-                <Field label="Ширина макета"><input value={form.layout_width || ''} onChange={(e) => setField('layout_width', e.target.value)} placeholder="1280px" className={inputClass()} /></Field>
+                <Field label="Primary"><input autoComplete="off" type="color" value={form.color_primary || '#3b82f6'} onChange={(e) => setField('color_primary', e.target.value)} className={inputClass('h-10')} /></Field>
+                <Field label="Secondary"><input autoComplete="off" type="color" value={form.color_secondary || '#06b6d4'} onChange={(e) => setField('color_secondary', e.target.value)} className={inputClass('h-10')} /></Field>
+                <Field label="Accent"><input autoComplete="off" type="color" value={form.color_accent || '#f59e0b'} onChange={(e) => setField('color_accent', e.target.value)} className={inputClass('h-10')} /></Field>
+                <Field label="Danger"><input autoComplete="off" type="color" value={form.color_danger || '#ef4444'} onChange={(e) => setField('color_danger', e.target.value)} className={inputClass('h-10')} /></Field>
+                <Field label="Success"><input autoComplete="off" type="color" value={form.color_success || '#10b981'} onChange={(e) => setField('color_success', e.target.value)} className={inputClass('h-10')} /></Field>
+                <Field label="Ширина макета"><input autoComplete="off" value={form.layout_width || ''} onChange={(e) => setField('layout_width', e.target.value)} placeholder="1280px" className={inputClass()} /></Field>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Шрифт" hint="Например: Inter, sans-serif"><input value={form.font_family || ''} onChange={(e) => setField('font_family', e.target.value)} className={inputClass()} /></Field>
-                <Field label="Базовый размер" hint="Например: 16px"><input value={form.font_size_base || ''} onChange={(e) => setField('font_size_base', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Шрифт" hint="Например: Inter, sans-serif"><input autoComplete="off" value={form.font_family || ''} onChange={(e) => setField('font_family', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Базовый размер" hint="Например: 16px"><input autoComplete="off" value={form.font_size_base || ''} onChange={(e) => setField('font_size_base', e.target.value)} className={inputClass()} /></Field>
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-300">
-                <input type="checkbox" checked={!!form.navbar_fixed} onChange={(e) => setField('navbar_fixed', e.target.checked)} className="accent-cyan-500" />
+                <input autoComplete="off" type="checkbox" checked={!!form.navbar_fixed} onChange={(e) => setField('navbar_fixed', e.target.checked)} className="accent-cyan-500" />
                 Закрепить navbar
               </label>
-              <Field label="Custom CSS" hint="Применяется глобально на сайте после сохранения"><textarea value={form.custom_css || ''} onChange={(e) => setField('custom_css', e.target.value)} rows={8} className={`${inputClass()} font-mono text-xs`} /></Field>
+              <Field label="Custom CSS" hint="Применяется глобально на сайте после сохранения"><textarea autoComplete="off" value={form.custom_css || ''} onChange={(e) => setField('custom_css', e.target.value)} rows={8} className={`${inputClass()} font-mono text-xs`} /></Field>
             </>
           )}
 
           {tab === 'security' && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input type="checkbox" checked={!!form.enable_registration} onChange={(e) => setField('enable_registration', e.target.checked)} className="accent-emerald-500 mt-0.5" />Разрешить регистрацию</label>
-                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input type="checkbox" checked={!!form.require_email_confirmation} onChange={(e) => setField('require_email_confirmation', e.target.checked)} className="accent-emerald-500 mt-0.5" />Требовать подтверждение email</label>
-                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input type="checkbox" checked={!!form.maintenance_mode} onChange={(e) => setField('maintenance_mode', e.target.checked)} className="accent-amber-500 mt-0.5" />Режим техработ</label>
-                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input type="checkbox" checked={!!form.allow_trial_plan} onChange={(e) => setField('allow_trial_plan', e.target.checked)} className="accent-emerald-500 mt-0.5" />Разрешить пробный тариф</label>
+                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.enable_registration} onChange={(e) => setField('enable_registration', e.target.checked)} className="accent-emerald-500 mt-0.5" />Разрешить регистрацию</label>
+                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.require_email_confirmation} onChange={(e) => setField('require_email_confirmation', e.target.checked)} className="accent-emerald-500 mt-0.5" />Требовать подтверждение email</label>
+                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.maintenance_mode} onChange={(e) => setField('maintenance_mode', e.target.checked)} className="accent-amber-500 mt-0.5" />Режим техработ</label>
+                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.allow_trial_plan} onChange={(e) => setField('allow_trial_plan', e.target.checked)} className="accent-emerald-500 mt-0.5" />Разрешить пробный тариф</label>
               </div>
-              <Field label="Сообщение при техработах"><textarea value={form.maintenance_message || ''} onChange={(e) => setField('maintenance_message', e.target.value)} rows={3} className={inputClass()} /></Field>
+              <Field label="Сообщение при техработах"><textarea autoComplete="off" value={form.maintenance_message || ''} onChange={(e) => setField('maintenance_message', e.target.value)} rows={3} className={inputClass()} /></Field>
               <label className={`flex items-start gap-3 p-3 rounded-lg border text-sm transition-colors ${form.admin_only_mode ? 'border-rose-500/60 bg-rose-500/10 text-rose-100' : 'border-slate-700 bg-slate-900/40 text-slate-200'}`}>
-                <input type="checkbox" checked={!!form.admin_only_mode} onChange={(e) => setField('admin_only_mode', e.target.checked)} className="accent-rose-500 mt-0.5" />
+                <input autoComplete="off" type="checkbox" checked={!!form.admin_only_mode} onChange={(e) => setField('admin_only_mode', e.target.checked)} className="accent-rose-500 mt-0.5" />
                 <span>
                   <span className="font-semibold">🔒 Админский режим (проект закрыт)</span>
                   <span className="block text-xs opacity-80 mt-0.5">Сайт доступен только администраторам. Вход обычных пользователей и регистрация полностью отключены на уровне сервера. Войти можно на обычной странице входа только под учётной записью администратора.</span>
@@ -385,9 +385,9 @@ export default function TemplateBuilder() {
               <div className="p-3 rounded-lg border border-slate-700 bg-slate-900/40 space-y-3">
                 <div className="text-sm font-semibold text-slate-200">✨ Анимированный фон (звёзды)</div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <label className="flex items-start gap-2 text-sm text-slate-200"><input type="checkbox" checked={!!form.enable_starfield} onChange={(e) => setField('enable_starfield', e.target.checked)} className="accent-cyan-500 mt-0.5" />Включить звёздный фон (по умолчанию для сайта)</label>
-                  <label className="flex items-start gap-2 text-sm text-slate-200"><input type="checkbox" checked={!!form.starfield_light} onChange={(e) => setField('starfield_light', e.target.checked)} className="accent-cyan-500 mt-0.5" />Показывать и в светлой теме</label>
-                  <label className="flex items-start gap-2 text-sm text-slate-200"><input type="checkbox" checked={!!form.starfield_parallax} onChange={(e) => setField('starfield_parallax', e.target.checked)} className="accent-cyan-500 mt-0.5" />Параллакс от движения мыши</label>
+                  <label className="flex items-start gap-2 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.enable_starfield} onChange={(e) => setField('enable_starfield', e.target.checked)} className="accent-cyan-500 mt-0.5" />Включить звёздный фон (по умолчанию для сайта)</label>
+                  <label className="flex items-start gap-2 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.starfield_light} onChange={(e) => setField('starfield_light', e.target.checked)} className="accent-cyan-500 mt-0.5" />Показывать и в светлой теме</label>
+                  <label className="flex items-start gap-2 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.starfield_parallax} onChange={(e) => setField('starfield_parallax', e.target.checked)} className="accent-cyan-500 mt-0.5" />Параллакс от движения мыши</label>
                   <Field label="Плотность звёзд">
                     <select value={form.starfield_density || 'medium'} onChange={(e) => setField('starfield_density', e.target.value)} className={inputClass()}>
                       <option value="low">Мало</option>
@@ -399,13 +399,13 @@ export default function TemplateBuilder() {
                 <p className="text-xs text-slate-500">Это глобальные настройки. Каждый посетитель может выключить фон у себя кнопкой ✨ в шапке (локальное переопределение).</p>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Таймаут сессии (минуты)"><input type="number" min="10" value={form.session_timeout_minutes || 1440} onChange={(e) => setField('session_timeout_minutes', e.target.value)} className={inputClass()} /></Field>
-                <Field label="Макс. попыток входа"><input type="number" min="1" value={form.max_login_attempts || 5} onChange={(e) => setField('max_login_attempts', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Таймаут сессии (минуты)"><input autoComplete="off" type="number" min="10" value={form.session_timeout_minutes || 1440} onChange={(e) => setField('session_timeout_minutes', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Макс. попыток входа"><input autoComplete="off" type="number" min="1" value={form.max_login_attempts || 5} onChange={(e) => setField('max_login_attempts', e.target.value)} className={inputClass()} /></Field>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input type="checkbox" checked={!!form.enable_payments} onChange={(e) => setField('enable_payments', e.target.checked)} className="accent-emerald-500 mt-0.5" />Включить платежи</label>
-                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input type="checkbox" checked={!!form.enable_referrals} onChange={(e) => setField('enable_referrals', e.target.checked)} className="accent-emerald-500 mt-0.5" />Включить рефералку</label>
-                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200 md:col-span-2"><input type="checkbox" checked={!!form.enable_notifications} onChange={(e) => setField('enable_notifications', e.target.checked)} className="accent-emerald-500 mt-0.5" />Включить уведомления</label>
+                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.enable_payments} onChange={(e) => setField('enable_payments', e.target.checked)} className="accent-emerald-500 mt-0.5" />Включить платежи</label>
+                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200"><input autoComplete="off" type="checkbox" checked={!!form.enable_referrals} onChange={(e) => setField('enable_referrals', e.target.checked)} className="accent-emerald-500 mt-0.5" />Включить рефералку</label>
+                <label className="flex items-start gap-2 p-3 rounded-lg border border-slate-700 bg-slate-900/40 text-sm text-slate-200 md:col-span-2"><input autoComplete="off" type="checkbox" checked={!!form.enable_notifications} onChange={(e) => setField('enable_notifications', e.target.checked)} className="accent-emerald-500 mt-0.5" />Включить уведомления</label>
               </div>
             </>
           )}
@@ -413,23 +413,23 @@ export default function TemplateBuilder() {
           {tab === 'integrations' && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Twitter URL"><input value={form.social_twitter || ''} onChange={(e) => setField('social_twitter', e.target.value)} className={inputClass()} /></Field>
-                <Field label="GitHub URL"><input value={form.social_github || ''} onChange={(e) => setField('social_github', e.target.value)} className={inputClass()} /></Field>
-                <Field label="Discord URL"><input value={form.social_discord || ''} onChange={(e) => setField('social_discord', e.target.value)} className={inputClass()} /></Field>
-                <Field label="Telegram URL"><input value={form.social_telegram || ''} onChange={(e) => setField('social_telegram', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Twitter URL"><input autoComplete="off" value={form.social_twitter || ''} onChange={(e) => setField('social_twitter', e.target.value)} className={inputClass()} /></Field>
+                <Field label="GitHub URL"><input autoComplete="off" value={form.social_github || ''} onChange={(e) => setField('social_github', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Discord URL"><input autoComplete="off" value={form.social_discord || ''} onChange={(e) => setField('social_discord', e.target.value)} className={inputClass()} /></Field>
+                <Field label="Telegram URL"><input autoComplete="off" value={form.social_telegram || ''} onChange={(e) => setField('social_telegram', e.target.value)} className={inputClass()} /></Field>
               </div>
-              <Field label="Google Analytics ID" hint="Например: G-XXXXXXXXXX"><input value={form.google_analytics_id || ''} onChange={(e) => setField('google_analytics_id', e.target.value)} className={inputClass()} /></Field>
+              <Field label="Google Analytics ID" hint="Например: G-XXXXXXXXXX"><input autoComplete="off" value={form.google_analytics_id || ''} onChange={(e) => setField('google_analytics_id', e.target.value)} className={inputClass()} /></Field>
             </>
           )}
 
           {tab === 'remnwave' && (
             <>
               <Field label="API URL" hint="Адрес панели Remnwave, например https://panel.example.com">
-                <input value={form.remnwave_api_url || ''} onChange={(e) => setField('remnwave_api_url', e.target.value)} placeholder="https://panel.example.com" className={inputClass()} />
+                <input autoComplete="off" value={form.remnwave_api_url || ''} onChange={(e) => setField('remnwave_api_url', e.target.value)} placeholder="https://panel.example.com" className={inputClass()} />
               </Field>
               <Field label="API Token">
                 <div className="relative">
-                  <input type={showSecrets.remnwave_api_token ? 'text' : 'password'} value={form.remnwave_api_token || ''} onChange={(e) => setField('remnwave_api_token', e.target.value)} className={inputClass('pr-10')} />
+                  <input autoComplete="new-password" type={showSecrets.remnwave_api_token ? 'text' : 'password'} value={form.remnwave_api_token || ''} onChange={(e) => setField('remnwave_api_token', e.target.value)} className={inputClass('pr-10')} />
                   <button type="button" onClick={() => setShowSecrets(p => ({ ...p, remnwave_api_token: !p.remnwave_api_token }))} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                     {showSecrets.remnwave_api_token ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -437,7 +437,7 @@ export default function TemplateBuilder() {
               </Field>
               <Field label="Secret Key">
                 <div className="relative">
-                  <input type={showSecrets.remnwave_secret_key ? 'text' : 'password'} value={form.remnwave_secret_key || ''} onChange={(e) => setField('remnwave_secret_key', e.target.value)} className={inputClass('pr-10')} />
+                  <input autoComplete="new-password" type={showSecrets.remnwave_secret_key ? 'text' : 'password'} value={form.remnwave_secret_key || ''} onChange={(e) => setField('remnwave_secret_key', e.target.value)} className={inputClass('pr-10')} />
                   <button type="button" onClick={() => setShowSecrets(p => ({ ...p, remnwave_secret_key: !p.remnwave_secret_key }))} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                     {showSecrets.remnwave_secret_key ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
@@ -445,7 +445,7 @@ export default function TemplateBuilder() {
               </Field>
               <Field label="Webhook Secret" hint="Ключ для проверки HMAC-подписи входящих webhook. Обязателен — без него webhook отклоняются.">
                 <div className="relative">
-                  <input type={showSecrets.webhook_secret ? 'text' : 'password'} value={form.webhook_secret || ''} onChange={(e) => setField('webhook_secret', e.target.value)} className={inputClass('pr-10')} />
+                  <input autoComplete="new-password" type={showSecrets.webhook_secret ? 'text' : 'password'} value={form.webhook_secret || ''} onChange={(e) => setField('webhook_secret', e.target.value)} className={inputClass('pr-10')} />
                   <button type="button" onClick={() => setShowSecrets(p => ({ ...p, webhook_secret: !p.webhook_secret }))} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
                     {showSecrets.webhook_secret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>

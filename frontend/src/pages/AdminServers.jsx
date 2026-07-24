@@ -15,6 +15,7 @@ import {
 import RwUsersPanel from '../components/RwUsersPanel'
 import AddNodeModal from '../components/AddNodeModal'
 import ConfirmByTypeModal from '../components/ConfirmByTypeModal'
+import VersionBadge from '../components/VersionBadge'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -140,6 +141,7 @@ export default function AdminServers() {
   const [systemStats, setSystemStats] = useState(null)
   const [totalOnline, setTotalOnline] = useState(0)
   const [serverUsers, setServerUsers] = useState({})
+  const [latestVersions, setLatestVersions] = useState(null) // { node, xray } — актуальные из GitHub
 
   // UI
   const [loading, setLoading] = useState(true)
@@ -347,8 +349,15 @@ export default function AdminServers() {
   }
 
   // ─── Effects ─────────────────────────────────────────────────────────────
+  async function fetchLatestVersions() {
+    try {
+      const res = await fetch(`${API_URL}/api/admin/servers/latest-versions`, { headers: authHeaders })
+      if (res.ok) setLatestVersions(await res.json())
+    } catch { /* не критично */ }
+  }
+
   useEffect(() => {
-    fetchServers(); fetchSystemStats(); fetchLocalSquads()
+    fetchServers(); fetchSystemStats(); fetchLocalSquads(); fetchLatestVersions()
   }, [])
 
   useEffect(() => {
@@ -400,7 +409,7 @@ export default function AdminServers() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer px-3 py-1.5 rounded-lg bg-slate-800/40 border border-slate-700/40">
-            <input type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} className="rounded" />
+            <input autoComplete="off" type="checkbox" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)} className="rounded" />
             Авто 30с
           </label>
           <button onClick={() => { fetchServers(); fetchSystemStats() }}
@@ -534,7 +543,7 @@ export default function AdminServers() {
           <div className="flex flex-col lg:flex-row gap-2">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-              <input
+              <input autoComplete="off"
                 type="text"
                 placeholder="Поиск по имени, адресу, стране…"
                 value={search}
@@ -609,6 +618,7 @@ export default function AdminServers() {
                   users={serverUsers[server.uuid]}
                   isLoadingUsers={loadingUsers[server.uuid]}
                   actionLoading={actionLoading}
+                  latestVersions={latestVersions}
                 />
               ))}
             </div>
@@ -744,7 +754,7 @@ function NodeCard({
   editingName, onStartEditName, onChangeName, onCancelEditName, onSaveName,
   onToggleNode, onRestartNode, onResetTraffic, onDelete, onToggleHost,
   onToggleUsers, users, isLoadingUsers,
-  actionLoading,
+  actionLoading, latestVersions,
 }) {
   const status = server.isDisabled ? 'disabled' : server.isConnected ? 'online' : 'offline'
   const flag = COUNTRY_FLAGS[server.countryCode?.toUpperCase()] || '🌍'
@@ -796,7 +806,7 @@ function NodeCard({
           <div className="flex flex-wrap items-center gap-2">
             {editingName !== null ? (
               <>
-                <input
+                <input autoComplete="off"
                   value={editingName}
                   onChange={e => onChangeName(e.target.value)}
                   className="flex-1 min-w-[200px] px-3 py-1.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-violet-500"
@@ -859,7 +869,8 @@ function NodeCard({
               <InfoCard label="CPU"       value={server.cpuModel || '—'} />
               <InfoCard label="CPU ядер"  value={server.cpuCount || '—'} />
               <InfoCard label="RAM"       value={server.totalRam || '—'} />
-              <InfoCard label="Xray"      value={server.xrayVersion || '—'} />
+              <InfoCard label="Xray"      value={<VersionBadge current={server.xrayVersion} latest={latestVersions?.xray} />} />
+              <InfoCard label="Node"      value={<VersionBadge current={server.nodeVersion} latest={latestVersions?.node} />} />
             </div>
           </div>
 
@@ -1001,7 +1012,7 @@ function SquadCard({ squad, isEditing, editValue, onStartEdit, onChangeEdit, onC
       <div className="flex items-start justify-between gap-3 mb-3">
         {isEditing ? (
           <div className="flex items-center gap-2 flex-1">
-            <input
+            <input autoComplete="off"
               value={editValue}
               onChange={e => onChangeEdit(e.target.value)}
               className="flex-1 px-3 py-1.5 bg-slate-800 border border-slate-600 rounded-lg text-sm text-white focus:outline-none focus:border-violet-500"

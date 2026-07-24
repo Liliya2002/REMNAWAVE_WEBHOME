@@ -162,7 +162,7 @@ export default function BalanceSection() {
                   </div>
                   <div>
                     <label className="text-xs text-sky-700 dark:text-slate-400 dark:text-slate-400 block mb-1">Сумма</label>
-                    <input
+                    <input autoComplete="off"
                       type="number"
                       min="10"
                       step="10"

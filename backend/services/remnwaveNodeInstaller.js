@@ -132,8 +132,15 @@ function openConnection(sshConfig, { readyTimeout = 15000 } = {}) {
       settled = true; clearTimeout(timer)
       resolve(conn)
     })
-    conn.once('error', (err) => {
-      if (settled) return
+    // ВАЖНО: постоянный (on, не once) обработчик ошибок. ssh2 может эмитить
+    // 'error' повторно и уже ПОСЛЕ settle (напр. при обрыве во время exec).
+    // Без слушателя такой 'error' = unhandled → падение всего процесса.
+    conn.on('error', (err) => {
+      if (settled) {
+        console.warn('[NodeInstaller] SSH error after settle:', err.message)
+        try { conn.end() } catch {}
+        return
+      }
       settled = true; clearTimeout(timer)
       reject(err)
     })
@@ -394,8 +401,119 @@ async function runInstall(job, { vpsId, appPort, sslCert, nodeUuid }) {
   }
 }
 
+// ─── Обновление ноды ──────────────────────────────────────────────────────────
+
+/**
+ * Скрипт обновления. Автоопределяет каталог (/opt/remnanode или /opt/remnawave-node),
+ * делает pull → down → up -d, показывает статус и логи. Логи следим ограниченно
+ * (timeout), чтобы задача завершалась, а не висела на `logs -f`.
+ */
+function buildUpdateScript() {
+  return `#!/bin/bash
+set -uo pipefail
+log() { printf '[STEP] %s\\n' "$1"; }
+err() { printf '[ERR ] %s\\n' "$1" 1>&2; }
+
+DIR=""
+for d in /opt/remnanode /opt/remnawave-node /opt/remnawave; do
+  if [ -f "$d/docker-compose.yml" ]; then DIR="$d"; break; fi
+done
+if [ -z "$DIR" ]; then err "docker-compose.yml не найден (/opt/remnanode, /opt/remnawave-node, /opt/remnawave)"; exit 1; fi
+log "Каталог ноды: $DIR"
+cd "$DIR"
+
+log "Текущий образ:"
+docker compose images 2>/dev/null || true
+
+log "Загружаю свежий образ (docker compose pull)"
+docker compose pull
+
+log "Останавливаю (docker compose down)"
+docker compose down
+
+log "Запускаю (docker compose up -d)"
+docker compose up -d
+
+sleep 4
+STATE=$(docker inspect -f '{{.State.Status}}' remnanode 2>/dev/null || docker inspect -f '{{.State.Status}}' remnawave-node 2>/dev/null || echo 'unknown')
+log "Статус контейнера: $STATE"
+
+log "Логи (следим ~20с):"
+timeout 20 docker compose logs -f --tail=40 --no-color 2>&1 || true
+
+if [ "$STATE" = "running" ]; then
+  log "OK: нода обновлена и запущена"
+  exit 0
+else
+  err "Контейнер не в состоянии running (state=$STATE)"
+  docker compose logs --tail=30 --no-color 1>&2 || true
+  exit 1
+fi
+`
+}
+
+async function runUpdate(job, { vpsId }) {
+  let sshConfig
+  try {
+    pushLog(job, `Загружаю конфиг VPS #${vpsId}`)
+    sshConfig = await loadVpsSshConfig(vpsId)
+    pushLog(job, `Цель: ${sshConfig.username}@${sshConfig.host}:${sshConfig.port}`)
+  } catch (err) {
+    return finishJob(job, 'failed', err)
+  }
+
+  let conn
+  try {
+    pushLog(job, 'Подключаюсь по SSH...')
+    conn = await openConnection(sshConfig)
+    pushLog(job, 'SSH-соединение установлено', 'success')
+  } catch (err) {
+    pushLog(job, `Не удалось подключиться: ${err.message}`, 'error')
+    return finishJob(job, 'failed', err)
+  }
+
+  try {
+    const script = buildUpdateScript()
+    const b64 = Buffer.from(script, 'utf8').toString('base64')
+    const wrapper = `printf '%s' '${b64}' | base64 -d | bash`
+    const result = await execStreaming(conn, wrapper, {
+      timeoutMs: 600_000,
+      onLine: (level, line) => {
+        if (line.startsWith('[STEP]')) pushLog(job, line.slice(7).trim(), 'step')
+        else if (line.startsWith('[ERR ]')) pushLog(job, line.slice(7).trim(), 'error')
+        else pushLog(job, line, level === 'warn' ? 'warn' : 'info')
+      },
+    })
+    if (result.code !== 0) {
+      pushLog(job, `Скрипт завершился с кодом ${result.code}`, 'error')
+      return finishJob(job, 'failed', new Error(`Update script exited with code ${result.code}`))
+    }
+    pushLog(job, '✅ Нода обновлена', 'success')
+    finishJob(job, 'success')
+  } catch (err) {
+    pushLog(job, `Ошибка выполнения: ${err.message}`, 'error')
+    finishJob(job, 'failed', err)
+  } finally {
+    try { conn.end() } catch {}
+  }
+}
+
+/**
+ * Запустить обновление ноды в фоне. Возвращает job (jobId для SSE-стрима).
+ */
+async function startUpdateJob({ vpsId }) {
+  if (!vpsId) throw new Error('vpsId обязателен')
+  const job = createJob({ vpsId, nodeUuid: null })
+  runUpdate(job, { vpsId }).catch(err => {
+    pushLog(job, `Обновление прервано: ${err.message}`, 'error')
+    finishJob(job, 'failed', err)
+  })
+  return job
+}
+
 module.exports = {
   startInstallJob,
+  startUpdateJob,
   getJob,
   // Низкоуровневые — на случай если кому-то нужны:
   loadVpsSshConfig,

@@ -659,7 +659,7 @@ function Step2({ profiles, profilesError, selectedProfileUuid, setSelectedProfil
                       : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
                   }`}
                 >
-                  <input type="checkbox" checked={selectedInbounds.includes(inb.uuid)}
+                  <input autoComplete="off" type="checkbox" checked={selectedInbounds.includes(inb.uuid)}
                     onChange={() => toggleInbound(inb.uuid)}
                     className="w-4 h-4 accent-cyan-500" />
                   <div className="flex-1 min-w-0">
@@ -709,7 +709,7 @@ function Step3(p) {
       )}
 
       <FieldRow label="Имя ноды" error={errors.name} hint="3-30 символов">
-        <input type="text" value={name} onChange={e => setName(e.target.value)}
+        <input autoComplete="off" type="text" value={name} onChange={e => setName(e.target.value)}
           placeholder="Hetzner-de1" maxLength={30}
           className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-violet-500/60 font-mono" />
       </FieldRow>
@@ -717,14 +717,14 @@ function Step3(p) {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="sm:col-span-2">
           <FieldRow label="Адрес" error={errors.address} hint={isVps ? 'из VPS, read-only' : 'IP или домен'}>
-            <input type="text" value={address} onChange={e => setAddress(e.target.value)}
+            <input autoComplete="off" type="text" value={address} onChange={e => setAddress(e.target.value)}
               placeholder="95.217.1.2 или node.example.com"
               disabled={isVps}
               className={`w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-violet-500/60 font-mono ${isVps ? 'opacity-60 cursor-not-allowed' : ''}`} />
           </FieldRow>
         </div>
         <FieldRow label="Порт" error={errors.port} hint="node-агент">
-          <input type="number" value={port} onChange={e => setPort(e.target.value)}
+          <input autoComplete="off" type="number" value={port} onChange={e => setPort(e.target.value)}
             placeholder="2222" min={1} max={65535}
             className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-violet-500/60 font-mono" />
         </FieldRow>
@@ -759,14 +759,14 @@ function Step3(p) {
 
             <FieldRow label="Множитель потребления" error={errors.consumption}
               hint="GB трафика списывается за каждый реальный GB. Default 1.0">
-              <input type="number" value={consumptionMultiplier} onChange={e => setConsumptionMultiplier(e.target.value)}
+              <input autoComplete="off" type="number" value={consumptionMultiplier} onChange={e => setConsumptionMultiplier(e.target.value)}
                 step="0.1" min={0} max={100}
                 className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-violet-500/60 font-mono" />
             </FieldRow>
 
             <div className="border-t border-slate-800 pt-3">
               <label className="flex items-start gap-2 cursor-pointer">
-                <input type="checkbox" checked={trackTraffic} onChange={e => setTrackTraffic(e.target.checked)}
+                <input autoComplete="off" type="checkbox" checked={trackTraffic} onChange={e => setTrackTraffic(e.target.checked)}
                   className="w-4 h-4 mt-0.5 accent-violet-500" />
                 <div>
                   <div className="text-sm font-semibold text-slate-200">Отслеживать трафик ноды</div>
@@ -776,17 +776,17 @@ function Step3(p) {
               {trackTraffic && (
                 <div className="mt-3 grid grid-cols-3 gap-3 pl-6">
                   <FieldRow label="Лимит (GB)" error={errors.trafficLimit}>
-                    <input type="number" value={trafficLimitGb} onChange={e => setTrafficLimitGb(e.target.value)}
+                    <input autoComplete="off" type="number" value={trafficLimitGb} onChange={e => setTrafficLimitGb(e.target.value)}
                       min={1} placeholder="500"
                       className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-violet-500/60 font-mono" />
                   </FieldRow>
                   <FieldRow label="День сброса" error={errors.trafficResetDay} hint="1-31">
-                    <input type="number" value={trafficResetDay} onChange={e => setTrafficResetDay(e.target.value)}
+                    <input autoComplete="off" type="number" value={trafficResetDay} onChange={e => setTrafficResetDay(e.target.value)}
                       min={1} max={31}
                       className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-violet-500/60 font-mono" />
                   </FieldRow>
                   <FieldRow label="Уведомить %" error={errors.notifyPercent} hint="0-100">
-                    <input type="number" value={notifyPercent} onChange={e => setNotifyPercent(e.target.value)}
+                    <input autoComplete="off" type="number" value={notifyPercent} onChange={e => setNotifyPercent(e.target.value)}
                       min={0} max={100}
                       className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-sm text-slate-100 focus:outline-none focus:border-violet-500/60 font-mono" />
                   </FieldRow>

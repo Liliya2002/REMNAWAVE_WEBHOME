@@ -142,7 +142,7 @@ export default function AdminUsers() {
 
         {/* Фильтры */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <input
+          <input autoComplete="off"
             type="text"
             placeholder="Поиск по логину или email..."
             value={search}
@@ -202,7 +202,7 @@ export default function AdminUsers() {
                     <td className="py-3 px-4 text-slate-300" onClick={e => e.stopPropagation()}>
                       {editingId === user.id ? (
                         <div className="flex gap-2">
-                          <input
+                          <input autoComplete="off"
                             type="email"
                             value={editEmail}
                             onChange={(e) => setEditEmail(e.target.value)}

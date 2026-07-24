@@ -132,7 +132,7 @@ export default function TagInput({
           </span>
         ))}
 
-        <input
+        <input autoComplete="off"
           ref={inputRef}
           type="text"
           value={draft}

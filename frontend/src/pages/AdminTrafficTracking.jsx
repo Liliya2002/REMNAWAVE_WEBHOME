@@ -279,7 +279,7 @@ export default function AdminTrafficTracking() {
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-          <input
+          <input autoComplete="off"
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -335,7 +335,7 @@ export default function AdminTrafficTracking() {
                         <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-all ${checked ? 'bg-emerald-500 border-emerald-500' : 'bg-slate-800/50 border-slate-600'}`}>
                           {checked && <Check className="w-3 h-3 text-white" />}
                         </span>
-                        <input
+                        <input autoComplete="off"
                           type="checkbox"
                           checked={checked}
                           onChange={() => toggleNode(n.uuid)}

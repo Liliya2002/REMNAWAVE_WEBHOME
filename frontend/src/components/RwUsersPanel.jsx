@@ -250,7 +250,7 @@ export default function RwUsersPanel() {
 
         <div className="relative flex-1 min-w-[200px] max-w-md">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
-          <input
+          <input autoComplete="off"
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
             placeholder="Поиск по username..."
@@ -656,7 +656,7 @@ function UserEditorModal({ user, squads, onClose, onSaved }) {
           {/* Identity */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Username" required Icon={UserIcon}>
-              <input value={form.username} disabled={!isNew} onChange={e => setField('username', e.target.value)}
+              <input autoComplete="off" value={form.username} disabled={!isNew} onChange={e => setField('username', e.target.value)}
                 placeholder="user_alice"
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20 disabled:opacity-60" />
             </Field>
@@ -679,12 +679,12 @@ function UserEditorModal({ user, squads, onClose, onSaved }) {
           {/* Expire + traffic */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Истекает" Icon={Calendar}>
-              <input type="datetime-local" value={form.expireAt} onChange={e => setField('expireAt', e.target.value)}
+              <input autoComplete="off" type="datetime-local" value={form.expireAt} onChange={e => setField('expireAt', e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
             </Field>
             <Field label="Лимит трафика" Icon={Database} hint="0 = без лимита">
               <div className="flex gap-2">
-                <input type="number" min="0" value={trafficValue} onChange={e => setTraffic(e.target.value)}
+                <input autoComplete="off" type="number" min="0" value={trafficValue} onChange={e => setTraffic(e.target.value)}
                   className="flex-1 px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
                 <select value={trafficUnit} onChange={e => setTrafficUnit(e.target.value)}
                   className="px-3 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500/60">
@@ -704,7 +704,7 @@ function UserEditorModal({ user, squads, onClose, onSaved }) {
               </select>
             </Field>
             <Field label="Лимит устройств (HWID)" Icon={Smartphone} hint="0 = без ограничений">
-              <input type="number" min="0" value={form.hwidDeviceLimit} onChange={e => setField('hwidDeviceLimit', Number(e.target.value) || 0)}
+              <input autoComplete="off" type="number" min="0" value={form.hwidDeviceLimit} onChange={e => setField('hwidDeviceLimit', Number(e.target.value) || 0)}
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
             </Field>
           </div>
@@ -721,7 +721,7 @@ function UserEditorModal({ user, squads, onClose, onSaved }) {
                     <label key={s.uuid} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition border ${
                       sel ? 'bg-violet-500/15 border-violet-500/40' : 'bg-slate-800/40 border-slate-700/40 hover:border-slate-600'
                     }`}>
-                      <input type="checkbox" checked={sel} onChange={() => toggleSquad(s.uuid)} className="accent-violet-500" />
+                      <input autoComplete="off" type="checkbox" checked={sel} onChange={() => toggleSquad(s.uuid)} className="accent-violet-500" />
                       <span className={`text-xs font-medium truncate ${sel ? 'text-violet-200' : 'text-slate-300'}`}>
                         {s.display_name || s.tag || s.name || s.uuid?.slice(0, 8)}
                       </span>
@@ -735,22 +735,22 @@ function UserEditorModal({ user, squads, onClose, onSaved }) {
           {/* Contacts */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Email" Icon={Mail}>
-              <input type="email" value={form.email} onChange={e => setField('email', e.target.value)} placeholder="user@example.com"
+              <input autoComplete="off" type="email" value={form.email} onChange={e => setField('email', e.target.value)} placeholder="user@example.com"
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
             </Field>
             <Field label="Telegram ID" Icon={Send}>
-              <input type="number" value={form.telegramId} onChange={e => setField('telegramId', e.target.value)} placeholder="123456789"
+              <input autoComplete="off" type="number" value={form.telegramId} onChange={e => setField('telegramId', e.target.value)} placeholder="123456789"
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
             </Field>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Тег" Icon={Tag}>
-              <input value={form.tag} onChange={e => setField('tag', e.target.value)} placeholder="vip"
+              <input autoComplete="off" value={form.tag} onChange={e => setField('tag', e.target.value)} placeholder="vip"
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
             </Field>
             <Field label="Описание" Icon={Hash}>
-              <input value={form.description} onChange={e => setField('description', e.target.value)} placeholder="Заметка для админа"
+              <input autoComplete="off" value={form.description} onChange={e => setField('description', e.target.value)} placeholder="Заметка для админа"
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-blue-500/60 focus:ring-2 focus:ring-blue-500/20" />
             </Field>
           </div>

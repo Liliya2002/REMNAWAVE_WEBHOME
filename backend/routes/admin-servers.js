@@ -49,7 +49,9 @@ router.get('/', async (req, res) => {
         trafficLimitBytes: n.trafficLimitBytes || 0,
         trafficResetDay: n.trafficResetDay || null,
         xrayUptime: parseInt(n.xrayUptime || 0) * 1000,
-        xrayVersion: n.xrayVersion || '',
+        // Версии приходят вложенным объектом: versions: { xray, node }
+        xrayVersion: n.versions?.xray || n.xrayVersion || '',
+        nodeVersion: n.versions?.node || '',
         cpuCount: n.cpuCount || 0,
         cpuModel: n.cpuModel || '',
         totalRam: n.totalRam || 0,
@@ -102,6 +104,22 @@ router.get('/system-stats', async (req, res) => {
 //
 // ВАЖНО: эти маршруты должны идти ДО `GET /:uuid`, иначе Express
 // интерпретирует `config-profiles` / `infra-providers` как UUID параметры.
+
+/**
+ * GET /api/admin/servers/latest-versions
+ * Актуальные версии RemnaWave Node и Xray из GitHub Releases (кэш 6ч).
+ * Фронт сравнивает с установленными версиями нод.
+ */
+router.get('/latest-versions', async (req, res) => {
+  try {
+    const versionCheck = require('../services/versionCheck')
+    const data = await versionCheck.getLatestVersions()
+    res.json(data)
+  } catch (err) {
+    console.error('[AdminServers] latest-versions error:', err.message)
+    res.status(502).json({ error: 'Не удалось получить актуальные версии', node: null, xray: null })
+  }
+})
 
 router.get('/config-profiles', async (req, res) => {
   try {

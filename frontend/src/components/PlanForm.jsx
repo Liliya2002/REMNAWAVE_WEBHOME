@@ -196,18 +196,18 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
             <Section icon={Tag} title="Основное">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Field label="Название тарифа">
-                  <input value={formData.name} onChange={e => update('name', e.target.value)} required maxLength={100} className={inputClass} placeholder="Базовый" />
+                  <input autoComplete="off" value={formData.name} onChange={e => update('name', e.target.value)} required maxLength={100} className={inputClass} placeholder="Базовый" />
                 </Field>
                 <Field label="Подметка (для UI)">
-                  <input value={formData.tier_label} onChange={e => update('tier_label', e.target.value)} maxLength={64} className={inputClass} placeholder="Basic / Pro / Premium" />
+                  <input autoComplete="off" value={formData.tier_label} onChange={e => update('tier_label', e.target.value)} maxLength={64} className={inputClass} placeholder="Basic / Pro / Premium" />
                 </Field>
               </div>
               <Field label="Описание">
-                <textarea value={formData.description} onChange={e => update('description', e.target.value)} rows={2} maxLength={500} className={inputClass + ' resize-none'} placeholder="Краткое описание тарифа" />
+                <textarea autoComplete="off" value={formData.description} onChange={e => update('description', e.target.value)} rows={2} maxLength={500} className={inputClass + ' resize-none'} placeholder="Краткое описание тарифа" />
               </Field>
               <div className="flex flex-wrap items-center gap-3">
                 <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                  <input type="checkbox" checked={formData.is_trial} onChange={e => update('is_trial', e.target.checked)} className="accent-cyan-500" />
+                  <input autoComplete="off" type="checkbox" checked={formData.is_trial} onChange={e => update('is_trial', e.target.checked)} className="accent-cyan-500" />
                   <Ticket className="w-4 h-4 text-cyan-400" /> Пробный тариф
                 </label>
               </div>
@@ -240,10 +240,10 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <Field label="Tier (число)" hint="Ручное значение, если пресет не подходит">
-                  <input type="number" min="0" max="99" value={formData.tier} onChange={e => update('tier', e.target.value)} className={inputClass} />
+                  <input autoComplete="off" type="number" min="0" max="99" value={formData.tier} onChange={e => update('tier', e.target.value)} className={inputClass} />
                 </Field>
                 <Field label="Sort order" hint="Порядок внутри уровня">
-                  <input type="number" value={formData.sort_order} onChange={e => update('sort_order', e.target.value)} className={inputClass} />
+                  <input autoComplete="off" type="number" value={formData.sort_order} onChange={e => update('sort_order', e.target.value)} className={inputClass} />
                 </Field>
                 <Field label="Цвет" hint="Для бейджей и подсветки">
                   <select value={formData.color} onChange={e => update('color', e.target.value)} className={inputClass}>
@@ -257,13 +257,13 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
             <Section icon={DollarSign} title="Цены">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <Field label="1 месяц (₽)">
-                  <input type="number" min="0" step="0.01" value={formData.price_monthly} onChange={e => update('price_monthly', e.target.value)} className={inputClass} placeholder="299" disabled={formData.is_trial} />
+                  <input autoComplete="off" type="number" min="0" step="0.01" value={formData.price_monthly} onChange={e => update('price_monthly', e.target.value)} className={inputClass} placeholder="299" disabled={formData.is_trial} />
                 </Field>
                 <Field label="3 месяца (₽)" hint={computedDiscounts.qDiscount > 0 ? `Скидка ${computedDiscounts.qDiscount}%` : 'Введите для квартала'}>
-                  <input type="number" min="0" step="0.01" value={formData.price_quarterly} onChange={e => update('price_quarterly', e.target.value)} className={inputClass} placeholder="800" disabled={formData.is_trial} />
+                  <input autoComplete="off" type="number" min="0" step="0.01" value={formData.price_quarterly} onChange={e => update('price_quarterly', e.target.value)} className={inputClass} placeholder="800" disabled={formData.is_trial} />
                 </Field>
                 <Field label="1 год (₽)" hint={computedDiscounts.yDiscount > 0 ? `Скидка ${computedDiscounts.yDiscount}%` : 'Введите для года'}>
-                  <input type="number" min="0" step="0.01" value={formData.price_yearly} onChange={e => update('price_yearly', e.target.value)} className={inputClass} placeholder="2999" disabled={formData.is_trial} />
+                  <input autoComplete="off" type="number" min="0" step="0.01" value={formData.price_yearly} onChange={e => update('price_yearly', e.target.value)} className={inputClass} placeholder="2999" disabled={formData.is_trial} />
                 </Field>
               </div>
             </Section>
@@ -272,10 +272,10 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
             <Section icon={Database} title="Лимиты">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Трафик (ГБ)">
-                  <input type="number" min="0" value={formData.traffic_gb} onChange={e => update('traffic_gb', e.target.value)} required className={inputClass} placeholder="100" />
+                  <input autoComplete="off" type="number" min="0" value={formData.traffic_gb} onChange={e => update('traffic_gb', e.target.value)} required className={inputClass} placeholder="100" />
                 </Field>
                 <Field label="Лимит устройств (HWID)" hint="Сколько устройств одновременно. Пусто = без лимита">
-                  <input
+                  <input autoComplete="off"
                     type="number"
                     min="0"
                     value={formData.hwid_device_limit}
@@ -340,7 +340,7 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <div>
                             <label className="block text-[10px] text-slate-400 mb-1">Лимит ГБ</label>
-                            <input
+                            <input autoComplete="off"
                               type="number" min="0" step="0.01"
                               value={sl.limit_gb}
                               onChange={e => updateSquadLimit(uuid, 'limit_gb', e.target.value === '' ? 0 : Number(e.target.value))}
@@ -350,7 +350,7 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
                           </div>
                           <div>
                             <label className="block text-[10px] text-slate-400 mb-1">Цена ₽/ГБ override</label>
-                            <input
+                            <input autoComplete="off"
                               type="number" min="0" step="0.01"
                               value={sl.topup_price_per_gb}
                               onChange={e => updateSquadLimit(uuid, 'topup_price_per_gb', e.target.value)}
@@ -360,7 +360,7 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
                           </div>
                           <div className="flex items-end">
                             <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pb-2">
-                              <input
+                              <input autoComplete="off"
                                 type="checkbox"
                                 checked={sl.topup_enabled !== false}
                                 onChange={e => updateSquadLimit(uuid, 'topup_enabled', e.target.checked)}
@@ -380,7 +380,7 @@ export default function PlanForm({ plan, squads, onClose, onSave }) {
             {/* Group: Возможности */}
             <Section icon={Sparkles} title={`Возможности (${formData.features.length})`}>
               <div className="flex gap-2">
-                <input
+                <input autoComplete="off"
                   type="text"
                   value={newFeature}
                   onChange={e => setNewFeature(e.target.value)}

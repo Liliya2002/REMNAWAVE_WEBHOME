@@ -219,10 +219,10 @@ function SettingsTab() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Порог предупреждения (%)" hint="При достижении этого процента отправляется уведомление">
-            <input type="number" min="1" max="99" value={settings.warn_threshold_percent} onChange={e => set('warn_threshold_percent', Number(e.target.value))} className={inputClass} />
+            <input autoComplete="off" type="number" min="1" max="99" value={settings.warn_threshold_percent} onChange={e => set('warn_threshold_percent', Number(e.target.value))} className={inputClass} />
           </Field>
           <Field label="Интервал проверки (минут)" hint="Cron подхватит новое значение в течение 5 минут">
-            <input type="number" min="1" max="1440" value={settings.cron_interval_minutes} onChange={e => set('cron_interval_minutes', Number(e.target.value))} className={inputClass} />
+            <input autoComplete="off" type="number" min="1" max="1440" value={settings.cron_interval_minutes} onChange={e => set('cron_interval_minutes', Number(e.target.value))} className={inputClass} />
           </Field>
         </div>
 
@@ -246,7 +246,7 @@ function SettingsTab() {
               label="Длительность бана (часов)"
               hint="0 = пока активна блокировка юзера (снимается при auto/manual unblock)"
             >
-              <input
+              <input autoComplete="off"
                 type="number"
                 min="0"
                 value={settings.ip_ban_duration_hours ?? 0}
@@ -438,7 +438,7 @@ function NodeLimitRow({ node, current, onSaved }) {
       {editing && (
         <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
           <Field label="Лимит (ГБ)" hint="0 = без лимита. Можно дробное (0.5, 1.25)">
-            <input type="number" min="0" step="0.01" value={form.limit_gb} onChange={e => setForm(p => ({ ...p, limit_gb: Number(e.target.value) }))} className={inputClass} />
+            <input autoComplete="off" type="number" min="0" step="0.01" value={form.limit_gb} onChange={e => setForm(p => ({ ...p, limit_gb: Number(e.target.value) }))} className={inputClass} />
           </Field>
           <Field label="Период">
             <select value={form.period} onChange={e => setForm(p => ({ ...p, period: e.target.value }))} className={selectClass}>
@@ -583,7 +583,7 @@ function PlanLimitRow({ plan, current, onSaved }) {
       {editing && (
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
           <Field label="Лимит per-node (ГБ)" hint="0 = без лимита. Можно дробное (0.5, 1.25)">
-            <input type="number" min="0" step="0.01" value={form.per_node_limit_gb} onChange={e => setForm(p => ({ ...p, per_node_limit_gb: Number(e.target.value) }))} className={inputClass} />
+            <input autoComplete="off" type="number" min="0" step="0.01" value={form.per_node_limit_gb} onChange={e => setForm(p => ({ ...p, per_node_limit_gb: Number(e.target.value) }))} className={inputClass} />
           </Field>
           <Field label="Период">
             <select value={form.period} onChange={e => setForm(p => ({ ...p, period: e.target.value }))} className={selectClass}>
@@ -870,7 +870,7 @@ function ManualBlockModal({ onClose, onSuccess }) {
               <div className="space-y-2">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
+                  <input autoComplete="off"
                     autoFocus
                     type="text"
                     value={userQuery}
@@ -920,7 +920,7 @@ function ManualBlockModal({ onClose, onSuccess }) {
           {selectedUser && selectedNode && (
             <div>
               <label className="block text-xs text-slate-400 mb-1.5">3. Причина (опционально)</label>
-              <textarea
+              <textarea autoComplete="off"
                 value={reason}
                 onChange={e => setReason(e.target.value)}
                 rows={2}
@@ -1046,7 +1046,7 @@ function P2pSection({ settings, set }) {
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Field label="Интервал сканирования (мин)">
-          <input
+          <input autoComplete="off"
             type="number" min="1" max="1440"
             value={settings.p2p_scan_interval_minutes ?? 5}
             onChange={e => set('p2p_scan_interval_minutes', Number(e.target.value))}
@@ -1055,7 +1055,7 @@ function P2pSection({ settings, set }) {
           />
         </Field>
         <Field label="Порог попыток до санкции">
-          <input
+          <input autoComplete="off"
             type="number" min="1"
             value={settings.torrent_attempts_threshold ?? 5}
             onChange={e => set('torrent_attempts_threshold', Number(e.target.value))}
@@ -1125,7 +1125,7 @@ function SquadQuotasSection({ settings, set }) {
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Field label="Интервал проверки (мин)">
-          <input
+          <input autoComplete="off"
             type="number" min="1" max="1440"
             value={settings.squad_quota_interval_minutes ?? 10}
             onChange={e => set('squad_quota_interval_minutes', Number(e.target.value))}
@@ -1134,7 +1134,7 @@ function SquadQuotasSection({ settings, set }) {
           />
         </Field>
         <Field label="Порог предупреждения (%)">
-          <input
+          <input autoComplete="off"
             type="number" min="1" max="99"
             value={settings.squad_quota_warn_percent ?? 80}
             onChange={e => set('squad_quota_warn_percent', Number(e.target.value))}
@@ -1156,7 +1156,7 @@ function SquadQuotasSection({ settings, set }) {
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
         <Field label="Цена ₽/ГБ доп. трафика (default)" hint="Можно переопределить per-squad-per-plan">
-          <input
+          <input autoComplete="off"
             type="number" min="0" step="0.01"
             value={settings.squad_topup_default_price ?? 50}
             onChange={e => set('squad_topup_default_price', Number(e.target.value))}
@@ -1238,7 +1238,7 @@ function BannedIpsTab() {
         </select>
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <input
+          <input autoComplete="off"
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -1374,7 +1374,7 @@ function BanIpModal({ editing, onClose, onSuccess }) {
 
         <div className="p-5 space-y-4">
           <Field label="IP-адрес">
-            <input
+            <input autoComplete="off"
               type="text"
               value={ip}
               onChange={e => setIp(e.target.value)}
@@ -1386,7 +1386,7 @@ function BanIpModal({ editing, onClose, onSuccess }) {
           </Field>
 
           <Field label="Причина (опционально)">
-            <input
+            <input autoComplete="off"
               type="text"
               value={reason}
               onChange={e => setReason(e.target.value)}
@@ -1396,7 +1396,7 @@ function BanIpModal({ editing, onClose, onSuccess }) {
           </Field>
 
           <Field label="Длительность (часов)" hint="Пусто = бессрочный, 0 = бессрочный, число = N часов">
-            <input
+            <input autoComplete="off"
               type="number"
               min="0"
               value={duration}
@@ -1407,7 +1407,7 @@ function BanIpModal({ editing, onClose, onSuccess }) {
           </Field>
 
           <Field label="Заметки (видны только админам)">
-            <textarea
+            <textarea autoComplete="off"
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={2}

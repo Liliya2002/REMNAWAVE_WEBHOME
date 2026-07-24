@@ -139,7 +139,7 @@ export default function EmailConfirmBanner() {
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               {cooldown > 0 ? `Повторить (${cooldown}с)` : 'Отправить код на email'}
             </button>
-            <input
+            <input autoComplete="off"
               type="text"
               inputMode="numeric"
               pattern="[0-9]{6}"

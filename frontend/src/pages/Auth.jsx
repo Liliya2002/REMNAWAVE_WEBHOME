@@ -34,9 +34,9 @@ export default function Auth(){
       <h2 className="text-2xl font-bold">Вход / Регистрация</h2>
       <form className="mt-4 space-y-4">
         {error && <div className="text-red-400">{error}</div>}
-        <input value={loginField} onChange={e=>setLoginField(e.target.value)} className="w-full p-3 bg-slate-800 rounded" placeholder="Логин" />
-        <input value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-3 bg-slate-800 rounded" placeholder="Email" />
-        <input value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-3 bg-slate-800 rounded" placeholder="Пароль" type="password" />
+        <input autoComplete="off" value={loginField} onChange={e=>setLoginField(e.target.value)} className="w-full p-3 bg-slate-800 rounded" placeholder="Логин" />
+        <input autoComplete="off" value={email} onChange={e=>setEmail(e.target.value)} className="w-full p-3 bg-slate-800 rounded" placeholder="Email" />
+        <input autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full p-3 bg-slate-800 rounded" placeholder="Пароль" type="password" />
         <div className="flex gap-2">
           <button onClick={handleLogin} className="px-4 py-2 bg-indigo-600 rounded">Войти</button>
           <button onClick={handleRegister} className="px-4 py-2 border border-slate-700 rounded">Зарегистрироваться</button>

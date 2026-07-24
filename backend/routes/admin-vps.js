@@ -474,6 +474,34 @@ router.post('/:id/external-check', async (req, res) => {
 })
 
 /**
+ * POST /api/admin/vps/:id/update-node
+ * Обновить RemnaWave-ноду на VPS по SSH (pull → down → up -d). Требует привязки
+ * к ноде и настроенного SSH. Возвращает { jobId } — логи стримятся через
+ * GET /api/admin/servers/install-jobs/:jobId/stream (общий job-store).
+ */
+router.post('/:id/update-node', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      'SELECT id, name, node_uuid, ssh_password, ssh_key, ip_address FROM vps_servers WHERE id = $1',
+      [req.params.id]
+    )
+    if (rows.length === 0) return res.status(404).json({ error: 'VPS не найден' })
+    const v = rows[0]
+    if (!v.node_uuid) return res.status(400).json({ error: 'VPS не привязан к ноде RemnaWave' })
+    if (!v.ip_address) return res.status(400).json({ error: 'У VPS не указан IP' })
+    if (!v.ssh_password && !v.ssh_key) return res.status(400).json({ error: 'SSH-доступ не настроен (нет пароля/ключа)' })
+
+    const nodeInstaller = require('../services/remnwaveNodeInstaller')
+    const job = await nodeInstaller.startUpdateJob({ vpsId: Number(req.params.id) })
+    audit.write(req, 'vps.node_update', { type: 'vps', id: v.id }, { name: v.name }).catch(() => {})
+    res.json({ jobId: job.id })
+  } catch (err) {
+    console.error('[AdminVPS] update-node error:', err.message)
+    res.status(500).json({ error: 'Не удалось запустить обновление ноды' })
+  }
+})
+
+/**
  * PATCH /api/admin/vps/:id
  * Обновить VPS
  */

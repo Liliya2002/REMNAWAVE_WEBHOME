@@ -233,7 +233,7 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
                       : 'border-sky-200 dark:border-slate-700/60 bg-sky-50/30 dark:bg-slate-800/30 hover:border-cyan-500/40'
                   }`}
                 >
-                  <input
+                  <input autoComplete="off"
                     type="radio"
                     name="period"
                     value={opt.id}
@@ -343,7 +343,7 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
                           ? 'border-cyan-500 bg-cyan-500/10 dark:bg-cyan-500/5'
                           : 'border-sky-200 dark:border-slate-700/60 bg-sky-50/30 dark:bg-slate-800/30'
                       } ${!calc.canPayFromBalance ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                        <input
+                        <input autoComplete="off"
                           type="radio"
                           name="pm"
                           value="balance"
@@ -363,7 +363,7 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
                           ? 'border-cyan-500 bg-cyan-500/10 dark:bg-cyan-500/5'
                           : 'border-sky-200 dark:border-slate-700/60 bg-sky-50/30 dark:bg-slate-800/30'
                       }`}>
-                        <input
+                        <input autoComplete="off"
                           type="radio"
                           name="pm"
                           value="gateway"

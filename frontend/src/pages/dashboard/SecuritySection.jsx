@@ -168,8 +168,8 @@ export default function SecuritySection({ user }) {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Текущий пароль</label>
-            <input 
-              type="password" 
+            <input autoComplete="current-password"
+              type="password"
               placeholder="Введите текущий пароль"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
@@ -178,7 +178,7 @@ export default function SecuritySection({ user }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Новый пароль</label>
-            <input 
+            <input autoComplete="new-password" 
               type="password" 
               placeholder="Придумайте новый пароль"
               value={newPassword}
@@ -188,7 +188,7 @@ export default function SecuritySection({ user }) {
           </div>
           <div>
             <label className="block text-sm font-medium text-sky-700 dark:text-slate-300 mb-2">Повторите пароль</label>
-            <input 
+            <input autoComplete="new-password" 
               type="password" 
               placeholder="Повторите новый пароль"
               value={confirmPassword}

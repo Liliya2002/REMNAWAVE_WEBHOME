@@ -84,7 +84,7 @@ export default function ProfileSection({ user, onUpdate, onOpenBalance }) {
             <label className="block text-sm text-sky-700 dark:text-slate-400 dark:text-slate-400 mb-2 flex items-center gap-1.5"><Mail className="w-3.5 h-3.5" /> Email адрес</label>
             {editMode ? (
               <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                <input 
+                <input autoComplete="off" 
                   type="email" 
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}

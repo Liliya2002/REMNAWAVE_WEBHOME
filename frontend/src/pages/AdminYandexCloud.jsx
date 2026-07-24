@@ -543,7 +543,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
 
           {/* Имя */}
           <Field label="Название аккаунта" required>
-            <input
+            <input autoComplete="off"
               value={form.name}
               onChange={e => setField('name', e.target.value)}
               placeholder="Например: «Прод» или «Маркетинг»"
@@ -582,7 +582,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
                 </>
               }
             >
-              <textarea
+              <textarea autoComplete="off"
                 value={form.sa_key_json}
                 onChange={e => setField('sa_key_json', e.target.value)}
                 placeholder={mode === 'edit' ? 'Оставь пустым чтобы не менять' : '{ "id": "ajeb...", "service_account_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----..." }'}
@@ -607,7 +607,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
               }
             >
               <div className="relative">
-                <input
+                <input autoComplete="new-password"
                   type={showOauth ? 'text' : 'password'}
                   value={form.oauth_token}
                   onChange={e => setField('oauth_token', e.target.value)}
@@ -628,7 +628,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
           {/* IDs */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="Default Cloud ID" hint="ID облака, для запросов биллинга и т.п. Опционально.">
-              <input
+              <input autoComplete="off"
                 value={form.default_cloud_id}
                 onChange={e => setField('default_cloud_id', e.target.value)}
                 placeholder="b1g..."
@@ -636,7 +636,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
               />
             </Field>
             <Field label="Default Folder ID" hint="Папка по умолчанию для VM/IP-адресов.">
-              <input
+              <input autoComplete="off"
                 value={form.default_folder_id}
                 onChange={e => setField('default_folder_id', e.target.value)}
                 placeholder="b1g..."
@@ -646,7 +646,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
           </div>
 
           <Field label="Billing Account ID" hint="ID платёжного аккаунта — для запроса баланса и пополнения.">
-            <input
+            <input autoComplete="off"
               value={form.billing_account_id}
               onChange={e => setField('billing_account_id', e.target.value)}
               placeholder="dn2..."
@@ -657,7 +657,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
           {/* SOCKS5 */}
           <Field label="SOCKS5 (опционально)" hint="Все запросы к Yandex.Cloud API для этого аккаунта пойдут через этот прокси.">
             <div className="relative">
-              <input
+              <input autoComplete="new-password"
                 type={showSocks ? 'text' : 'password'}
                 value={form.socks5_url}
                 onChange={e => setField('socks5_url', e.target.value)}
@@ -680,7 +680,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
 
           {/* Read-only flag */}
           <label className="flex items-center gap-2.5 cursor-pointer p-3 rounded-xl border border-slate-700/40 hover:border-amber-500/40 bg-slate-950/40 transition">
-            <input
+            <input autoComplete="off"
               type="checkbox"
               checked={form.is_readonly}
               onChange={e => setField('is_readonly', e.target.checked)}
@@ -694,7 +694,7 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
           </label>
 
           <Field label="Заметки (опционально)">
-            <textarea
+            <textarea autoComplete="off"
               value={form.notes}
               onChange={e => setField('notes', e.target.value)}
               rows={2}
@@ -993,7 +993,7 @@ function InstancesTab({ account }) {
       <div className="bg-gradient-to-br from-slate-800/40 to-slate-900/50 border border-slate-700/50 rounded-2xl p-4 flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[260px]">
           <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Folder ID</label>
-          <input
+          <input autoComplete="off"
             value={folderId}
             onChange={e => setFolderId(e.target.value)}
             placeholder="b1g..."
@@ -1293,7 +1293,7 @@ function AddressesTab({ account }) {
       <div className="bg-gradient-to-br from-slate-800/40 to-slate-900/50 border border-slate-700/50 rounded-2xl p-4 flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[260px]">
           <label className="block text-[11px] font-semibold text-slate-400 mb-1.5">Folder ID</label>
-          <input
+          <input autoComplete="off"
             value={folderId}
             onChange={e => setFolderId(e.target.value)}
             placeholder="b1g..."
@@ -1406,7 +1406,7 @@ function AddressesTab({ account }) {
             </div>
             <div className="p-6 space-y-4">
               <Field label="Имя (опц.)">
-                <input value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })}
+                <input autoComplete="off" value={createForm.name} onChange={e => setCreateForm({ ...createForm, name: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none" />
               </Field>
               <Field label="Зона">
@@ -1418,11 +1418,11 @@ function AddressesTab({ account }) {
                 </select>
               </Field>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={createForm.reserved} onChange={e => setCreateForm({ ...createForm, reserved: e.target.checked })} className="w-4 h-4 accent-amber-500" />
+                <input autoComplete="off" type="checkbox" checked={createForm.reserved} onChange={e => setCreateForm({ ...createForm, reserved: e.target.checked })} className="w-4 h-4 accent-amber-500" />
                 <span className="text-sm text-slate-200">Сразу зарезервировать (static)</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" checked={createForm.ipv6} onChange={e => setCreateForm({ ...createForm, ipv6: e.target.checked })} className="w-4 h-4 accent-blue-500" />
+                <input autoComplete="off" type="checkbox" checked={createForm.ipv6} onChange={e => setCreateForm({ ...createForm, ipv6: e.target.checked })} className="w-4 h-4 accent-blue-500" />
                 <span className="text-sm text-slate-200">IPv6 (вместо IPv4)</span>
               </label>
               <Field label="DDoS-защита (опц.)" hint="Только для IPv4. Стоит дополнительных денег.">
@@ -1633,7 +1633,7 @@ function BillingTab({ account }) {
                     </button>
                   ))}
                 </div>
-                <input type="number" value={topUpAmount} onChange={e => setTopUpAmount(parseInt(e.target.value) || 0)} min="0" step="100"
+                <input autoComplete="off" type="number" value={topUpAmount} onChange={e => setTopUpAmount(parseInt(e.target.value) || 0)} min="0" step="100"
                   className="w-32 px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none" />
                 <span className="text-sm text-slate-400 font-mono">{data.billing.currency}</span>
                 <a href={buildTopUpUrl()} target="_blank" rel="noopener noreferrer"
@@ -1680,14 +1680,14 @@ function BillingTab({ account }) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Грант (всего)">
-                  <input type="number" min="0" step="0.01"
+                  <input autoComplete="off" type="number" min="0" step="0.01"
                     value={grantDialog.amount}
                     onChange={e => setGrantDialog({ ...grantDialog, amount: e.target.value })}
                     placeholder="4000"
                     className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
                 </Field>
                 <Field label="Использовано">
-                  <input type="number" min="0" step="0.01"
+                  <input autoComplete="off" type="number" min="0" step="0.01"
                     value={grantDialog.used}
                     onChange={e => setGrantDialog({ ...grantDialog, used: e.target.value })}
                     placeholder="0"
@@ -1696,7 +1696,7 @@ function BillingTab({ account }) {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Истекает">
-                  <input type="date"
+                  <input autoComplete="off" type="date"
                     value={grantDialog.expiresAt}
                     onChange={e => setGrantDialog({ ...grantDialog, expiresAt: e.target.value })}
                     className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
@@ -1713,7 +1713,7 @@ function BillingTab({ account }) {
                 </Field>
               </div>
               <Field label="Заметка (опц.)">
-                <input value={grantDialog.notes}
+                <input autoComplete="off" value={grantDialog.notes}
                   onChange={e => setGrantDialog({ ...grantDialog, notes: e.target.value })}
                   placeholder="Стартовый грант 60 дней"
                   className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-amber-500 focus:outline-none" />
@@ -2182,7 +2182,7 @@ function IpSearchTab({ account }) {
               >
                 <Upload className="w-3 h-3" /> Из .txt
               </button>
-              <input
+              <input autoComplete="off"
                 ref={fileInputRef}
                 type="file"
                 accept=".txt,.csv,.list,text/plain"
@@ -2201,7 +2201,7 @@ function IpSearchTab({ account }) {
               )}
             </div>
           </div>
-          <textarea
+          <textarea autoComplete="off"
             value={form.cidrsText}
             onChange={e => setForm({ ...form, cidrsText: e.target.value })}
             disabled={isRunning}
@@ -2247,7 +2247,7 @@ function IpSearchTab({ account }) {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Folder ID" required>
-            <input value={folderId} onChange={e => setFolderId(e.target.value)}
+            <input autoComplete="off" value={folderId} onChange={e => setFolderId(e.target.value)}
               disabled={isRunning}
               className="w-full px-3 py-2.5 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none disabled:opacity-50" />
           </Field>
@@ -2260,13 +2260,13 @@ function IpSearchTab({ account }) {
             </select>
           </Field>
           <Field label={`Max попыток (1–${HARD_CAP})`} hint={`До ${(form.maxAttempts * 0.005).toFixed(2)}₽ если ничего не найдём`}>
-            <input type="number" min="1" max={HARD_CAP} value={form.maxAttempts}
+            <input autoComplete="off" type="number" min="1" max={HARD_CAP} value={form.maxAttempts}
               onChange={e => setForm({ ...form, maxAttempts: Math.min(HARD_CAP, parseInt(e.target.value) || 1) })}
               disabled={isRunning}
               className="w-full px-3 py-2.5 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none disabled:opacity-50" />
           </Field>
           <Field label="Префикс имени найденного IP (опц.)" hint="Если задан — найденный адрес будет назван prefix-IP. Например prefix=ru-cdn → ru-cdn-5-45-71-42">
-            <input value={form.namePrefix} onChange={e => setForm({ ...form, namePrefix: e.target.value })}
+            <input autoComplete="off" value={form.namePrefix} onChange={e => setForm({ ...form, namePrefix: e.target.value })}
               placeholder="ru-cdn"
               disabled={isRunning}
               className="w-full px-3 py-2.5 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none disabled:opacity-50" />
@@ -2312,7 +2312,7 @@ function IpSearchTab({ account }) {
                 <span className="font-mono text-slate-300">{account.name}</span>
               </div>
               <Field label="Имя списка" required>
-                <input
+                <input autoComplete="off"
                   value={saveDialog.name}
                   onChange={e => setSaveDialog({ ...saveDialog, name: e.target.value.slice(0, 128) })}
                   disabled={saveDialog.mode === 'update'}
@@ -2321,7 +2321,7 @@ function IpSearchTab({ account }) {
                 />
               </Field>
               <Field label="Описание (опц.)">
-                <textarea
+                <textarea autoComplete="off"
                   value={saveDialog.description}
                   onChange={e => setSaveDialog({ ...saveDialog, description: e.target.value })}
                   rows={2}
@@ -2761,12 +2761,12 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
               {/* Базовые поля */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Имя VM" hint="Латиница, цифры, дефис. До 63 символов.">
-                  <input value={form.name} onChange={e => setField('name', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 63))}
+                  <input autoComplete="off" value={form.name} onChange={e => setField('name', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 63))}
                     placeholder="vm-prod-01"
                     className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none" />
                 </Field>
                 <Field label="Описание (опц.)">
-                  <input value={form.description} onChange={e => setField('description', e.target.value)}
+                  <input autoComplete="off" value={form.description} onChange={e => setField('description', e.target.value)}
                     className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none" />
                 </Field>
               </div>
@@ -2807,12 +2807,12 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <Field label="vCPU">
-                    <input type="number" min="2" max="64" value={form.cores}
+                    <input autoComplete="off" type="number" min="2" max="64" value={form.cores}
                       onChange={e => setField('cores', parseInt(e.target.value) || 2)}
                       className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none" />
                   </Field>
                   <Field label="RAM (GB)">
-                    <input type="number" min="1" max="256" value={form.memoryGb}
+                    <input autoComplete="off" type="number" min="1" max="256" value={form.memoryGb}
                       onChange={e => setField('memoryGb', parseInt(e.target.value) || 1)}
                       className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none" />
                   </Field>
@@ -2867,7 +2867,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                   </select>
                 </Field>
                 <Field label="Размер диска (GB)">
-                  <input type="number" min="10" max="1024" value={form.diskSizeGb}
+                  <input autoComplete="off" type="number" min="10" max="1024" value={form.diskSizeGb}
                     onChange={e => setField('diskSizeGb', parseInt(e.target.value) || 10)}
                     className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none" />
                 </Field>
@@ -2895,7 +2895,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                   </select>
                 </Field>
                 <label className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-slate-700/40 bg-slate-950/40 cursor-pointer hover:border-blue-500/40 mt-6">
-                  <input type="checkbox" checked={form.publicIp} onChange={e => setField('publicIp', e.target.checked)} className="w-4 h-4 mt-0.5 accent-blue-500" />
+                  <input autoComplete="off" type="checkbox" checked={form.publicIp} onChange={e => setField('publicIp', e.target.checked)} className="w-4 h-4 mt-0.5 accent-blue-500" />
                   <div>
                     <div className="text-sm text-white font-medium">Публичный IPv4</div>
                     <div className="text-[11px] text-slate-500">Для SSH-доступа извне</div>
@@ -3042,7 +3042,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                         </select>
                       </Field>
                       <Field label="SSH user" hint="Юзер, под которого будет положен ключ (cloud-init создаст если нет)">
-                        <input value={form.sshUser}
+                        <input autoComplete="off" value={form.sshUser}
                           onChange={e => setField('sshUser', e.target.value.replace(/[^a-z0-9_-]/gi, ''))}
                           className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-amber-500 focus:outline-none" />
                       </Field>
@@ -3052,7 +3052,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                   <div className="space-y-2">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="md:col-span-2">
-                        <textarea value={form.sshKey}
+                        <textarea autoComplete="off" value={form.sshKey}
                           onChange={e => { setField('sshKey', e.target.value); setField('sshKeyId', null) }}
                           rows={3}
                           placeholder="ssh-ed25519 AAAA... user@host"
@@ -3060,7 +3060,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                       </div>
                       <div>
                         <Field label="SSH user" hint="Имя юзера, на которого будет добавлен ключ">
-                          <input value={form.sshUser}
+                          <input autoComplete="off" value={form.sshUser}
                             onChange={e => setField('sshUser', e.target.value.replace(/[^a-z0-9_-]/gi, ''))}
                             className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none" />
                         </Field>
@@ -3074,7 +3074,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                       >
                         <Upload className="w-3 h-3" /> Из файла
                       </button>
-                      <input ref={sshFileInputRef} type="file" accept=".pub,.txt,text/plain"
+                      <input autoComplete="off" ref={sshFileInputRef} type="file" accept=".pub,.txt,text/plain"
                         onChange={onSshFilePicked} className="hidden" />
                       {form.sshKey.trim() && (
                         <button type="button"
@@ -3125,7 +3125,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
 
               {/* Preemptible */}
               <label className="flex items-start gap-2 px-3 py-2.5 rounded-lg border border-amber-500/30 bg-amber-500/5 cursor-pointer hover:border-amber-500/50">
-                <input type="checkbox" checked={form.preemptible} onChange={e => setField('preemptible', e.target.checked)} className="w-4 h-4 mt-0.5 accent-amber-500" />
+                <input autoComplete="off" type="checkbox" checked={form.preemptible} onChange={e => setField('preemptible', e.target.checked)} className="w-4 h-4 mt-0.5 accent-amber-500" />
                 <div>
                   <div className="text-sm text-amber-200 font-medium">Прерываемая (preemptible) VM</div>
                   <div className="text-[11px] text-amber-200/70">Дешевле на ~30%, но YC может остановить в любой момент. Только для не-критичных задач.</div>
@@ -3141,7 +3141,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                   <label className={`flex items-start gap-2 px-3 py-2.5 rounded-lg border cursor-pointer transition ${
                     form.addToVps ? 'bg-blue-500/10 border-blue-500/40' : 'bg-slate-900/40 border-slate-700/40 hover:border-blue-500/30'
                   }`}>
-                    <input type="checkbox" checked={form.addToVps}
+                    <input autoComplete="off" type="checkbox" checked={form.addToVps}
                       onChange={e => setField('addToVps', e.target.checked)}
                       className="w-4 h-4 mt-0.5 accent-blue-500" />
                     <div className="flex-1 min-w-0">
@@ -3213,7 +3213,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                 {form.sshKey.split(' ').slice(0, 1)[0]} ...{form.sshKey.split(' ').slice(1, 2)[0]?.slice(-30)}
               </div>
               <Field label="Имя ключа" required>
-                <input
+                <input autoComplete="off"
                   value={saveSshDialog.name}
                   onChange={e => setSaveSshDialog({ ...saveSshDialog, name: e.target.value.slice(0, 128) })}
                   placeholder="Мой основной"
@@ -3222,14 +3222,14 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                 />
               </Field>
               <Field label="Default SSH user" hint="Будет подставляться при выборе этого ключа в форме создания VM">
-                <input
+                <input autoComplete="off"
                   value={saveSshDialog.default_user}
                   onChange={e => setSaveSshDialog({ ...saveSshDialog, default_user: e.target.value.replace(/[^a-z0-9_-]/gi, '') })}
                   className="w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none"
                 />
               </Field>
               <Field label="Заметка (опц.)">
-                <input
+                <input autoComplete="off"
                   value={saveSshDialog.notes}
                   onChange={e => setSaveSshDialog({ ...saveSshDialog, notes: e.target.value })}
                   placeholder="С какого ноутбука / для какой задачи"
@@ -3243,7 +3243,7 @@ function CreateVmModal({ account, folderId, onClose, onCreated }) {
                   label={<span className="flex items-center gap-1.5">🔒 Приватный ключ <span className="text-[10px] text-slate-500 font-normal">опционально</span></span>}
                   hint="Нужен только если хочешь чтобы система могла SSH-ить от твоего имени (управление VM в /admin/vps, установка traffic-agent). Хранится зашифрованным, наружу не отдаётся."
                 >
-                  <textarea
+                  <textarea autoComplete="off"
                     value={saveSshDialog.private_key}
                     onChange={e => setSaveSshDialog({ ...saveSshDialog, private_key: e.target.value })}
                     rows={4}

@@ -89,14 +89,14 @@ export default function TopupTrafficModal({ subscription, squadInfo, topupMode =
               </div>
             ) : (
               <div className="flex items-center gap-3">
-                <input
+                <input autoComplete="off"
                   type="range"
                   min="1" max="500" step="1"
                   value={gb}
                   onChange={e => setGb(Number(e.target.value))}
                   className="flex-1 accent-cyan-500"
                 />
-                <input
+                <input autoComplete="off"
                   type="number" min="1" max="1000"
                   value={gb}
                   onChange={e => setGb(Math.max(1, Math.min(1000, Number(e.target.value) || 1)))}
@@ -126,7 +126,7 @@ export default function TopupTrafficModal({ subscription, squadInfo, topupMode =
                 ? 'border-cyan-500 bg-cyan-500/10 dark:bg-cyan-500/5'
                 : 'border-sky-200 dark:border-slate-700/60 bg-sky-50/30 dark:bg-slate-800/30'
             } ${insufficientBalance ? 'opacity-50' : ''}`}>
-              <input
+              <input autoComplete="off"
                 type="radio" name="pm" value="balance"
                 checked={paymentMethod === 'balance'}
                 onChange={() => setPaymentMethod('balance')}
@@ -146,7 +146,7 @@ export default function TopupTrafficModal({ subscription, squadInfo, topupMode =
                 ? 'border-cyan-500 bg-cyan-500/10 dark:bg-cyan-500/5'
                 : 'border-sky-200 dark:border-slate-700/60 bg-sky-50/30 dark:bg-slate-800/30'
             }`}>
-              <input
+              <input autoComplete="off"
                 type="radio" name="pm" value="gateway"
                 checked={paymentMethod === 'gateway'}
                 onChange={() => setPaymentMethod('gateway')}

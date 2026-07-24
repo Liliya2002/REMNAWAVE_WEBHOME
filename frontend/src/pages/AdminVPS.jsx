@@ -10,6 +10,7 @@ import {
   ShieldCheck, Wifi, WifiOff, Shield, FileText, Rows3, Clock3,
   ArrowUpDown, ChevronUp, MoreHorizontal
 } from 'lucide-react'
+import VersionBadge, { compareVersions } from '../components/VersionBadge'
 
 const API = import.meta.env.VITE_API_URL || ''
 
@@ -156,6 +157,9 @@ export default function AdminVPS() {
   const [menuPos, setMenuPos] = useState({ x: 0, y: 0 }) // позиция «···»-меню (fixed, чтобы не обрезалось overflow-hidden)
   const [ctxMenu, setCtxMenu] = useState(null)    // { x, y, vps } — контекстное меню (правый клик)
   const [extCheck, setExtCheck] = useState({})    // { [vpsId]: { loading, data, error } } — внешняя проверка check-host.net
+  const [latestVersions, setLatestVersions] = useState(null) // { node, xray } — актуальные версии из GitHub
+  const [updateModal, setUpdateModal] = useState(null)       // { vpsId, name, jobId, logs, status, error } — окно обновления ноды
+  const [linkNodeModal, setLinkNodeModal] = useState(null)   // { vpsId, name, ip, detectedPath } — окно привязки к RemnaWave-ноде
   const [customProvider, setCustomProvider] = useState(false)
   const [sshOpen, setSshOpen] = useState(null) // vps id with SSH open
   const [sshResult, setSshResult] = useState({}) // { [vpsId]: { output, error, loading, cmd } }
@@ -205,6 +209,9 @@ export default function AdminVPS() {
       setVpsList(data.vps || [])
       setNodes(data.nodes || [])
       setError(null)
+      // Актуальные версии нод/xray (не критично если не загрузится)
+      fetch(`${API}/api/admin/servers/latest-versions`, { headers })
+        .then(r => r.ok ? r.json() : null).then(v => v && setLatestVersions(v)).catch(() => {})
     } catch (e) {
       setError(e.message)
     } finally {
@@ -403,6 +410,82 @@ export default function AdminVPS() {
       else setExtCheck(prev => ({ ...prev, [vpsId]: { loading: false, error: data.error || 'Ошибка' } }))
     } catch {
       setExtCheck(prev => ({ ...prev, [vpsId]: { loading: false, error: 'Ошибка сети' } }))
+    }
+  }
+
+  // Запуск обновления ноды по SSH → открывает окно с логами.
+  async function startNodeUpdate(vps) {
+    setUpdateModal({ vpsId: vps.id, name: vps.name, jobId: null, logs: [], status: 'starting', error: null })
+    try {
+      const res = await fetch(`${API}/api/admin/vps/${vps.id}/update-node`, { method: 'POST', headers })
+      const data = await res.json()
+      if (!res.ok) { setUpdateModal(m => (m ? { ...m, status: 'failed', error: data.error || 'Ошибка запуска' } : m)); return }
+      setUpdateModal(m => (m ? { ...m, jobId: data.jobId, status: 'running' } : m))
+    } catch {
+      setUpdateModal(m => (m ? { ...m, status: 'failed', error: 'Ошибка сети' } : m))
+    }
+  }
+
+  // Стриминг логов обновления (fetch+ReadableStream — поддерживает Auth).
+  useEffect(() => {
+    const jobId = updateModal?.jobId
+    if (!jobId) return
+    const token = localStorage.getItem('token')
+    const ctrl = new AbortController()
+    fetch(`${API}/api/admin/servers/install-jobs/${jobId}/stream`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: ctrl.signal,
+    })
+      .then(async res => {
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = ''
+        while (true) {
+          const { done, value } = await reader.read(); if (done) break
+          buf += dec.decode(value, { stream: true })
+          let idx
+          while ((idx = buf.indexOf('\n\n')) !== -1) {
+            const raw = buf.slice(0, idx); buf = buf.slice(idx + 2)
+            let event = 'message', data = ''
+            for (const ln of raw.split('\n')) {
+              if (ln.startsWith('event: ')) event = ln.slice(7).trim()
+              else if (ln.startsWith('data: ')) data += ln.slice(6)
+            }
+            if (!data) continue
+            let payload; try { payload = JSON.parse(data) } catch { continue }
+            setUpdateModal(m => {
+              if (!m || m.jobId !== jobId) return m
+              if (event === 'snapshot') return { ...m, logs: payload.logs || [], status: payload.status !== 'running' ? payload.status : m.status }
+              if (event === 'log') return { ...m, logs: [...m.logs, payload] }
+              if (event === 'done') return { ...m, status: payload.status || 'success', error: payload.error || null }
+              return m
+            })
+          }
+        }
+      })
+      .catch(err => {
+        if (err.name === 'AbortError') return
+        setUpdateModal(m => (m && m.jobId === jobId ? { ...m, status: 'failed', error: `Поток логов оборван: ${err.message}` } : m))
+      })
+    return () => ctrl.abort()
+  }, [updateModal?.jobId])
+
+  // Привязать VPS к выбранной RemnaWave-ноде (node_uuid + node_name) через PATCH.
+  async function linkNodeToVps(vpsId, node) {
+    try {
+      const res = await fetch(`${API}/api/admin/vps/${vpsId}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ node_uuid: node.uuid, node_name: node.name || '', service_type: 'node' }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setSyncNodeState(prev => ({ ...prev, [vpsId]: { loading: false, error: d.error || 'Не удалось привязать ноду' } }))
+        return
+      }
+      setLinkNodeModal(null)
+      setSyncNodeState(prev => ({ ...prev, [vpsId]: { loading: false, message: `✅ Привязано к ноде «${node.name || node.uuid}»`, error: null } }))
+      fetchData()
+    } catch {
+      setSyncNodeState(prev => ({ ...prev, [vpsId]: { loading: false, error: 'Ошибка сети' } }))
     }
   }
 
@@ -608,6 +691,7 @@ export default function AdminVPS() {
   }
 
   async function syncNodeStatus(vpsId) {
+    const vps = vpsList.find(v => v.id === vpsId)
     setSyncNodeState(prev => ({ ...prev, [vpsId]: { loading: true } }))
     try {
       const res = await fetch(`${API}/api/admin/vps/${vpsId}/sync-node-status`, {
@@ -620,11 +704,15 @@ export default function AdminVPS() {
           ...prev,
           [vpsId]: {
             loading: false,
-            message: `✅ Нода подтверждена (${data.detectedPath})`,
+            message: `✅ Нода найдена на сервере (${data.detectedPath})`,
             error: null,
           }
         }))
         fetchData()
+        // Нода найдена, но VPS ещё не привязан к конкретной RemnaWave-ноде — предложим выбрать
+        if (!vps?.node_uuid) {
+          setLinkNodeModal({ vpsId, name: vps?.name || '', ip: vps?.ip_address || '', detectedPath: data.detectedPath })
+        }
       } else {
         setSyncNodeState(prev => ({
           ...prev,
@@ -1079,7 +1167,7 @@ export default function AdminVPS() {
         {/* Быстрый поиск по IP / названию */}
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-          <input
+          <input autoComplete="off"
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -1414,7 +1502,8 @@ export default function AdminVPS() {
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 pt-1">
                     <span className="inline-flex items-center gap-1.5"><Network className="w-3.5 h-3.5 text-teal-400/80" /> Нода: <span className="text-slate-300">{linkedNode.name}</span></span>
                     <span className="inline-flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-slate-500" /> Онлайн: <span className="text-slate-300">{linkedNode.usersOnline || 0}</span></span>
-                    <span className="inline-flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-slate-500" /> Xray: <span className="text-slate-300">{linkedNode.xrayVersion || '—'}</span></span>
+                    <span className="inline-flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-slate-500" /> Xray: <VersionBadge current={linkedNode.versions?.xray} latest={latestVersions?.xray} /></span>
+                    <span className="inline-flex items-center gap-1.5"><Server className="w-3.5 h-3.5 text-slate-500" /> Node: <VersionBadge current={linkedNode.versions?.node} latest={latestVersions?.node} /></span>
                   </div>
                 )}
               </div>
@@ -1442,6 +1531,15 @@ export default function AdminVPS() {
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border bg-emerald-500/10 border-emerald-500/25 text-emerald-300/80 cursor-not-allowed opacity-85"
                           >
                             <CheckCircle2 className="w-3.5 h-3.5" /> Нода установлена
+                          </button>
+                        )}
+                        {/* Кнопка обновления — только если установленная версия ниже актуальной */}
+                        {vps.node_uuid && (vps.ssh_password || vps.ssh_key) &&
+                          compareVersions(linkedNode?.versions?.node, latestVersions?.node) === -1 && (
+                          <button onClick={(e) => { e.stopPropagation(); startNodeUpdate(vps) }}
+                            title={`Обновить ноду ${linkedNode?.versions?.node || ''} → ${latestVersions?.node} по SSH (pull → down → up -d)`}
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border bg-cyan-500/10 border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 transition-all">
+                            <RefreshCcw className="w-3.5 h-3.5" /> Обновить ноду до {latestVersions?.node}
                           </button>
                         )}
                         {vps.service_type === 'node' && (
@@ -1783,6 +1881,112 @@ export default function AdminVPS() {
         )
       })()}
 
+      {/* ===== Окно обновления ноды ===== */}
+      {updateModal && (() => {
+        const running = updateModal.status === 'running' || updateModal.status === 'starting'
+        const statusText = updateModal.status === 'starting' ? 'Запуск…'
+          : updateModal.status === 'running' ? 'Выполняется…'
+          : updateModal.status === 'success' ? 'Готово ✅'
+          : 'Ошибка'
+        const lineCls = (lvl) => lvl === 'step' ? 'text-cyan-300'
+          : lvl === 'error' ? 'text-rose-400'
+          : lvl === 'success' ? 'text-emerald-400'
+          : lvl === 'warn' ? 'text-amber-300'
+          : 'text-slate-300'
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => !running && setUpdateModal(null)} />
+            <div className="relative w-full max-w-2xl bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-700/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+              <div className="px-5 py-4 border-b border-slate-800/60 flex items-center gap-3 shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center shrink-0">
+                  {running ? <RefreshCcw className="w-5 h-5 text-cyan-300 animate-spin" />
+                    : updateModal.status === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                    : <AlertCircle className="w-5 h-5 text-rose-400" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-white font-bold truncate">Обновление ноды · {updateModal.name}</h3>
+                  <p className="text-xs text-slate-400">{statusText}</p>
+                </div>
+                <button onClick={() => setUpdateModal(null)} disabled={running}
+                  className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto bg-[#0d1117] p-4 font-mono text-xs leading-relaxed min-h-[240px]">
+                {updateModal.logs.length === 0 && !updateModal.error && (
+                  <div className="text-slate-600">{running ? 'Ожидание вывода…' : '—'}</div>
+                )}
+                {updateModal.logs.map((l, i) => (
+                  <div key={i} className={lineCls(l.level)}>{l.level === 'step' ? '▸ ' : ''}{l.line}</div>
+                ))}
+                {updateModal.error && <div className="text-rose-400 mt-2 whitespace-pre-wrap">✖ {updateModal.error}</div>}
+              </div>
+
+              <div className="px-5 py-3 border-t border-slate-800/60 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-500">Команда: <span className="font-mono text-slate-400">docker compose pull → down → up -d</span></span>
+                <button onClick={() => setUpdateModal(null)} disabled={running}
+                  className="px-4 py-2 rounded-lg text-xs font-bold bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+                  {running ? 'Идёт…' : 'Закрыть'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ===== Окно привязки к RemnaWave-ноде ===== */}
+      {linkNodeModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setLinkNodeModal(null)} />
+          <div className="relative w-full max-w-lg bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-700/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-5 py-4 border-b border-slate-800/60 flex items-center gap-3 shrink-0">
+              <div className="w-10 h-10 rounded-xl bg-teal-500/15 border border-teal-500/25 flex items-center justify-center shrink-0">
+                <Network className="w-5 h-5 text-teal-300" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-white font-bold truncate">Привяжите к RemnaWave-ноде</h3>
+                <p className="text-xs text-slate-400 truncate">Нода найдена на «{linkNodeModal.name}» — выберите соответствующую ноду в панели</p>
+              </div>
+              <button onClick={() => setLinkNodeModal(null)}
+                className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-all">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5 thin-scroll min-h-[120px]">
+              {nodes.length === 0 ? (
+                <div className="py-8 text-center text-sm text-slate-500">Ноды RemnaWave не найдены (панель недоступна?)</div>
+              ) : nodes.map(n => {
+                const suggested = n.address && linkNodeModal.ip && String(n.address).includes(linkNodeModal.ip)
+                return (
+                  <button key={n.uuid} onClick={() => linkNodeToVps(linkNodeModal.vpsId, n)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border border-slate-700/50 bg-slate-800/40 hover:bg-slate-800/70 hover:border-teal-500/40 transition-all text-left">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${n.isConnected ? 'bg-emerald-400 dot-glow-emerald' : 'bg-slate-600'}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-white truncate">{n.name}</span>
+                        {suggested && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-teal-500/15 border border-teal-500/30 text-teal-300 shrink-0">совпадает IP</span>}
+                      </span>
+                      <span className="block text-xs text-slate-500 font-mono truncate">{n.address || '—'}{n.countryCode ? ` · ${n.countryCode}` : ''}</span>
+                    </span>
+                    <Link2 className="w-4 h-4 text-slate-500 shrink-0" />
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-800/60 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-500">Можно привязать позже через «Изменить → Привязка к ноде»</span>
+              <button onClick={() => setLinkNodeModal(null)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all">
+                Пропустить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== Renew Modal ===== */}
       {renewModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -1825,7 +2029,7 @@ export default function AdminVPS() {
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 mb-1.5">
                   <StickyNote className="w-3.5 h-3.5" /> Заметка (необязательно)
                 </label>
-                <input type="text" value={renewModal.note} onChange={e => setRenewModal(prev => ({ ...prev, note: e.target.value }))}
+                <input autoComplete="off" type="text" value={renewModal.note} onChange={e => setRenewModal(prev => ({ ...prev, note: e.target.value }))}
                   placeholder="Например: оплачено картой ****1234"
                   className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500/60 focus:ring-2 focus:ring-emerald-500/20" />
               </div>
@@ -1884,7 +2088,7 @@ export default function AdminVPS() {
                   <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 mb-1.5">
                     <HardDrive className="w-3.5 h-3.5" /> Папка проекта
                   </label>
-                  <input
+                  <input autoComplete="off"
                     value={installForm.projectDir}
                     onChange={e => setInstallForm(prev => ({ ...prev, projectDir: e.target.value }))}
                     placeholder="/opt/remnanode"
@@ -1892,7 +2096,7 @@ export default function AdminVPS() {
                   />
                 </div>
                 <label className="flex items-center gap-2.5 px-3 py-2.5 mt-6 rounded-xl bg-slate-800/60 border border-slate-700/50 text-sm text-slate-200 cursor-pointer hover:border-cyan-500/40 transition">
-                  <input
+                  <input autoComplete="off"
                     type="checkbox"
                     checked={installForm.installDocker}
                     onChange={e => setInstallForm(prev => ({ ...prev, installDocker: e.target.checked }))}
@@ -1907,7 +2111,7 @@ export default function AdminVPS() {
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 mb-1.5">
                   <FileCode2 className="w-3.5 h-3.5" /> docker-compose.yml из RemnaWave
                 </label>
-                <textarea
+                <textarea autoComplete="off"
                   value={installForm.composeContent}
                   onChange={e => setInstallForm(prev => ({ ...prev, composeContent: e.target.value }))}
                   placeholder="Вставьте полный docker-compose.yml..."
@@ -1993,7 +2197,7 @@ export default function AdminVPS() {
               )}
 
               <label className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50 text-sm text-slate-200 cursor-pointer hover:border-cyan-500/40 transition">
-                <input type="checkbox" checked={composeRestart} onChange={e => setComposeRestart(e.target.checked)} className="accent-cyan-500" />
+                <input autoComplete="off" type="checkbox" checked={composeRestart} onChange={e => setComposeRestart(e.target.checked)} className="accent-cyan-500" />
                 <RotateCw className="w-4 h-4 text-cyan-400" />
                 После сохранения применить изменения (<code className="text-xs text-cyan-300 bg-slate-900/80 px-1.5 py-0.5 rounded">docker compose up -d</code>)
               </label>
@@ -2003,7 +2207,7 @@ export default function AdminVPS() {
                   <RefreshCcw className="w-4 h-4 animate-spin" /> Загрузка docker-compose.yml...
                 </div>
               ) : (
-                <textarea
+                <textarea autoComplete="off"
                   value={composeContent}
                   onChange={e => setComposeContent(e.target.value)}
                   rows={18}
@@ -2194,7 +2398,7 @@ function FormField({ label, value, onChange, placeholder, type = 'text', mini, I
         </label>
       )}
       <div className="relative">
-        <input
+        <input autoComplete={isPassword ? 'new-password' : 'off'}
           type={inputType}
           value={value}
           onChange={e => onChange(e.target.value)}
@@ -2464,7 +2668,7 @@ function VpsFormModal({ editId, form, setField, setSpec, customProvider, setCust
                   {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
                 {customProvider && (
-                  <input value={form.hosting_provider}
+                  <input autoComplete="off" value={form.hosting_provider}
                     onChange={e => setField('hosting_provider', e.target.value)}
                     className="mt-2 w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white focus:outline-none focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20"
                     placeholder="Введите название провайдера" autoFocus />
@@ -2526,7 +2730,7 @@ function VpsFormModal({ editId, form, setField, setSpec, customProvider, setCust
               <label className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 mb-1">
                 <Terminal className="w-3 h-3" /> SSH ключ (приватный, PEM)
               </label>
-              <textarea value={form.ssh_key} onChange={e => setField('ssh_key', e.target.value)} rows={4}
+              <textarea autoComplete="off" value={form.ssh_key} onChange={e => setField('ssh_key', e.target.value)} rows={4}
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-xs font-mono text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20 resize-none"
                 placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" />
               <div className="mt-1 text-[10px] text-slate-500">
@@ -2541,7 +2745,7 @@ function VpsFormModal({ editId, form, setField, setSpec, customProvider, setCust
               <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 mb-1.5">
                 <StickyNote className="w-3.5 h-3.5" /> Заметки
               </label>
-              <textarea value={form.notes} onChange={e => setField('notes', e.target.value)} rows={3}
+              <textarea autoComplete="off" value={form.notes} onChange={e => setField('notes', e.target.value)} rows={3}
                 className="w-full px-3.5 py-2.5 bg-slate-800/80 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-600 focus:outline-none focus:border-violet-500/60 focus:ring-2 focus:ring-violet-500/20 resize-none"
                 placeholder="Например: используется только для тестов, отключить через месяц..." />
             </div>
