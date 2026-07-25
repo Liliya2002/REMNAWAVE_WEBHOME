@@ -47,6 +47,7 @@ export const GROUPS = [
       { to: '/admin/servers',       Icon: Globe,         label: 'RemnaWave' },
       { to: '/admin/vps',           Icon: Server,        label: 'Управление VPS' },
       { to: '/admin/yandex-cloud',  Icon: Cloud,         label: 'Yandex Cloud' },
+      { to: '/admin/selectel',      Icon: Cloud,         label: 'Selectel Cloud' },
       { to: '/admin/hosting-order', Icon: ShoppingCart,  label: 'Заказать хостинг' },
     ],
   },

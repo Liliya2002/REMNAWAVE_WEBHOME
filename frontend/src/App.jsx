@@ -36,6 +36,7 @@ import AdminInstructions from './pages/AdminInstructions'
 import AdminTrafficTracking from './pages/AdminTrafficTracking'
 import AdminTrafficGuard from './pages/AdminTrafficGuard'
 import AdminYandexCloud from './pages/AdminYandexCloud'
+import AdminSelectel from './pages/AdminSelectel'
 import AdminTelegram from './pages/AdminTelegram'
 import LandingPage from './pages/LandingPage'
 import PaymentHistory from './pages/PaymentHistory'
@@ -265,6 +266,7 @@ function AppShell(){
               <Route path="servers" element={<AdminServers />} />
               <Route path="vps" element={<AdminVPS />} />
               <Route path="yandex-cloud" element={<AdminYandexCloud />} />
+              <Route path="selectel" element={<AdminSelectel />} />
               <Route path="hosting-order" element={<AdminHostingOrder />} />
               <Route path="landings" element={<AdminLandings />} />
               <Route path="landings/:id" element={<AdminLandingEdit />} />
