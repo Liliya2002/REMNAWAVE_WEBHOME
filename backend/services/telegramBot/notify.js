@@ -65,6 +65,13 @@ const DEFAULT_TEXTS = {
     'IP: <code>{ip}</code>\n' +
     'Простой: {downtime}',
 
+  admin_selectel_low_balance:
+    '🟡 <b>Низкий баланс Selectel</b>\n\n' +
+    'Аккаунт: <b>{account}</b>\n' +
+    'Баланс: <b>{balance} ₽</b>\n' +
+    'Порог: {threshold} ₽\n\n' +
+    'Пополните баланс, чтобы сервисы не приостановили.',
+
   admin_user_registered:
     '👤 <b>Новый юзер</b>\nЛогин: {login}\nИсточник: {source}',
 

@@ -10,7 +10,7 @@ import { authFetch } from '../services/api'
 
 const EMPTY_FORM = {
   name: '', api_key: '', account_id: '', service_username: '', service_password: '',
-  default_project: '', default_region: '', notes: '',
+  default_project: '', default_region: '', notes: '', low_balance_threshold: '',
 }
 
 export default function AdminSelectel() {
@@ -184,6 +184,9 @@ export default function AdminSelectel() {
         <div className="space-y-4">
           {accounts.map(a => {
             const d = data[a.id] || {}
+            // Индикатор низкого баланса: живой баланс (если загружен) или последнее значение из крона.
+            const balTotal = d.balance ? balanceTotalRub(d.balance) : (a.last_balance_rub ?? null)
+            const lowBal = a.low_balance_threshold != null && balTotal != null && balTotal < a.low_balance_threshold
             return (
               <div key={a.id} className="rounded-2xl border border-slate-800/70 bg-slate-900/40 overflow-hidden">
                 {/* header */}
@@ -199,13 +202,14 @@ export default function AdminSelectel() {
                       {a.has_api_key && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">API-ключ</span>}
                       {a.has_service_password && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">сервис.юзер</span>}
                       {!a.is_active && <span className="px-1.5 py-0.5 rounded text-[10px] bg-slate-700/60 text-slate-400">выкл</span>}
+                      {lowBal && <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 border border-amber-500/40 text-amber-300 flex items-center gap-1" title={`Порог ${a.low_balance_threshold} ₽`}><AlertCircle className="w-3 h-3" /> низкий баланс</span>}
                     </div>
                     {a.notes && <div className="text-xs text-slate-500 truncate">{a.notes}</div>}
                   </button>
                   <button onClick={() => test(a.id)} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300 hover:text-white flex items-center gap-1.5">
                     {d.test?.loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />} Тест
                   </button>
-                  <button onClick={() => setModal({ editId: a.id, form: { ...EMPTY_FORM, name: a.name, account_id: a.account_id || '', service_username: a.service_username || '', default_project: a.default_project || '', default_region: a.default_region || '', notes: a.notes || '', api_key: '', service_password: '' } })}
+                  <button onClick={() => setModal({ editId: a.id, form: { ...EMPTY_FORM, name: a.name, account_id: a.account_id || '', service_username: a.service_username || '', default_project: a.default_project || '', default_region: a.default_region || '', notes: a.notes || '', low_balance_threshold: a.low_balance_threshold ?? '', api_key: '', service_password: '' } })}
                     className="p-2 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-slate-800/60"><Pencil className="w-4 h-4" /></button>
                   {confirmDel === a.id ? (
                     <span className="flex items-center gap-1">
@@ -606,6 +610,15 @@ function AccountModal({ modal, setModal, save, saving, showSecret, setShowSecret
             <input autoComplete="off" value={f.service_username} onChange={e => set('service_username', e.target.value)} placeholder="имя сервисного юзера" className={inputCls} />
           </div>
           {secretField('service_password', 'Пароль сервисного пользователя', modal.editId ? 'оставьте пустым чтобы не менять' : '')}
+
+          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider pt-1">Уведомления</div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Порог низкого баланса, ₽</label>
+            <input autoComplete="off" type="number" min="0" step="1" value={f.low_balance_threshold}
+              onChange={e => set('low_balance_threshold', e.target.value)} placeholder="напр. 500 (пусто = выкл)"
+              className={inputCls + ' font-mono'} />
+            <p className="text-[11px] text-slate-500 mt-1">Когда баланс опустится ниже — придёт уведомление админу в Telegram (бейдж «низкий баланс» на карточке). Требуется API-ключ. Проверка раз в час.</p>
+          </div>
 
           <div>
             <label className="block text-xs text-slate-400 mb-1">Заметки</label>

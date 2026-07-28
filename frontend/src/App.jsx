@@ -37,6 +37,14 @@ import AdminTrafficTracking from './pages/AdminTrafficTracking'
 import AdminTrafficGuard from './pages/AdminTrafficGuard'
 import AdminYandexCloud from './pages/AdminYandexCloud'
 import AdminSelectel from './pages/AdminSelectel'
+import AdminBedolaga from './pages/AdminBedolaga'
+import RuvdsLayout from './pages/ruvds/RuvdsLayout'
+import RuvdsServers from './pages/ruvds/RuvdsServers'
+import RuvdsStats from './pages/ruvds/RuvdsStats'
+import RuvdsBalance from './pages/ruvds/RuvdsBalance'
+import RuvdsSshKeys from './pages/ruvds/RuvdsSshKeys'
+import RuvdsNotifications from './pages/ruvds/RuvdsNotifications'
+import RuvdsAccounts from './pages/ruvds/RuvdsAccounts'
 import AdminTelegram from './pages/AdminTelegram'
 import LandingPage from './pages/LandingPage'
 import PaymentHistory from './pages/PaymentHistory'
@@ -267,6 +275,17 @@ function AppShell(){
               <Route path="vps" element={<AdminVPS />} />
               <Route path="yandex-cloud" element={<AdminYandexCloud />} />
               <Route path="selectel" element={<AdminSelectel />} />
+              <Route path="bedolaga" element={<AdminBedolaga />} />
+              <Route path="bedolaga/:section" element={<AdminBedolaga />} />
+              <Route path="ruvds" element={<RuvdsLayout />}>
+                <Route index element={<Navigate to="servers" replace />} />
+                <Route path="servers" element={<RuvdsServers />} />
+                <Route path="statistics" element={<RuvdsStats />} />
+                <Route path="balance" element={<RuvdsBalance />} />
+                <Route path="ssh-keys" element={<RuvdsSshKeys />} />
+                <Route path="notifications" element={<RuvdsNotifications />} />
+                <Route path="accounts" element={<RuvdsAccounts />} />
+              </Route>
               <Route path="hosting-order" element={<AdminHostingOrder />} />
               <Route path="landings" element={<AdminLandings />} />
               <Route path="landings/:id" element={<AdminLandingEdit />} />

@@ -22,6 +22,7 @@ const ADMIN_NOTIFICATION_KEYS = [
   { key: 'admin_vps_expiring',         label: 'VPS — истекает оплата',      hint: 'Сводка раз в день: серверы с paid_until в окне -3..+7 дней' },
   { key: 'admin_vps_unreachable',      label: 'VPS — недоступен',           hint: 'TCP-пинг порта 22 не проходит (cron каждые 5 мин)' },
   { key: 'admin_vps_back_online',      label: 'VPS — снова в строю',        hint: 'Когда сервер снова отвечает после простоя' },
+  { key: 'admin_selectel_low_balance', label: 'Selectel — низкий баланс',   hint: 'Когда баланс аккаунта Selectel опустился ниже заданного порога (проверка раз в час)' },
   { key: 'admin_payment_received',     label: 'Платёж получен',             hint: 'После любого успешного платежа от юзера' },
   { key: 'admin_user_registered',      label: 'Новый юзер',                 hint: 'Спам-уведомление при каждой регистрации (по умолчанию off)' },
 ]
@@ -44,6 +45,7 @@ const TEMPLATE_HINTS = {
   admin_vps_expiring:         '{lines}, {count}',
   admin_vps_unreachable:      '{name}, {ip}, {provider}, {port}',
   admin_vps_back_online:      '{name}, {ip}, {provider}, {downtime}',
+  admin_selectel_low_balance: '{account}, {balance}, {threshold}',
   admin_payment_received:     '{login}, {amount}, {plan}',
   admin_user_registered:      '{login}, {source}',
 }
@@ -66,6 +68,8 @@ const DEFAULT_TEMPLATES = {
     '🔴 <b>VPS недоступен</b>\n\n<b>{name}</b> ({provider})\nIP: <code>{ip}</code>\nTCP/{port} не отвечает.',
   admin_vps_back_online:
     '🟢 <b>VPS снова в строю</b>\n\n<b>{name}</b> ({provider})\nIP: <code>{ip}</code>\nПростой: {downtime}',
+  admin_selectel_low_balance:
+    '🟡 <b>Низкий баланс Selectel</b>\n\nАккаунт: <b>{account}</b>\nБаланс: <b>{balance} ₽</b>\nПорог: {threshold} ₽\n\nПополните баланс, чтобы сервисы не приостановили.',
   admin_user_registered:
     '👤 <b>Новый юзер</b>\nЛогин: {login}\nИсточник: {source}',
   admin_payment_received:
@@ -80,6 +84,7 @@ const SAMPLE_DATA = {
   user_traffic_blocked:       { name: 'Иван', usedGb: '52', limitGb: '50', node: 'Finland-1' },
   admin_vps_unreachable:      { name: '🇩🇪 Германия', ip: '45.131.214.225', provider: 'Mhost', port: '22' },
   admin_vps_back_online:      { name: '🇩🇪 Германия', ip: '45.131.214.225', provider: 'Mhost', downtime: '12 мин' },
+  admin_selectel_low_balance: { account: 'Selectel основной', balance: '350', threshold: '500' },
   admin_payment_received:     { login: 'ivan', amount: '299', plan: 'Premium' },
   admin_user_registered:      { login: 'ivan', source: 'сайт' },
 }

@@ -371,8 +371,17 @@ async function testAccount(account) {
   }
 }
 
+// Суммарный баланс в рублях из ответа /v3/balances.
+// Значения balances_values_sum приходят в копейках → делим на 100.
+function balanceTotalRub(balance) {
+  const billings = balance?.data?.billings
+  if (!Array.isArray(billings)) return null
+  return billings.reduce((s, b) => s + (Number(b.balances_values_sum) || 0), 0) / 100
+}
+
 module.exports = {
   getBalance, listServers, testAccount, getStatistics, getTransactions,
   listSshKeys, addSshKey, deleteSshKey,
   listFloatingIps, allocateFloatingIp, attachFloatingIp, detachFloatingIp, releaseFloatingIp,
+  balanceTotalRub,
 }

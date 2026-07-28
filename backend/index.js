@@ -131,6 +131,8 @@ const adminTrafficRoutes = require('./routes/admin-traffic')
 const adminTrafficGuardRoutes = require('./routes/admin-traffic-guard')
 const adminYandexCloudRoutes = require('./routes/admin-yandex-cloud')
 const adminSelectelRoutes = require('./routes/admin-selectel')
+const adminBedolagaRoutes = require('./routes/admin-bedolaga')
+const adminRuvdsRoutes = require('./routes/admin-ruvds')
 const adminTelegramRoutes = require('./routes/admin-telegram')
 const telegramBot = require('./services/telegramBot')
 const healthRoutes = require('./routes/health')
@@ -183,6 +185,8 @@ app.use('/api/admin/traffic', adminLimiter, adminTrafficRoutes)
 app.use('/api/admin/traffic-guard', adminLimiter, adminTrafficGuardRoutes)
 app.use('/api/admin/yandex-cloud', adminLimiter, adminYandexCloudRoutes)
 app.use('/api/admin/selectel', adminLimiter, adminSelectelRoutes)
+app.use('/api/admin/bedolaga', adminLimiter, adminBedolagaRoutes)
+app.use('/api/admin/ruvds', adminLimiter, adminRuvdsRoutes)
 app.use('/api/admin/telegram', adminLimiter, adminTelegramRoutes)
 
 // Public webhook endpoint для Telegram (mode=webhook).
@@ -244,6 +248,9 @@ require('./cron/vpsExpiry').start()
 
 // Cron: VPS health-check — TCP-пинг порта 22, уведомление при смене состояния
 require('./cron/vpsHealth').start()
+
+// Cron: низкий баланс Selectel — уведомление админу при падении ниже порога
+require('./cron/selectelBalance').start()
 
 // Telegram bot — авто-старт если включён в настройках (telegram_settings.is_enabled)
 telegramBot.autoStart().catch(err => console.warn('[TG bot] autoStart:', err.message))

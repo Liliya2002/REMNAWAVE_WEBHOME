@@ -25,9 +25,20 @@ function safeAccount(a) {
     is_active: a.is_active,
     has_api_key: !!a.api_key,
     has_service_password: !!a.service_password,
+    low_balance_threshold: a.low_balance_threshold != null ? Number(a.low_balance_threshold) : null,
+    low_balance_notified: a.low_balance_notified,
+    last_balance_rub: a.last_balance_rub != null ? Number(a.last_balance_rub) : null,
+    balance_checked_at: a.balance_checked_at,
     created_at: a.created_at,
     updated_at: a.updated_at,
   }
+}
+
+// Нормализация порога: '' / null / 0 → NULL (выкл), иначе положительное число.
+function normThreshold(v) {
+  if (v === '' || v == null) return null
+  const n = Number(v)
+  return isFinite(n) && n > 0 ? n : null
 }
 
 async function loadAccount(id) {
@@ -45,12 +56,12 @@ router.get('/accounts', async (req, res) => {
 
 router.post('/accounts', async (req, res) => {
   try {
-    const { name, api_key, account_id, service_username, service_password, default_project, default_region, notes } = req.body || {}
+    const { name, api_key, account_id, service_username, service_password, default_project, default_region, notes, low_balance_threshold } = req.body || {}
     if (!name || !name.trim()) return res.status(400).json({ error: 'Название обязательно' })
     const { rows } = await db.query(
       `INSERT INTO selectel_accounts
-         (name, api_key, account_id, service_username, service_password, default_project, default_region, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+         (name, api_key, account_id, service_username, service_password, default_project, default_region, notes, low_balance_threshold, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
       [
         name.trim(),
         api_key ? encrypt(api_key) : null,
@@ -60,6 +71,7 @@ router.post('/accounts', async (req, res) => {
         default_project || null,
         default_region || null,
         notes || null,
+        normThreshold(low_balance_threshold),
         req.userId || null,
       ]
     )
@@ -82,6 +94,8 @@ router.put('/accounts/:id', async (req, res) => {
     if ('default_region' in b) put('default_region', b.default_region || null)
     if ('notes' in b) put('notes', b.notes || null)
     if ('is_active' in b) put('is_active', !!b.is_active)
+    // При изменении порога сбрасываем флаг уведомления (пересчитается на след. тике).
+    if ('low_balance_threshold' in b) { put('low_balance_threshold', normThreshold(b.low_balance_threshold)); put('low_balance_notified', false) }
     // Секреты: '' = не менять; null = стереть; строка = зашифровать
     if ('api_key' in b && b.api_key !== '') put('api_key', b.api_key === null ? null : encrypt(b.api_key))
     if ('service_password' in b && b.service_password !== '') put('service_password', b.service_password === null ? null : encrypt(b.service_password))

@@ -5,7 +5,7 @@ import {
   BarChart3, Users, CreditCard, History,
   Gift, Bell,
   Sparkles, FileText,
-  Globe, Server, ShoppingCart, Cloud,
+  Globe, Server, ShoppingCart, Cloud, Ticket, LifeBuoy, HardDrive, Wallet, KeyRound, Users2,
   Activity, Palette, BookOpen, TrendingUp, Shield, MessageCircle,
 } from 'lucide-react'
 
@@ -49,6 +49,30 @@ export const GROUPS = [
       { to: '/admin/yandex-cloud',  Icon: Cloud,         label: 'Yandex Cloud' },
       { to: '/admin/selectel',      Icon: Cloud,         label: 'Selectel Cloud' },
       { to: '/admin/hosting-order', Icon: ShoppingCart,  label: 'Заказать хостинг' },
+    ],
+  },
+  {
+    id: 'ruvds',
+    title: 'RUVDS',
+    color: 'from-orange-500 to-red-500',
+    items: [
+      { to: '/admin/ruvds/servers',       Icon: HardDrive, label: 'Серверы' },
+      { to: '/admin/ruvds/statistics',    Icon: BarChart3, label: 'Статистика' },
+      { to: '/admin/ruvds/balance',       Icon: Wallet,    label: 'Баланс' },
+      { to: '/admin/ruvds/ssh-keys',      Icon: KeyRound,  label: 'SSH-ключи' },
+      { to: '/admin/ruvds/notifications', Icon: Bell,      label: 'Уведомления' },
+      { to: '/admin/ruvds/accounts',      Icon: Users2,    label: 'Аккаунты' },
+    ],
+  },
+  {
+    id: 'bedolaga',
+    title: 'Bedolaga Bot',
+    color: 'from-violet-500 to-fuchsia-500',
+    items: [
+      { to: '/admin/bedolaga/users',         Icon: Users,      label: 'Пользователи' },
+      { to: '/admin/bedolaga/subscriptions', Icon: Ticket,     label: 'Подписки' },
+      { to: '/admin/bedolaga/transactions',  Icon: CreditCard, label: 'Транзакции' },
+      { to: '/admin/bedolaga/tickets',       Icon: LifeBuoy,   label: 'Тикеты' },
     ],
   },
   {
