@@ -29,6 +29,14 @@ async function createSubscriptionPayment(userId, planId, period) {
     return { ok: false, error: 'Некорректный период оплаты' }
   }
 
+  // Провайдер не настроен — это ошибка конфигурации сервера, а не действий
+  // юзера. Не показываем ему техническую причину, но кричим в лог, иначе
+  // поломка выглядит как «кнопка не работает» и живёт незамеченной.
+  if (!process.env.PLATEGA_MERCHANT_ID || !process.env.PLATEGA_SECRET) {
+    console.error('\x1b[31m[Payments] PLATEGA_MERCHANT_ID/PLATEGA_SECRET не заданы в .env — оплата недоступна!\x1b[0m')
+    return { ok: false, error: 'Оплата временно недоступна. Мы уже разбираемся — напишите в поддержку.' }
+  }
+
   let plan, amount
   try {
     ({ plan, amount } = await getPlanAndAmount(planId, period))

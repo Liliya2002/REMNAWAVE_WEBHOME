@@ -259,4 +259,10 @@ telegramBot.autoStart().catch(err => console.warn('[TG bot] autoStart:', err.mes
 require('./services/yandexCloud/ipRangeSearch').recoverOrphanedJobs().catch(() => {})
 
 const PORT = process.env.PORT || 4000
+// Проверка платёжной конфигурации на старте: без неё покупка подписки молча
+// падает при каждом клике «Оплатить», и заметить это можно только по логам.
+if (!process.env.PLATEGA_MERCHANT_ID || !process.env.PLATEGA_SECRET) {
+  console.warn('\x1b[33m[Payments] ВНИМАНИЕ: PLATEGA_MERCHANT_ID/PLATEGA_SECRET не заданы — оплата подписок НЕ работает. Задайте их в .env и перезапустите backend.\x1b[0m')
+}
+
 app.listen(PORT, ()=> console.log(`Backend running on port ${PORT}`))
