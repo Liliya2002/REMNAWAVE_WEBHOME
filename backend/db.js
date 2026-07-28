@@ -26,6 +26,15 @@ const pool = new Pool({
   user: process.env.PGUSER || 'vpn_user',
   password: process.env.PGPASSWORD || 'vpn_pass',
   database: process.env.PGDATABASE || 'vpn_db',
+  keepAlive: true, // TCP keep-alive — реже рвутся простаивающие соединения
+})
+
+// ВАЖНО: без этого обработчика ошибка на ПРОСТАИВАЮЩЕМ клиенте пула
+// (напр. `read ECONNRESET`, когда БД/сеть закрывает idle-коннект) всплывает как
+// необработанное событие 'error' и роняет ВЕСЬ процесс backend. Логируем и глотаем —
+// пул сам выкинет битого клиента и создаст новый при следующем query.
+pool.on('error', (err) => {
+  console.error('[db] idle client error (проигнорировано, пул восстановится):', err.message)
 })
 
 module.exports = {
