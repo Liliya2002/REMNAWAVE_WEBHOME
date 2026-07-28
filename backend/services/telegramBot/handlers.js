@@ -959,4 +959,7 @@ module.exports = {
   sendOrEdit,
   renderTemplate,
   REMOVE_REPLY_KEYBOARD,
+  // Используется также авторизацией Mini App (POST /auth/telegram/webapp),
+  // чтобы логика создания юзера из Telegram была ровно одна.
+  findOrCreateUser,
 }

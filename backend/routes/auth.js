@@ -777,4 +777,56 @@ router.get('/tg-login', async (req, res) => {
   }
 })
 
+// ────────────────────────────────────────────────────────────────────────────
+// POST /auth/telegram/webapp — авторизация внутри Telegram Mini App.
+//
+// Мини-апп открывается в изолированном WebView с пустым localStorage, поэтому
+// JWT там нет. Telegram отдаёт подписанную initData — проверяем её подпись
+// (HMAC-SHA256 с секретом из bot_token) и выдаём JWT без единого действия юзера.
+//
+// Body: { initData: "<window.Telegram.WebApp.initData>" }
+// ────────────────────────────────────────────────────────────────────────────
+router.post('/telegram/webapp', checkBannedIp, async (req, res) => {
+  try {
+    const initData = String(req.body?.initData || '')
+    if (!initData) return res.status(400).json({ error: 'initData не передана' })
+
+    const tgSettings = require('../services/telegramBot/settings')
+    const settings = await tgSettings.getSettings()
+    const botToken = settings.bot_token || process.env.TELEGRAM_BOT_TOKEN
+    if (!botToken) return res.status(503).json({ error: 'Telegram-бот не настроен' })
+
+    const { verifyInitData } = require('../services/telegramBot/webAppAuth')
+    const check = verifyInitData(initData, botToken)
+    if (!check.ok) {
+      console.warn('[tg-webapp] initData отклонена:', check.error)
+      return res.status(401).json({ error: check.error })
+    }
+
+    // Находим или создаём юзера — та же логика, что у /start в боте
+    // (нормализация логина, реферальная ссылка и т.д.).
+    const { findOrCreateUser } = require('../services/telegramBot/handlers')
+    const user = await findOrCreateUser(check.user, null)
+    if (!user) return res.status(500).json({ error: 'Не удалось создать пользователя' })
+    if (user.is_active === false) return res.status(403).json({ error: 'Аккаунт заблокирован' })
+
+    // Админский режим: внутрь пускаем только администраторов.
+    const { adminOnly } = await maint.getStatus()
+    if (adminOnly && !user.is_admin) {
+      return res.status(403).json({ error: 'Сайт временно закрыт', adminOnly: true })
+    }
+
+    const token = jwt.sign(
+      { id: user.id, login: user.login, is_admin: user.is_admin },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    )
+    createSession(user.id, token, req).catch(err => console.error('Session create error:', err))
+    res.json({ token, login: user.login, isNew: !!user._isNew })
+  } catch (err) {
+    console.error('[tg-webapp]', err.message)
+    res.status(500).json({ error: 'Ошибка авторизации' })
+  }
+})
+
 module.exports = router

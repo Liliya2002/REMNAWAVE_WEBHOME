@@ -5,6 +5,7 @@ import App from './App'
 import { SiteConfigProvider } from './contexts/SiteConfigContext'
 import { NotificationProvider } from './contexts/NotificationContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import TelegramAuthGate from './components/TelegramAuthGate'
 import './index.css'
 
 createRoot(document.getElementById('root')).render(
@@ -13,7 +14,9 @@ createRoot(document.getElementById('root')).render(
       <ThemeProvider>
         <SiteConfigProvider>
           <NotificationProvider>
-            <App />
+            <TelegramAuthGate>
+              <App />
+            </TelegramAuthGate>
           </NotificationProvider>
         </SiteConfigProvider>
       </ThemeProvider>
