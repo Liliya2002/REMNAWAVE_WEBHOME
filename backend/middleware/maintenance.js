@@ -23,7 +23,19 @@ const ALLOWED = [
   /^\/api\/maintenance(\/|$)/,
   /^\/api\/admin(\/|$)/,
   /^\/api\/me$/,
+  // Платёжные вебхуки провайдеров — server-to-server колбэки без токена.
+  // Их НИКОГДА нельзя блокировать (иначе оплата не активирует подписку в
+  // admin_only/maintenance режимах). Подпись вебхука проверяется в самом роуте.
+  /^\/api\/payments\/webhook$/,
+  /^\/api\/webhooks(\/|$)/,
   /^\/auth\/login$/,
+  // Входы через Telegram (Mini App, одноразовый токен из бота, OIDC).
+  // На момент запроса у юзера ещё НЕТ JWT — он его как раз получает, поэтому
+  // isAdminFromToken() здесь всегда false и гвард отбивал бы даже админа.
+  // Права проверяют сами роуты: при adminOnly они пускают только is_admin.
+  /^\/auth\/telegram\/webapp$/,
+  /^\/auth\/tg-login$/,
+  /^\/auth\/telegram\/(oidc\/(start|info)|callback|availability)$/,
   /^\/auth\/forgot-password$/,
   /^\/auth\/reset-password$/,
   /^\/uploads\//,
