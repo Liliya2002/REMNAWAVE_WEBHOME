@@ -82,26 +82,28 @@ export default function MaintenanceGate({ children }) {
     // уже авторизованному админу.
   }, [location.pathname, hasToken])
 
-  // До первой проверки рендерим children — чтобы не было пустого экрана при медленной сети
-  if (!checked) return children
-
   // Страницы логина / восстановления пароля доступны всегда — иначе админ
   // не сможет войти после выхода во время техработ.
   const isAuthPage = ALWAYS_OPEN_PATHS.some(p => location.pathname.startsWith(p))
 
-  // Админский режим приоритетнее техработ.
-  if (status?.adminOnly && !isAdmin && !isAuthPage) {
-    return <AdminOnlyPage />
+  // Блокирующие экраны показываем только после первой проверки статуса,
+  // иначе на медленной сети мелькает пустой экран. Админский режим
+  // приоритетнее техработ.
+  if (checked && !isAdmin && !isAuthPage) {
+    if (status?.adminOnly) return <AdminOnlyPage />
+    if (status?.maintenance) return <MaintenancePage message={status.message} />
   }
 
-  if (status?.maintenance && !isAdmin && !isAuthPage) {
-    return <MaintenancePage message={status.message} />
-  }
-
+  // ВАЖНО: структура ниже постоянна — всегда фрагмент с двумя слотами баннеров
+  // (пустыми, пока баннер не нужен) и children последним. Если менять число или
+  // позицию детей (например возвращать то `children`, то `<>…{children}</>`),
+  // React считает это другим деревом и ПЕРЕМОНТИРУЕТ всё поддерево. Из-за этого
+  // одноразовые эффекты выполнялись дважды — /tg-login повторно обменивал уже
+  // использованный токен и показывал ошибку поверх успешного входа.
   return (
     <>
-      {status?.adminOnly && isAdmin && <AdminOnlyBanner />}
-      {status?.maintenance && isAdmin && !status?.adminOnly && <MaintenanceBanner />}
+      {checked && status?.adminOnly && isAdmin ? <AdminOnlyBanner /> : null}
+      {checked && status?.maintenance && isAdmin && !status?.adminOnly ? <MaintenanceBanner /> : null}
       {children}
     </>
   )

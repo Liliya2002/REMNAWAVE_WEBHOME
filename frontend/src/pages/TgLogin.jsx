@@ -36,6 +36,24 @@ export default function TgLogin() {
     if (startedRef.current) return
     startedRef.current = true
 
+    // Ref живёт только пока компонент смонтирован, а перемонтирование
+    // (например смена структуры дерева выше) обнуляет его — и токен
+    // обменивался повторно, получая 410 поверх успешного входа.
+    // sessionStorage переживает перемонтирование в рамках вкладки.
+    const guardKey = `tg_login_attempt:${t}`
+    if (sessionStorage.getItem(guardKey)) {
+      // Этот токен уже обменивали. Если вход прошёл — просто идём дальше.
+      if (localStorage.getItem('token')) {
+        setStatus('success')
+        navigate(redirect, { replace: true })
+      } else {
+        setStatus('error')
+        setError('Ссылка уже была использована. Запроси новую в боте.')
+      }
+      return
+    }
+    sessionStorage.setItem(guardKey, '1')
+
     let cancelled = false
     fetch(`${API}/auth/tg-login?t=${encodeURIComponent(t)}`)
       .then(async res => {
