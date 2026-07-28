@@ -747,13 +747,31 @@ router.get('/tg-login', async (req, res) => {
     const t = String(req.query.t || '').trim()
     if (!t) return res.status(400).json({ error: 'Токен не передан' })
 
-    const { consumeAutoLoginToken } = require('../services/telegramBot/tokens')
-    const consumed = await consumeAutoLoginToken(t)
-    if (!consumed) {
-      return res.status(410).json({ error: 'Токен невалиден или истёк. Запроси новую ссылку в боте.' })
+    // Сначала только СМОТРИМ токен: сжигать его до проверки прав нельзя —
+    // иначе после отказа (админ-режим, блокировка) повторный переход по ссылке
+    // выдаёт «токен истёк» и маскирует настоящую причину.
+    const { consumeAutoLoginToken, peekAutoLoginToken, diagnoseAutoLoginToken } =
+      require('../services/telegramBot/tokens')
+    const peeked = await peekAutoLoginToken(t)
+    if (!peeked) {
+      // Разбираем, ЧТО именно не так — иначе на проде все причины выглядят одинаково.
+      const diag = await diagnoseAutoLoginToken(t)
+      console.warn(`[tg-login] отказ: ${diag.reason}`, {
+        used_at: diag.usedAt, expires_at: diag.expiresAt, user_id: diag.userId, ip: req.ip,
+      })
+      const MSG = {
+        malformed: 'Ссылка повреждена — токен передан не полностью. Запроси новую ссылку в боте.',
+        not_found: 'Ссылка не найдена. Возможно, backend перезапускался с другой базой. Запроси новую ссылку в боте.',
+        used:      'Ссылка уже была использована (одноразовая). Запроси новую ссылку в боте.',
+        expired:   'Срок действия ссылки истёк (5 минут). Запроси новую ссылку в боте.',
+      }
+      return res.status(410).json({
+        error: MSG[diag.reason] || 'Токен невалиден или истёк. Запроси новую ссылку в боте.',
+        reason: diag.reason,
+      })
     }
 
-    const userRes = await db.query('SELECT id, login, is_admin, is_active FROM users WHERE id = $1', [consumed.userId])
+    const userRes = await db.query('SELECT id, login, is_admin, is_active FROM users WHERE id = $1', [peeked.userId])
     if (userRes.rows.length === 0) return res.status(404).json({ error: 'Юзер не найден' })
     const user = userRes.rows[0]
     if (!user.is_active) return res.status(403).json({ error: 'Аккаунт заблокирован' })
@@ -761,7 +779,16 @@ router.get('/tg-login', async (req, res) => {
     // Админский режим: вход через Telegram доступен только администраторам.
     const { adminOnly } = await maint.getStatus()
     if (adminOnly && !user.is_admin) {
-      return res.status(403).json({ error: 'Сайт временно закрыт', adminOnly: true })
+      return res.status(403).json({
+        error: 'Сайт закрыт: включён админский режим. Вход доступен только администраторам.',
+        adminOnly: true,
+      })
+    }
+
+    // Права подтверждены — теперь сжигаем токен (атомарно, защищает от повтора).
+    const consumed = await consumeAutoLoginToken(t)
+    if (!consumed) {
+      return res.status(410).json({ error: 'Ссылка уже использована. Запроси новую в боте.' })
     }
 
     const token = jwt.sign(

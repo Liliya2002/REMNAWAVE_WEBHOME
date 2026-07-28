@@ -33,6 +33,9 @@ export default function MaintenanceGate({ children }) {
   const [isAdmin, setIsAdmin] = useState(false)
   const [checked, setChecked] = useState(false)
   const location = useLocation()
+  // Наличие токена — часть зависимостей эффекта: сразу после логина статус
+  // нужно перепроверить, иначе гейт продолжает считать юзера гостем.
+  const hasToken = !!localStorage.getItem('token')
 
   useEffect(() => {
     let cancelled = false
@@ -73,7 +76,11 @@ export default function MaintenanceGate({ children }) {
     check()
     const id = setInterval(check, POLL_INTERVAL_MS)
     return () => { cancelled = true; clearInterval(id) }
-  }, [])
+    // Перепроверяем при навигации и при появлении/пропаже токена: раньше
+    // зависимости были пустыми, поэтому после входа гейт до 30 сек (или до F5)
+    // держал старое is_admin=false и в админ-режиме показывал «Доступ ограничен»
+    // уже авторизованному админу.
+  }, [location.pathname, hasToken])
 
   // До первой проверки рендерим children — чтобы не было пустого экрана при медленной сети
   if (!checked) return children

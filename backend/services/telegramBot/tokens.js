@@ -57,6 +57,44 @@ async function createAutoLoginToken(userId) {
  * Использовать токен — найти, проверить срок, пометить used.
  * @returns {{ userId } | null}
  */
+/**
+ * Проверить токен БЕЗ пометки использованным.
+ * Нужен, чтобы сначала убедиться в правах юзера (админ-режим, блокировка),
+ * а сжигать одноразовый токен — только когда вход реально состоится. Иначе
+ * первая же неуспешная попытка сжигала токен, и юзер видел «токен истёк»
+ * вместо настоящей причины отказа.
+ */
+async function peekAutoLoginToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return null
+  const r = await db.query(
+    `SELECT user_id FROM telegram_link_tokens
+      WHERE token = $1 AND purpose = 'auto_login'
+        AND used_at IS NULL AND expires_at > NOW()`,
+    [token]
+  )
+  return r.rows.length ? { userId: r.rows[0].user_id } : null
+}
+
+/**
+ * Почему токен не подошёл: not_found | used | expired | ok.
+ * Нужно для внятной диагностики на проде — иначе все причины сливаются
+ * в одно «токен невалиден или истёк» и понять реальную не получается.
+ */
+async function diagnoseAutoLoginToken(token) {
+  if (!token || typeof token !== 'string' || token.length < 16) return { reason: 'malformed' }
+  const r = await db.query(
+    `SELECT user_id, used_at, expires_at, (expires_at <= NOW()) AS expired
+       FROM telegram_link_tokens
+      WHERE token = $1 AND purpose = 'auto_login'`,
+    [token]
+  )
+  if (r.rows.length === 0) return { reason: 'not_found' }
+  const row = r.rows[0]
+  if (row.used_at) return { reason: 'used', usedAt: row.used_at, userId: row.user_id }
+  if (row.expired) return { reason: 'expired', expiresAt: row.expires_at, userId: row.user_id }
+  return { reason: 'ok', userId: row.user_id }
+}
+
 async function consumeAutoLoginToken(token) {
   if (!token || typeof token !== 'string' || token.length < 16) return null
   const r = await db.query(
@@ -205,7 +243,8 @@ async function cleanupExpired() {
 
 module.exports = {
   // auto_login
-  createAutoLoginToken, consumeAutoLoginToken, AUTO_LOGIN_TTL_MS,
+  createAutoLoginToken, consumeAutoLoginToken, peekAutoLoginToken,
+  diagnoseAutoLoginToken, AUTO_LOGIN_TTL_MS,
   // link existing
   createLinkToken, getLinkToken, confirmLinkToken, pollLinkStatus, LINK_TTL_MS,
   // registration
