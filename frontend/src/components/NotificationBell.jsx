@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle, XCircle, AlertTriangle, Info, PartyPopper, CreditCard, ClipboardList, Gift, Globe, Megaphone } from 'lucide-react'
 
@@ -30,6 +31,26 @@ export default function NotificationBell() {
   const panelRef = useRef(null)
   const bellRef = useRef(null)
   const navigate = useNavigate()
+  // Позиция панели на десктопе. Панель рендерится порталом в <body>, поэтому
+  // якорится к кнопке вручную — иначе `absolute` относительно кнопки уже не работает.
+  const [anchor, setAnchor] = useState(null)
+
+  // Пересчёт позиции при открытии, ресайзе и скролле.
+  useEffect(() => {
+    if (!isOpen) return
+    const place = () => {
+      const r = bellRef.current?.getBoundingClientRect()
+      if (!r) return
+      setAnchor({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) })
+    }
+    place()
+    window.addEventListener('resize', place)
+    window.addEventListener('scroll', place, true)
+    return () => {
+      window.removeEventListener('resize', place)
+      window.removeEventListener('scroll', place, true)
+    }
+  }, [isOpen])
 
   const token = localStorage.getItem('token')
 
@@ -194,15 +215,21 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Dropdown Panel */}
-      {isOpen && (
+      {/* Dropdown Panel.
+          Рендерится ПОРТАЛОМ в <body>: шапка сайта имеет backdrop-blur, а он
+          создаёт containing block, из-за которого `position: fixed` внутри неё
+          отсчитывается от самой шапки, а не от экрана. На мобилке панель с
+          `top:65px; bottom:0` схлопывалась в нулевую высоту — выглядело так,
+          будто колокольчик не открывается. */}
+      {isOpen && createPortal(
         <>
           {/* Mobile fullscreen backdrop */}
           <div className="sm:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[99]" onClick={() => setIsOpen(false)} />
 
           <div
             ref={panelRef}
-            className="fixed inset-x-0 top-[65px] bottom-0 sm:absolute sm:inset-auto sm:right-0 sm:top-12 sm:w-96 sm:max-h-[480px] sm:rounded-xl bg-sky-50/95 dark:bg-slate-900/95 backdrop-blur-xl border-0 sm:border border-sky-200 dark:border-slate-700/50 shadow-2xl shadow-black/30 overflow-hidden z-[100] animate-in slide-in-from-top-2 duration-200"
+            style={anchor ? { '--bell-top': `${anchor.top}px`, '--bell-right': `${anchor.right}px` } : undefined}
+            className="fixed inset-x-0 top-[65px] bottom-0 sm:inset-auto sm:left-auto sm:bottom-auto sm:top-[var(--bell-top)] sm:right-[var(--bell-right)] sm:w-96 sm:max-h-[480px] sm:rounded-xl bg-sky-50/95 dark:bg-slate-900/95 backdrop-blur-xl border-0 sm:border border-sky-200 dark:border-slate-700/50 shadow-2xl shadow-black/30 overflow-hidden z-[100] animate-in slide-in-from-top-2 duration-200"
           >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-sky-200 dark:border-slate-700/50">
@@ -283,7 +310,8 @@ export default function NotificationBell() {
             )}
           </div>
         </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   )
