@@ -45,6 +45,7 @@ import RuvdsBalance from './pages/ruvds/RuvdsBalance'
 import RuvdsSshKeys from './pages/ruvds/RuvdsSshKeys'
 import RuvdsNotifications from './pages/ruvds/RuvdsNotifications'
 import RuvdsAccounts from './pages/ruvds/RuvdsAccounts'
+import AdminPaymentSettings from './pages/AdminPaymentSettings'
 import AdminTelegram from './pages/AdminTelegram'
 import LandingPage from './pages/LandingPage'
 import PaymentHistory from './pages/PaymentHistory'
@@ -275,6 +276,7 @@ function AppShell(){
               <Route path="vps" element={<AdminVPS />} />
               <Route path="yandex-cloud" element={<AdminYandexCloud />} />
               <Route path="selectel" element={<AdminSelectel />} />
+              <Route path="payment-settings" element={<AdminPaymentSettings />} />
               <Route path="bedolaga" element={<AdminBedolaga />} />
               <Route path="bedolaga/:section" element={<AdminBedolaga />} />
               <Route path="ruvds" element={<RuvdsLayout />}>

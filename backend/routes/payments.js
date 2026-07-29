@@ -545,7 +545,9 @@ router.post('/webhook', async (req, res) => {
   try {
     await ensureWalletSchema();
 
-    if (!verifyWebhookSignature(req.headers)) {
+    // ВАЖНО: функция асинхронная (ключи читаются из настроек) — без await
+    // проверка всегда проходила бы, т.к. Promise истинный.
+    if (!(await verifyWebhookSignature(req.headers))) {
       console.error('Invalid webhook signature');
       return res.status(401).json({ error: 'Invalid signature' });
     }

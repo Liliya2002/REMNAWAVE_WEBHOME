@@ -83,6 +83,7 @@ export const GROUPS = [
       { to: '/admin/system',   Icon: Activity,       label: 'Состояние системы' },
       { to: '/admin/settings', Icon: Palette,        label: 'Настройки' },
       { to: '/admin/telegram', Icon: MessageCircle,  label: 'Telegram-бот' },
+      { to: '/admin/payment-settings', Icon: CreditCard, label: 'Платёжки' },
     ],
   },
   {

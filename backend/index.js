@@ -133,6 +133,7 @@ const adminYandexCloudRoutes = require('./routes/admin-yandex-cloud')
 const adminSelectelRoutes = require('./routes/admin-selectel')
 const adminBedolagaRoutes = require('./routes/admin-bedolaga')
 const adminRuvdsRoutes = require('./routes/admin-ruvds')
+const adminPaymentSettingsRoutes = require('./routes/admin-payment-settings')
 const adminTelegramRoutes = require('./routes/admin-telegram')
 const telegramBot = require('./services/telegramBot')
 const healthRoutes = require('./routes/health')
@@ -187,6 +188,7 @@ app.use('/api/admin/yandex-cloud', adminLimiter, adminYandexCloudRoutes)
 app.use('/api/admin/selectel', adminLimiter, adminSelectelRoutes)
 app.use('/api/admin/bedolaga', adminLimiter, adminBedolagaRoutes)
 app.use('/api/admin/ruvds', adminLimiter, adminRuvdsRoutes)
+app.use('/api/admin/payment-settings', adminLimiter, adminPaymentSettingsRoutes)
 app.use('/api/admin/telegram', adminLimiter, adminTelegramRoutes)
 
 // Public webhook endpoint для Telegram (mode=webhook).
@@ -261,8 +263,16 @@ require('./services/yandexCloud/ipRangeSearch').recoverOrphanedJobs().catch(() =
 const PORT = process.env.PORT || 4000
 // Проверка платёжной конфигурации на старте: без неё покупка подписки молча
 // падает при каждом клике «Оплатить», и заметить это можно только по логам.
-if (!process.env.PLATEGA_MERCHANT_ID || !process.env.PLATEGA_SECRET) {
-  console.warn('\x1b[33m[Payments] ВНИМАНИЕ: PLATEGA_MERCHANT_ID/PLATEGA_SECRET не заданы — оплата подписок НЕ работает. Задайте их в .env и перезапустите backend.\x1b[0m')
-}
+require('./services/paymentSettings').get()
+  .then(({ platega }) => {
+    if (!platega.configured) {
+      console.warn('\x1b[33m[Payments] ВНИМАНИЕ: Platega не настроена — оплата подписок НЕ работает. Задайте Merchant ID и Secret в админке → Настройки → Платёжки.\x1b[0m')
+    } else if (!platega.enabled) {
+      console.warn('\x1b[33m[Payments] Приём платежей через Platega отключён в настройках.\x1b[0m')
+    } else {
+      console.log(`[Payments] Platega настроена (источник: ${platega.source === 'env' ? '.env' : 'админка'})`)
+    }
+  })
+  .catch(() => {})
 
 app.listen(PORT, ()=> console.log(`Backend running on port ${PORT}`))

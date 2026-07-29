@@ -1,10 +1,14 @@
 const axios = require('axios');
+const paymentSettings = require('./paymentSettings');
 
-const PLATEGA_API_URL = 'https://app.platega.io';
-const MERCHANT_ID = process.env.PLATEGA_MERCHANT_ID;
-const SECRET = process.env.PLATEGA_SECRET;
-const PAYMENT_METHOD = 2; // Default payment method ID (usually SBP/QR)
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+/**
+ * Клиент Platega.io.
+ *
+ * Ключи и URL берутся из настроек (админка → Платёжки), с откатом на .env —
+ * см. services/paymentSettings.js. Читаются при каждом вызове (значения
+ * кэшируются в сервисе настроек), поэтому смена ключей в админке применяется
+ * без перезапуска backend.
+ */
 
 /**
  * Create payment link via Platega.io API
@@ -15,32 +19,37 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
  * @returns {Promise<Object>} Payment data with transactionId and redirect URL
  */
 async function createPayment(amount, currency, description, payload) {
+  const { platega } = await paymentSettings.get();
+
   try {
-    if (!MERCHANT_ID || !SECRET) {
-      throw new Error('Platega credentials not configured. Set PLATEGA_MERCHANT_ID and PLATEGA_SECRET in environment');
+    if (!platega.configured) {
+      throw new Error('Platega не настроена. Задайте Merchant ID и Secret в админке → Настройки → Платёжки');
+    }
+    if (!platega.enabled) {
+      throw new Error('Приём платежей через Platega отключён в настройках');
     }
 
     const requestData = {
-      paymentMethod: PAYMENT_METHOD,
+      paymentMethod: platega.paymentMethod,
       paymentDetails: {
         amount: parseFloat(amount),
         currency: currency.toUpperCase()
       },
       description: description,
-      return: `${FRONTEND_URL}/payment/success`,
-      failedUrl: `${FRONTEND_URL}/payment/failed`,
+      return: platega.successUrl,
+      failedUrl: platega.failedUrl,
       payload: payload
     };
 
     console.log('Creating Platega payment:', requestData);
 
     const response = await axios.post(
-      `${PLATEGA_API_URL}/transaction/process`,
+      `${platega.apiUrl}/transaction/process`,
       requestData,
       {
         headers: {
-          'X-MerchantId': MERCHANT_ID,
-          'X-Secret': SECRET,
+          'X-MerchantId': platega.merchantId,
+          'X-Secret': platega.secret,
           'Content-Type': 'application/json'
         }
       }
@@ -58,7 +67,7 @@ async function createPayment(amount, currency, description, payload) {
 
   } catch (error) {
     console.error('Platega payment creation error:', error.response?.data || error.message);
-    throw new Error(error.response?.data?.message || 'Failed to create payment');
+    throw new Error(error.response?.data?.message || error.message || 'Failed to create payment');
   }
 }
 
@@ -66,25 +75,25 @@ async function createPayment(amount, currency, description, payload) {
  * Verify webhook signature from Platega
  * Platega отправляет credentials в заголовках - проверяем через timing-safe сравнение
  * @param {Object} headers - Request headers
- * @returns {boolean} True if signature is valid
+ * @returns {Promise<boolean>} True if signature is valid
  */
-function verifyWebhookSignature(headers) {
+async function verifyWebhookSignature(headers) {
   const crypto = require('crypto');
+  const { platega } = await paymentSettings.get();
+
   const merchantId = headers['x-merchantid'] || '';
   const secret = headers['x-secret'] || '';
 
-  if (!MERCHANT_ID || !SECRET) return false;
+  if (!platega.configured) return false;
 
   try {
-    const merchantMatch = crypto.timingSafeEqual(
-      Buffer.from(merchantId, 'utf8'),
-      Buffer.from(MERCHANT_ID, 'utf8')
-    );
-    const secretMatch = crypto.timingSafeEqual(
-      Buffer.from(secret, 'utf8'),
-      Buffer.from(SECRET, 'utf8')
-    );
-    return merchantMatch && secretMatch;
+    // timingSafeEqual требует одинаковую длину буферов — иначе бросает.
+    const a = Buffer.from(merchantId, 'utf8');
+    const b = Buffer.from(platega.merchantId, 'utf8');
+    const c = Buffer.from(secret, 'utf8');
+    const d = Buffer.from(platega.secret, 'utf8');
+    if (a.length !== b.length || c.length !== d.length) return false;
+    return crypto.timingSafeEqual(a, b) && crypto.timingSafeEqual(c, d);
   } catch {
     return false;
   }
