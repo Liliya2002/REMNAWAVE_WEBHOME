@@ -702,6 +702,24 @@ router.get('/telegram/callback', async (req, res) => {
       userId = u.id
     } else {
       // Логин: предпочитаем @username, fallback на oidc_<short-hash>.
+      // Telegram OIDC не отдаёт telegram_id (его sub — отдельный идентификатор),
+      // поэтому у человека, который уже заходил через бота, здесь создаётся
+      // ВТОРОЙ аккаунт: подписки из бота в таком кабинете не видны.
+      // Автоматически связывать по @username нельзя — его можно сменить и
+      // переуступить, это дало бы захват чужого аккаунта. Поэтому лишь громко
+      // предупреждаем: слияние делается админом скриптом
+      // scripts/merge-telegram-duplicates.js либо привязкой бота из кабинета.
+      if (tgUsername) {
+        const twin = await db.query(
+          'SELECT id, login FROM users WHERE LOWER(telegram_username) = LOWER($1) AND telegram_id IS NOT NULL LIMIT 1',
+          [tgUsername]
+        )
+        if (twin.rows.length) {
+          console.warn(`\x1b[33m[oidc] Создаётся второй аккаунт для @${tgUsername}: уже есть id=${twin.rows[0].id} "${twin.rows[0].login}" с telegram_id. ` +
+            'Кабинеты будут разными. Слейте: node scripts/merge-telegram-duplicates.js\x1b[0m')
+        }
+      }
+
       const subTail = oidcSub.replace(/[^a-z0-9]/gi, '').slice(-10) || crypto.randomBytes(4).toString('hex')
       const baseLogin = normLogin(tgUsername) || `oidc_${subTail}`
       const lc = await db.query('SELECT 1 FROM users WHERE login = $1', [baseLogin])
