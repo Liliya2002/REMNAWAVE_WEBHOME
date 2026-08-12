@@ -22,6 +22,24 @@ const ENABLED = process.env.SELECTEL_BALANCE_CHECK_ENABLED !== 'false'
 const fmtRub = n => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 2 })
 const escapeHtml = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
+/**
+ * Пора ли слать уведомление.
+ *
+ * Первый раз — при падении ниже порога. Дальше молчим, пока не пройдёт
+ * интервал повтора (0 = не повторять, прежнее поведение). Отсчёт ведём от
+ * времени ПОСЛЕДНЕЙ отправки, а не от начала падения: иначе после включения
+ * повтора у давно минусового аккаунта разом ушла бы пачка «просроченных»
+ * напоминаний.
+ */
+function shouldNotify(acc, now) {
+  if (!acc.low_balance_notified) return true
+  const repeatH = Number(acc.low_balance_repeat_hours) || 0
+  if (repeatH <= 0) return false
+  const last = acc.low_balance_notified_at ? new Date(acc.low_balance_notified_at).getTime() : null
+  if (!last) return true          // повтор включили после того, как уведомили
+  return now.getTime() - last >= repeatH * 3600 * 1000
+}
+
 async function checkOne(acc) {
   const threshold = Number(acc.low_balance_threshold)
   if (!threshold || threshold <= 0) return { skipped: true }
@@ -34,9 +52,10 @@ async function checkOne(acc) {
   const now = new Date()
   const low = total < threshold
 
-  if (low && !acc.low_balance_notified) {
+  if (low && shouldNotify(acc, now)) {
     await db.query(
-      'UPDATE selectel_accounts SET last_balance_rub=$2, balance_checked_at=$3, low_balance_notified=true WHERE id=$1',
+      `UPDATE selectel_accounts SET last_balance_rub=$2, balance_checked_at=$3,
+              low_balance_notified=true, low_balance_notified_at=$3 WHERE id=$1`,
       [acc.id, total, now]
     )
     tgNotify.notifyAdmin('admin_selectel_low_balance', {
@@ -50,7 +69,8 @@ async function checkOne(acc) {
   if (!low && acc.low_balance_notified) {
     // Баланс восстановился — снимаем флаг (следующее падение снова уведомит).
     await db.query(
-      'UPDATE selectel_accounts SET last_balance_rub=$2, balance_checked_at=$3, low_balance_notified=false WHERE id=$1',
+      `UPDATE selectel_accounts SET last_balance_rub=$2, balance_checked_at=$3,
+              low_balance_notified=false, low_balance_notified_at=NULL WHERE id=$1`,
       [acc.id, total, now]
     )
     return { changed: true, low: false, total }

@@ -57,7 +57,12 @@ app.use(cors({
 }))
 
 // Лимит размера тела запроса
-app.use(express.json({ limit: '100kb' }))
+// verify сохраняет сырые байты: подпись вебхуков (RemnaWave, платёжки)
+// считается именно от них, повторная сериализация даст другую строку.
+app.use(express.json({
+  limit: '100kb',
+  verify: (req, res, buf) => { req.rawBody = buf },
+}))
 
 // Rate limiting — общий
 const globalLimiter = rateLimit({
@@ -134,6 +139,8 @@ const adminSelectelRoutes = require('./routes/admin-selectel')
 const adminBedolagaRoutes = require('./routes/admin-bedolaga')
 const adminRuvdsRoutes = require('./routes/admin-ruvds')
 const adminPaymentSettingsRoutes = require('./routes/admin-payment-settings')
+const adminVpsProvidersRoutes = require('./routes/admin-vps-providers')
+const adminVpsSettingsRoutes = require('./routes/admin-vps-settings')
 const adminTelegramRoutes = require('./routes/admin-telegram')
 const telegramBot = require('./services/telegramBot')
 const healthRoutes = require('./routes/health')
@@ -189,6 +196,8 @@ app.use('/api/admin/selectel', adminLimiter, adminSelectelRoutes)
 app.use('/api/admin/bedolaga', adminLimiter, adminBedolagaRoutes)
 app.use('/api/admin/ruvds', adminLimiter, adminRuvdsRoutes)
 app.use('/api/admin/payment-settings', adminLimiter, adminPaymentSettingsRoutes)
+app.use('/api/admin/vps-providers', adminLimiter, adminVpsProvidersRoutes)
+app.use('/api/admin/vps-settings', adminLimiter, adminVpsSettingsRoutes)
 app.use('/api/admin/telegram', adminLimiter, adminTelegramRoutes)
 
 // Public webhook endpoint для Telegram (mode=webhook).
@@ -209,6 +218,9 @@ app.use('/api/landings', landingsRoutes)
 // /api/countries — публичный справочник стран ISO 3166-1
 app.use('/api/countries', require('./routes/countries'))
 app.use('/api/admin', adminLimiter, adminTemplatesRoutes)
+app.use('/api/admin/ai', require('./routes/admin-ai-assistant'))
+app.use('/api/admin/config-builder', require('./routes/admin-config-builder'))
+app.use('/api/webhooks', require('./routes/remnawave-webhook'))
 app.use('/api/notifications', notificationsRoutes)
 
 // Статика для загруженных файлов (картинки лендингов)
@@ -250,6 +262,9 @@ require('./cron/vpsExpiry').start()
 
 // Cron: VPS health-check — TCP-пинг порта 22, уведомление при смене состояния
 require('./cron/vpsHealth').start()
+require('./cron/bedolagaPromoSync').start()
+require('./cron/aiTickets').start()
+require('./cron/ycBalance').start()
 
 // Cron: низкий баланс Selectel — уведомление админу при падении ниже порога
 require('./cron/selectelBalance').start()

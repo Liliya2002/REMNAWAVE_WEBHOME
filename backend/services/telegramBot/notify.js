@@ -72,6 +72,49 @@ const DEFAULT_TEXTS = {
     'Порог: {threshold} ₽\n\n' +
     'Пополните баланс, чтобы сервисы не приостановили.',
 
+  admin_yc_low_balance:
+    '🟡 <b>Низкий баланс Yandex Cloud</b>\n\n' +
+    'Аккаунт: <b>{account}</b>\n' +
+    'Баланс: <b>{balance} ₽</b>\n' +
+    'Порог: {threshold} ₽\n\n' +
+    'Пополните баланс, чтобы виртуальные машины не остановили.',
+
+  admin_node_down:
+    '🔴 <b>Нода упала</b>\n\n' +
+    '<b>{name}</b> ({country})\n' +
+    'Адрес: <code>{address}</code>\n' +
+    'Было онлайн: {users}\n' +
+    'Причина: {reason}',
+
+  admin_node_up:
+    '🟢 <b>Нода снова на связи</b>\n\n' +
+    '<b>{name}</b> ({country})\n' +
+    'Адрес: <code>{address}</code>\n' +
+    'Простой: {downtime}\n' +
+    'Xray {xray} / node {nodeVer}',
+
+  admin_node_created:
+    '➕ <b>Добавлена нода</b>\n\n' +
+    '<b>{name}</b> ({country})\n' +
+    'Адрес: <code>{address}</code>\n' +
+    'Провайдер: {provider}\n' +
+    'Железо: {cpu}, {ram}\n' +
+    'Профиль: {profile}, inbound: {inbounds}',
+
+  admin_node_deleted:
+    '➖ <b>Нода удалена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
+
+  admin_node_disabled:
+    '⏸ <b>Нода отключена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
+
+  admin_node_enabled:
+    '▶️ <b>Нода включена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
+
+  admin_node_traffic:
+    '📊 <b>Трафик ноды на пределе</b>\n\n' +
+    '<b>{name}</b> ({country})\n' +
+    'Использовано: {used} из {limit} (порог {percent}%)',
+
   admin_user_registered:
     '👤 <b>Новый юзер</b>\nЛогин: {login}\nИсточник: {source}',
 

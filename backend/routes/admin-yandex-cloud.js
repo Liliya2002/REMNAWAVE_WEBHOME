@@ -149,6 +149,7 @@ router.put('/accounts/:id', async (req, res) => {
     const allowed = [
       'name', 'auth_type', 'oauth_token', 'sa_key_json',
       'default_cloud_id', 'default_folder_id', 'billing_account_id',
+      'low_balance_threshold', 'low_balance_repeat_hours',
       'socks5_url', 'notes', 'is_active', 'is_readonly',
     ]
     const sets = []
@@ -248,21 +249,68 @@ router.post('/accounts/:id/test', async (req, res) => {
       throw err
     }
 
-    // 2. List clouds (через YC client с retry/refresh)
     const yc = await ycClient(id)
     result.hasSocks5 = yc.meta.hasSocks5
-    const r = await yc.get('https://resource-manager.api.cloud.yandex.net/resource-manager/v1/clouds', {
-      params: { pageSize: 50 },
-    })
-    const clouds = (r.data?.clouds || []).map(c => ({ id: c.id, name: c.name, organizationId: c.organizationId }))
+
+    // 2. Список облаков — ИНФОРМАЦИОННО.
+    //    Он требует прав на уровне облака (resource-manager), а вся работа
+    //    ведётся в каталоге по folderId. Сервисному аккаунту правильно давать
+    //    роли только на каталог, поэтому пустой список здесь — норма, а не
+    //    ошибка: раньше тест из-за него краснел на полностью рабочем ключе.
+    let clouds = []
+    try {
+      const r = await yc.get('https://resource-manager.api.cloud.yandex.net/resource-manager/v1/clouds', {
+        params: { pageSize: 50 },
+      })
+      clouds = (r.data?.clouds || []).map(c => ({ id: c.id, name: c.name, organizationId: c.organizationId }))
+    } catch { /* нет прав на облака — для работы не требуется */ }
     result.steps.push({
       key: 'list_clouds',
-      label: `Доступно облаков: ${clouds.length}`,
-      ok: clouds.length > 0,
-      detail: clouds.length === 0 ? 'У SA/OAuth нет прав на просмотр облаков' : null,
+      label: clouds.length > 0 ? `Доступно облаков: ${clouds.length}` : 'Список облаков недоступен (не требуется)',
+      ok: true,
+      detail: clouds.length === 0
+        ? 'Нет прав resource-manager на уровне облака. Для работы достаточно ролей на каталог.'
+        : null,
     })
     result.clouds = clouds
-    result.ok = clouds.length > 0
+
+    // 3. Главная проверка — доступ к рабочему каталогу. Именно от folderId
+    //    зависят все операции (ВМ, сети, образы).
+    const accRow = await db.query('SELECT default_folder_id FROM yc_accounts WHERE id = $1', [id])
+    const folderId = accRow.rows[0]?.default_folder_id
+    if (!folderId) {
+      result.steps.push({
+        key: 'folder_access',
+        label: 'Каталог не задан',
+        ok: false,
+        detail: 'Укажите Folder ID в настройках аккаунта — без него нельзя работать с ВМ и сетями.',
+      })
+      result.ok = false
+    } else {
+      try {
+        const inst = await yc.get('https://compute.api.cloud.yandex.net/compute/v1/instances', {
+          params: { folderId, pageSize: 1 },
+        })
+        const total = (inst.data?.instances || []).length
+        result.steps.push({
+          key: 'folder_access',
+          label: `Каталог доступен${total ? ' (ВМ найдены)' : ' (ВМ пока нет)'}`,
+          ok: true,
+        })
+        result.ok = true
+      } catch (e) {
+        const code = e.response?.status
+        result.steps.push({
+          key: 'folder_access',
+          label: `Нет доступа к каталогу${code ? ` (HTTP ${code})` : ''}`,
+          ok: false,
+          detail: code === 403 || code === 404
+            ? 'Выдайте сервисному аккаунту роли на этот каталог: compute.admin, vpc.admin, iam.serviceAccounts.user.'
+            : e.message,
+        })
+        result.ok = false
+      }
+    }
   } catch (err) {
     result.error = err.message
     if (err.diagHint) result.errorHint = err.diagHint
@@ -798,6 +846,13 @@ router.get('/accounts/:id/billing-accounts', async (req, res) => {
     const data = await billing.listBillingAccounts(yc)
     res.json(data)
   } catch (err) {
+    if (err.response?.status === 403) {
+      return res.status(403).json({
+        error: 'Нет доступа к биллингу',
+        hint: 'Назначьте сервисному аккаунту роль billing.accounts.viewer в разделе Биллинг → «Права доступа». ' +
+              'Роли на каталог сюда не распространяются.',
+      })
+    }
     res.status(500).json({ error: err.message })
   }
 })
@@ -848,6 +903,17 @@ router.get('/accounts/:id/balance', async (req, res) => {
 
     res.json({ billing: acc, topUpUrl, grant })
   } catch (err) {
+    // 403 здесь почти всегда означает не «сломано», а отсутствие роли:
+    // billing.accounts.viewer выдаётся НА САМ БИЛЛИНГ-АККАУНТ, а не на каталог,
+    // поэтому ролей на каталог для этого раздела недостаточно.
+    if (err.response?.status === 403) {
+      return res.status(403).json({
+        error: 'Нет доступа к биллинг-аккаунту',
+        hint: 'Откройте Биллинг → ваш аккаунт → «Права доступа» и назначьте сервисному аккаунту роль billing.accounts.viewer. ' +
+              'Роли, выданные на каталог, здесь не действуют — биллинг-аккаунт это отдельный ресурс.',
+        billingAccountId,
+      })
+    }
     res.status(500).json({ error: err.message })
   }
 })

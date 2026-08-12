@@ -574,6 +574,17 @@ router.delete('/:id', async (req, res) => {
  * GET /api/admin/vps/ssh/commands
  * Список доступных SSH-команд
  */
+// Активные провайдеры для выпадающего списка в форме VPS.
+// Отдельно от CRUD (/api/admin/vps-providers), чтобы форма не тянула лишнее.
+router.get('/providers', async (req, res) => {
+  try {
+    const { rows } = await db.query(
+      `SELECT id, name, website_url, panel_url FROM vps_providers
+        WHERE is_active = true ORDER BY sort_order, name`)
+    res.json({ providers: rows })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 router.get('/ssh/commands', (req, res) => {
   const commands = Object.entries(SSH_COMMANDS).map(([key, val]) => ({
     key,

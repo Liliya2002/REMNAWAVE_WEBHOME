@@ -10,7 +10,7 @@ import { authFetch } from '../services/api'
 
 const EMPTY_FORM = {
   name: '', api_key: '', account_id: '', service_username: '', service_password: '',
-  default_project: '', default_region: '', notes: '', low_balance_threshold: '',
+  default_project: '', default_region: '', notes: '', low_balance_threshold: '', low_balance_repeat_hours: '',
 }
 
 export default function AdminSelectel() {
@@ -209,7 +209,7 @@ export default function AdminSelectel() {
                   <button onClick={() => test(a.id)} className="px-3 py-1.5 text-xs rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300 hover:text-white flex items-center gap-1.5">
                     {d.test?.loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />} Тест
                   </button>
-                  <button onClick={() => setModal({ editId: a.id, form: { ...EMPTY_FORM, name: a.name, account_id: a.account_id || '', service_username: a.service_username || '', default_project: a.default_project || '', default_region: a.default_region || '', notes: a.notes || '', low_balance_threshold: a.low_balance_threshold ?? '', api_key: '', service_password: '' } })}
+                  <button onClick={() => setModal({ editId: a.id, form: { ...EMPTY_FORM, name: a.name, account_id: a.account_id || '', service_username: a.service_username || '', default_project: a.default_project || '', default_region: a.default_region || '', notes: a.notes || '', low_balance_threshold: a.low_balance_threshold ?? '', low_balance_repeat_hours: a.low_balance_repeat_hours ?? '', api_key: '', service_password: '' } })}
                     className="p-2 rounded-lg text-slate-400 hover:text-sky-300 hover:bg-slate-800/60"><Pencil className="w-4 h-4" /></button>
                   {confirmDel === a.id ? (
                     <span className="flex items-center gap-1">
@@ -618,6 +618,14 @@ function AccountModal({ modal, setModal, save, saving, showSecret, setShowSecret
               onChange={e => set('low_balance_threshold', e.target.value)} placeholder="напр. 500 (пусто = выкл)"
               className={inputCls + ' font-mono'} />
             <p className="text-[11px] text-slate-500 mt-1">Когда баланс опустится ниже — придёт уведомление админу в Telegram (бейдж «низкий баланс» на карточке). Требуется API-ключ. Проверка раз в час.</p>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Напоминать каждые, часов</label>
+            <input autoComplete="off" type="number" min="0" max="168" step="1" value={f.low_balance_repeat_hours}
+              onChange={e => set('low_balance_repeat_hours', e.target.value)} placeholder="0 — уведомить один раз"
+              className={inputCls + ' font-mono'} />
+            <p className="text-[11px] text-slate-500 mt-1">0 — одно сообщение при падении ниже порога и тишина, пока баланс не поднимут. Больше нуля — напоминание с этим интервалом, пока баланс низкий. Счёт идёт от прошлого сообщения, а не от начала падения.</p>
           </div>
 
           <div>

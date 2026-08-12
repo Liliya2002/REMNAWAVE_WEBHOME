@@ -56,6 +56,21 @@ async function ensureSettingsSchema() {
   // вход обычных пользователей и регистрация отключены (жёстко, на уровне бэкенда).
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS admin_only_mode BOOLEAN DEFAULT false`)
 
+  // dashboard_theme — вид личного кабинета для ВСЕХ пользователей: 'classic'
+  // или 'premium' (Digital Premium). Выбор только у админа: у пользователя
+  // переключателя нет, чтобы кабинет выглядел одинаково у всех.
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS dashboard_theme VARCHAR(16) DEFAULT 'classic'`)
+
+  // admin_settings_theme — оформление страницы /admin/settings: 'classic' или
+  // 'bridge' («командный мостик»). Влияет только на подачу, набор настроек и
+  // их логика в обоих видах одинаковые.
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS admin_settings_theme VARCHAR(16) DEFAULT 'classic'`)
+
+  // Синхронизация активаций промокодов Bedolaga в нашу базу. API бота отдаёт
+  // только 10 последних активаций на промокод, поэтому копим историю опросом.
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS bedolaga_promo_sync_enabled BOOLEAN DEFAULT false`)
+  await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS bedolaga_promo_sync_interval_min INTEGER DEFAULT 60`)
+
   // Анимированный фон (звёзды + метеоры) — глобальные настройки внешнего вида.
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS enable_starfield BOOLEAN DEFAULT true`)
   await db.query(`ALTER TABLE site_config ADD COLUMN IF NOT EXISTS starfield_light BOOLEAN DEFAULT false`)
@@ -316,6 +331,8 @@ router.get('/config', verifyToken, verifyAdmin, async (req, res) => {
               maintenance_message, admin_only_mode, require_email_confirmation,
               session_timeout_minutes, max_login_attempts,
               enable_starfield, starfield_light, starfield_parallax, starfield_density,
+              dashboard_theme, admin_settings_theme,
+              bedolaga_promo_sync_enabled, bedolaga_promo_sync_interval_min,
               remnwave_api_url, remnwave_api_token, remnwave_secret_key,
               webhook_secret, verify_webhooks
        FROM site_config LIMIT 1`
@@ -366,6 +383,8 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
       maintenance_message, admin_only_mode, require_email_confirmation,
       session_timeout_minutes, max_login_attempts,
       enable_starfield, starfield_light, starfield_parallax, starfield_density,
+      dashboard_theme, admin_settings_theme,
+      bedolaga_promo_sync_enabled, bedolaga_promo_sync_interval_min,
       remnwave_api_url, remnwave_api_token, remnwave_secret_key,
       webhook_secret, verify_webhooks
     } = req.body
@@ -416,6 +435,10 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
            starfield_light = COALESCE($42, starfield_light),
            starfield_parallax = COALESCE($43, starfield_parallax),
            starfield_density = COALESCE($44, starfield_density),
+           dashboard_theme = COALESCE($45, dashboard_theme),
+           admin_settings_theme = COALESCE($46, admin_settings_theme),
+           bedolaga_promo_sync_enabled = COALESCE($47, bedolaga_promo_sync_enabled),
+           bedolaga_promo_sync_interval_min = COALESCE($48, bedolaga_promo_sync_interval_min),
            updated_at = NOW()
        WHERE id = (SELECT id FROM site_config LIMIT 1)
        RETURNING *`,
@@ -432,7 +455,13 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
         session_timeout_minutes, max_login_attempts,
         remnwave_api_url, remnwave_api_token, remnwave_secret_key,
         webhook_secret, verify_webhooks, admin_only_mode,
-        enable_starfield, starfield_light, starfield_parallax, starfield_density
+        enable_starfield, starfield_light, starfield_parallax, starfield_density,
+        ['classic', 'premium'].includes(dashboard_theme) ? dashboard_theme : null,
+        ['classic', 'bridge'].includes(admin_settings_theme) ? admin_settings_theme : null,
+        bedolaga_promo_sync_enabled,
+        // Интервал зажимаем: чаще 5 мин ни к чему, реже суток теряется смысл
+        bedolaga_promo_sync_interval_min == null ? null
+          : Math.min(Math.max(Number(bedolaga_promo_sync_interval_min) || 60, 5), 1440)
       ]
     )
     
@@ -461,6 +490,10 @@ router.put('/config', verifyToken, verifyAdmin, async (req, res) => {
 
     // Сбрасываем кеш maintenance — изменение применится сразу, не через 30с
     maint.invalidate()
+    // Интервал синхронизации промокодов мог измениться — перепланируем
+    // крон сразу, иначе новое значение подхватилось бы только после рестарта.
+    try { await require('../cron/bedolagaPromoSync').reschedule() }
+    catch (e) { console.warn('[config] promo reschedule:', e.message) }
 
     res.json({ config: result.rows[0], message: 'Configuration updated' })
   } catch (err) {
@@ -519,7 +552,8 @@ router.get('/public/config', async (req, res) => {
               enable_notifications, allow_trial_plan, maintenance_mode,
               maintenance_message, admin_only_mode, require_email_confirmation,
               session_timeout_minutes, max_login_attempts,
-              enable_starfield, starfield_light, starfield_parallax, starfield_density
+              enable_starfield, starfield_light, starfield_parallax, starfield_density,
+              dashboard_theme, admin_settings_theme
        FROM site_config LIMIT 1`
     )
     

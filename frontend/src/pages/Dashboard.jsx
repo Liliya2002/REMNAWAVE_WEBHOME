@@ -8,8 +8,11 @@ import ReferralsSection from './dashboard/ReferralsSection'
 import BalanceSection from './dashboard/BalanceSection'
 import InboxSection from './dashboard/InboxSection'
 import EmailConfirmBanner from '../components/EmailConfirmBanner'
+import DashboardPremium from './dashboard/DashboardPremium'
+import { DashboardUiProvider, useDashboardUi } from '../contexts/DashboardUiContext'
 
-export default function Dashboard() {
+function DashboardInner() {
+  const { version } = useDashboardUi()
   const [user, setUser] = useState(null)
   const [subscriptions, setSubscriptions] = useState([])
   const [pendingPayments, setPendingPayments] = useState([])
@@ -116,8 +119,48 @@ export default function Dashboard() {
     { id: 'security', label: 'Безопасность', Icon: ShieldCheck },
   ]
 
+  // Секции общие для обеих тем: тема меняет обрамление, а не содержимое.
+  const sectionContent = (
+    <>
+      {activeSection === 'profile' && user && (
+        <ProfileSection user={user} onUpdate={fetchMe} onOpenBalance={() => setActiveSection('balance')} />
+      )}
+      {activeSection === 'subscriptions' && (
+        <SubscriptionsSection
+          subscriptions={subscriptions}
+          copySuccess={copySuccess}
+          setCopySuccess={setCopySuccess}
+          pendingBonusDays={pendingBonusDays}
+          onBonusActivated={() => { fetchSubscriptions(); fetchBonusDays() }}
+        />
+      )}
+      {activeSection === 'inbox' && <InboxSection />}
+      {activeSection === 'balance' && <BalanceSection />}
+      {activeSection === 'referrals' && <ReferralsSection />}
+      {activeSection === 'security' && user && <SecuritySection user={user} />}
+    </>
+  )
+
+  if (version === 'premium') {
+    return (
+      <DashboardPremium
+        user={user}
+        subscriptions={subscriptions}
+        menuItems={menuItems}
+        activeSection={activeSection}
+        setActiveSection={setActiveSection}
+        onUpdate={fetchMe}
+        banner={user && !user.email_confirmed ? <EmailConfirmBanner user={user} onConfirmed={fetchMe} /> : null}
+      >
+        {sectionContent}
+      </DashboardPremium>
+    )
+  }
+
   return (
-    <div className="w-full pb-24 lg:pb-0">
+    // Нижний отступ = высота мобильной панели + home-индикатор iPhone,
+    // иначе последняя карточка уезжает под панель.
+    <div className="w-full pb-[calc(6rem_+_var(--safe-bottom))] lg:pb-0">
       {/* Email confirmation banner */}
       <div className="px-4 sm:px-6 lg:px-8 pt-6 max-w-7xl mx-auto">
         <EmailConfirmBanner />
@@ -361,5 +404,14 @@ export default function Dashboard() {
         </div>
       </nav>
     </div>
+  )
+}
+
+// Провайдер держит выбор темы кабинета (classic | premium) в localStorage.
+export default function Dashboard() {
+  return (
+    <DashboardUiProvider>
+      <DashboardInner />
+    </DashboardUiProvider>
   )
 }

@@ -17,10 +17,19 @@ function readStored() {
   return 'system'
 }
 
+// Цвет статус-бара iOS в standalone-режиме («приложение» с домашнего экрана)
+// берётся из theme-color. Держим его равным фону шапки, иначе над ней висит
+// полоска чужого цвета. Те же значения продублированы в index.html — там они
+// применяются до загрузки React, чтобы полоска не мигала.
+const THEME_COLOR = { dark: '#060913', light: '#f0f9ff' }   // верх .site-bg / sky-50
+
 function applyClass(effective) {
   const root = document.documentElement
   if (effective === 'dark') root.classList.add('dark')
   else root.classList.remove('dark')
+
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.setAttribute('content', THEME_COLOR[effective] || THEME_COLOR.dark)
 }
 
 export function ThemeProvider({ children }) {

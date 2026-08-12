@@ -2,11 +2,11 @@
 // Используется и стартовым экраном (AdminOverview), и сайдбаром нового
 // дизайна (AdminLayoutV2), чтобы список разделов не расходился.
 import {
-  BarChart3, Users, CreditCard, History,
+  BarChart3, Users, CreditCard, History, Database, Bot,
   Gift, Bell,
   Sparkles, FileText,
-  Globe, Server, ShoppingCart, Cloud, Ticket, LifeBuoy, HardDrive, Wallet, KeyRound, Users2,
-  Activity, Palette, BookOpen, TrendingUp, Shield, MessageCircle,
+  Globe, Server, ShoppingCart, Cloud, Ticket, LifeBuoy, HardDrive, Wallet, KeyRound, Users2, CalendarClock,
+  Activity, Palette, BookOpen, TrendingUp, Shield, MessageCircle, Wrench,
 } from 'lucide-react'
 
 export const GROUPS = [
@@ -45,6 +45,7 @@ export const GROUPS = [
     color: 'from-violet-500 to-fuchsia-500',
     items: [
       { to: '/admin/servers',       Icon: Globe,         label: 'RemnaWave' },
+      { to: '/admin/config-builder', Icon: Wrench,        label: 'Конструктор конфигов' },
       { to: '/admin/vps',           Icon: Server,        label: 'Управление VPS' },
       { to: '/admin/yandex-cloud',  Icon: Cloud,         label: 'Yandex Cloud' },
       { to: '/admin/selectel',      Icon: Cloud,         label: 'Selectel Cloud' },
@@ -70,9 +71,13 @@ export const GROUPS = [
     color: 'from-violet-500 to-fuchsia-500',
     items: [
       { to: '/admin/bedolaga/users',         Icon: Users,      label: 'Пользователи' },
-      { to: '/admin/bedolaga/subscriptions', Icon: Ticket,     label: 'Подписки' },
+      { to: '/admin/bedolaga/subscriptions', Icon: Ticket,        label: 'Подписки' },
+      { to: '/admin/bedolaga/expiring',      Icon: CalendarClock, label: 'Истекающие' },
+      { to: '/admin/bedolaga/promo',         Icon: Ticket,     label: 'Промокоды' },
+      { to: '/admin/bedolaga/promo-uses',    Icon: Database,   label: 'Активации' },
       { to: '/admin/bedolaga/transactions',  Icon: CreditCard, label: 'Транзакции' },
       { to: '/admin/bedolaga/tickets',       Icon: LifeBuoy,   label: 'Тикеты' },
+      { to: '/admin/ai/connection',          Icon: Bot,        label: 'ИИ-ассистент' },
     ],
   },
   {

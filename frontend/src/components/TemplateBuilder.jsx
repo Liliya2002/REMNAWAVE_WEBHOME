@@ -1,9 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import CommandBridge from './admin/CommandBridge'
 import { useSiteConfig } from '../contexts/SiteConfigContext'
 import {
   Settings, Palette, Shield, Globe2, Save, RefreshCw, History,
-  CheckCircle2, AlertTriangle, SlidersHorizontal, Eye, EyeOff, Wifi
+  CheckCircle2, AlertTriangle, SlidersHorizontal, Eye, EyeOff, Wifi, Server, Activity
 } from 'lucide-react'
+
+import VpsProvidersSettings from './VpsProvidersSettings'
+import VpsMonitoringSettings from './VpsMonitoringSettings'
 
 const API_URL = import.meta.env.VITE_API_URL || ''
 
@@ -13,6 +17,7 @@ const tabs = [
   { id: 'design', label: 'Дизайн', Icon: Palette },
   { id: 'security', label: 'Безопасность', Icon: Shield },
   { id: 'integrations', label: 'Интеграции', Icon: Globe2 },
+  { id: 'vps', label: 'VPS', Icon: Server },
   { id: 'history', label: 'История', Icon: History }
 ]
 
@@ -31,9 +36,13 @@ function inputClass(extra = '') {
 }
 
 export default function TemplateBuilder() {
-  const { refreshConfig: refreshGlobalConfig } = useSiteConfig()
+  const { config: globalConfig, refreshConfig: refreshGlobalConfig } = useSiteConfig()
+  // Оформление страницы задаёт админ; логика настроек от него не зависит
+  const bridgeTheme = globalConfig?.admin_settings_theme === 'bridge'
 
   const [tab, setTab] = useState('project')
+  // Подраздел вкладки VPS: параметры мониторинга или справочник провайдеров
+  const [vpsSection, setVpsSection] = useState('monitoring')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -80,6 +89,10 @@ export default function TemplateBuilder() {
     maintenance_mode: false,
     maintenance_message: 'Ведутся технические работы',
     admin_only_mode: false,
+    dashboard_theme: 'classic',
+    admin_settings_theme: 'classic',
+    bedolaga_promo_sync_enabled: false,
+    bedolaga_promo_sync_interval_min: 60,
     enable_starfield: true,
     starfield_light: false,
     starfield_parallax: true,
@@ -141,6 +154,13 @@ export default function TemplateBuilder() {
   useEffect(() => {
     loadConfig()
   }, [])
+
+  useEffect(() => {
+    const root = document.documentElement
+    if (!bridgeTheme) { root.classList.remove('bridge-active'); return }
+    root.classList.add('bridge-active')
+    return () => root.classList.remove('bridge-active')
+  }, [bridgeTheme])
 
   useEffect(() => {
     if (tab === 'history' && history.length === 0 && !historyLoading) {
@@ -234,7 +254,7 @@ export default function TemplateBuilder() {
     )
   }
 
-  return (
+  const page = (
     <div className="space-y-6">
       <div className="rounded-2xl border border-cyan-500/20 bg-[radial-gradient(circle_at_20%_10%,rgba(34,211,238,0.15),transparent_35%),rgba(2,6,23,0.85)] p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -381,6 +401,49 @@ export default function TemplateBuilder() {
                 </span>
               </label>
 
+              {/* Вид личного кабинета — общий для всех пользователей */}
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-900/40 space-y-3">
+                <div className="text-sm font-semibold text-slate-200">🖥️ Вид личного кабинета</div>
+                <Field label="Тема кабинета">
+                  <select value={form.dashboard_theme || 'classic'} onChange={(e) => setField('dashboard_theme', e.target.value)} className={inputClass()}>
+                    <option value="classic">Классический — светлый/тёмный, как сейчас</option>
+                    <option value="premium">Digital Premium — плоский тёмный, высокий контраст</option>
+                  </select>
+                </Field>
+                <p className="text-xs text-slate-500">Применяется всем пользователям сразу. Своего переключателя у них нет — кабинет выглядит одинаково у всех. Digital Premium всегда тёмный: кнопка светлой темы в шапке на кабинет влиять не будет.</p>
+              </div>
+
+              {/* Сбор активаций промокодов Bedolaga в нашу базу */}
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-900/40 space-y-3">
+                <div className="text-sm font-semibold text-slate-200">🎟️ Синхронизация активаций промокодов (Bedolaga)</div>
+                <label className="flex items-start gap-2 text-sm text-slate-200">
+                  <input autoComplete="off" type="checkbox" checked={!!form.bedolaga_promo_sync_enabled}
+                    onChange={(e) => setField('bedolaga_promo_sync_enabled', e.target.checked)} className="accent-cyan-500 mt-0.5" />
+                  Включить периодический сбор
+                </label>
+                <Field label="Интервал (минуты)" hint="От 5 до 1440. Чем реже, тем выше риск потерять активации.">
+                  <input autoComplete="off" type="number" min="5" max="1440" value={form.bedolaga_promo_sync_interval_min || 60}
+                    onChange={(e) => setField('bedolaga_promo_sync_interval_min', e.target.value)} className={inputClass()} />
+                </Field>
+                <p className="text-xs text-slate-500">
+                  API бота отдаёт только <b>10 последних активаций</b> на промокод и не умеет их пагинировать. Поэтому мы регулярно
+                  опрашиваем его и копим историю у себя. Если между прогонами код активируют больше 10 раз, лишние записи
+                  теряются безвозвратно — счётчик пропусков виден на странице «Активации». Результат смотрите там же.
+                </p>
+              </div>
+
+              {/* Оформление самой страницы настроек */}
+              <div className="p-3 rounded-lg border border-slate-700 bg-slate-900/40 space-y-3">
+                <div className="text-sm font-semibold text-slate-200">🛸 Оформление страницы настроек</div>
+                <Field label="Тема /admin/settings">
+                  <select value={form.admin_settings_theme || 'classic'} onChange={(e) => setField('admin_settings_theme', e.target.value)} className={inputClass()}>
+                    <option value="classic">Классическая — как сейчас</option>
+                    <option value="bridge">Командный мостик — космос, кокпит, голограммы</option>
+                  </select>
+                </Field>
+                <p className="text-xs text-slate-500">Меняется только подача: набор настроек, поля и их поведение в обоих видах одинаковые. Космос рисуется процедурно на Canvas, внешних файлов не требует. При системной настройке «уменьшить движение» анимации отключаются.</p>
+              </div>
+
               {/* Анимированный фон (звёзды + метеоры) */}
               <div className="p-3 rounded-lg border border-slate-700 bg-slate-900/40 space-y-3">
                 <div className="text-sm font-semibold text-slate-200">✨ Анимированный фон (звёзды)</div>
@@ -469,6 +532,29 @@ export default function TemplateBuilder() {
             </>
           )}
 
+          {tab === 'vps' && (
+            <div className="space-y-4">
+              {/* Подменю раздела VPS — чтобы параметры и справочник не были свалены на одной странице */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { id: 'monitoring', label: 'Параметры мониторинга', Icon: Activity },
+                  { id: 'providers', label: 'Провайдеры', Icon: Server },
+                ].map(sub => (
+                  <button key={sub.id} onClick={() => setVpsSection(sub.id)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition-colors ${
+                      vpsSection === sub.id
+                        ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
+                        : 'bg-slate-900/40 border-slate-800/60 text-slate-400 hover:text-white hover:border-slate-700'
+                    }`}>
+                    <sub.Icon className="w-3.5 h-3.5" /> {sub.label}
+                  </button>
+                ))}
+              </div>
+
+              {vpsSection === 'monitoring' ? <VpsMonitoringSettings /> : <VpsProvidersSettings />}
+            </div>
+          )}
+
           {tab === 'history' && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -491,7 +577,7 @@ export default function TemplateBuilder() {
           )}
         </div>
 
-        <div className="rounded-2xl border border-slate-700/50 bg-slate-900/35 p-5 space-y-4">
+        <div className="bridge-float rounded-2xl border border-slate-700/50 bg-slate-900/35 p-5 space-y-4">
           <h4 className="text-sm font-semibold text-white">Live preview</h4>
           <div style={livePreviewStyle} className="rounded-xl border border-slate-700/40 overflow-hidden bg-slate-950">
             <div className="p-4" style={{ fontFamily: 'var(--f)', fontSize: 'var(--fs)' }}>
@@ -506,4 +592,7 @@ export default function TemplateBuilder() {
       </div>
     </div>
   )
+
+  // Классический вид отдаём как есть; «мостик» — та же страница в оболочке
+  return bridgeTheme ? <CommandBridge>{page}</CommandBridge> : page
 }

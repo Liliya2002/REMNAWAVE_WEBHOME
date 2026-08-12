@@ -160,6 +160,7 @@ async function _computeSubStats(a) {
   const bySquad = {}
   const tariffMap = {}                       // name → { name, count, trial, tariff_id }
   const expiring = { d1: 0, d3: 0, d7: 0 }   // кумулятивно: d1 ⊆ d3 ⊆ d7
+  const expiringList = []                    // подробности для страницы «Истекающие»
   let totalActive = 0, trialCount = 0, paidCount = 0, noSquad = 0
 
   // Идём по пользователям: их встроенные подписки содержат tariff_name/tariff_id
@@ -212,13 +213,34 @@ async function _computeSubStats(a) {
         if (end <= w3) expiring.d3++
         if (end <= w7) expiring.d7++
       }
+      // Подробный список для страницы «Истекающие»: собираем здесь же, чтобы
+      // не делать второй обход всех пользователей (он стоит ~25 секунд).
+      if (end) {
+        expiringList.push({
+          user_id: u.id,
+          telegram_id: u.telegram_id ?? null,
+          username: u.username ?? null,
+          first_name: u.first_name ?? null,
+          last_name: u.last_name ?? null,
+          subscription_id: s.id,
+          tariff_name: s.is_trial ? 'Триал' : (s.tariff_name || null),
+          is_trial: !!s.is_trial,
+          end_date: s.end_date,
+          days_left: Math.ceil((end - now) / 86400000),
+          traffic_used_gb: s.traffic_used_gb ?? null,
+          traffic_limit_gb: s.traffic_limit_gb ?? null,
+        })
+      }
     }
   }
   const tariffs = Object.values(tariffMap).sort((x, y) => y.count - x.count)
   const squads = Object.entries(bySquad)
     .map(([uuid, count]) => ({ uuid, name: nameByUuid[uuid] || uuid.slice(0, 8), count }))
     .sort((x, y) => y.count - x.count)
-  const data = { tariffs, squads, expiring, totalActive, trialCount, paidCount, noSquad, computed_at: new Date().toISOString() }
+  // Сортировка по дате окончания: ближайшие первыми — так удобнее и для
+  // группировки по месяцам, и для «просроченных» сверху.
+  expiringList.sort((a, b) => new Date(a.end_date) - new Date(b.end_date))
+  const data = { tariffs, squads, expiring, expiringList, totalActive, trialCount, paidCount, noSquad, computed_at: new Date().toISOString() }
   return { ok: true, data }
 }
 
@@ -262,8 +284,159 @@ async function getBroadcast(a, broadcastId) {
   return { ok: true, broadcast: b }
 }
 
+
+// ─── Промокоды ───────────────────────────────────────────────────────────────
+
+/**
+ * Список промокодов. Параметры подтверждены документацией:
+ * limit 1..200 (по умолчанию 50), offset, is_active.
+ */
+async function listPromoCodes(a, { limit = 50, offset = 0, is_active } = {}) {
+  return call(a, '/promo-codes', {
+    query: { limit: Math.min(Math.max(Number(limit) || 50, 1), 200), offset, is_active },
+  })
+}
+
+/**
+ * Карточка промокода. В ответе, помимо счётчиков, приходит recent_uses —
+ * ПОСЛЕДНИЕ 10 активаций. Параметров пагинации у этого массива нет:
+ * проверено и перебором, и по документации. Отсюда и нужна своя накопительная
+ * база (см. syncPromoUses).
+ */
+async function getPromoCode(a, id) {
+  return call(a, `/promo-codes/${encodeURIComponent(id)}`)
+}
+
+/** Тип активации в человекочитаемом виде — по номиналу промокода. */
+function promoKind(pc) {
+  if (Number(pc?.subscription_days) > 0) return 'subscription_days'
+  if (Number(pc?.balance_bonus_kopeks) > 0) return 'balance'
+  return String(pc?.type || 'other')
+}
+
+/**
+ * Синхронизация активаций в нашу базу.
+ *
+ * Идём по всем промокодам, у каждого забираем карточку и складываем recent_uses
+ * через UPSERT по (account_id, use_id) — повторные прогоны дублей не создают.
+ *
+ * Отдельно считаем ПОТЕРИ. API отдаёт только 10 последних активаций, поэтому
+ * если между прогонами код активировали чаще, середина уже не вернётся никогда.
+ * Ловим это сравнением current_uses с прошлым снимком: прирост больше числа
+ * полученных записей — значит часть утекла. Такие пропуски копим и показываем,
+ * иначе база тихо выглядела бы полной, не будучи таковой.
+ */
+async function syncPromoUses(db, a) {
+  const stRes = await db.query(
+    'SELECT seen_uses, missed_total FROM bedolaga_promo_sync_state WHERE account_id = $1', [a.id]
+  )
+  const prevSeen = stRes.rows[0]?.seen_uses || {}
+  const prevMissed = Number(stRes.rows[0]?.missed_total || 0)
+
+  const seen = {}
+  let added = 0, missedNow = 0
+  const missedCodes = []
+
+  // Промокодов немного (десятки), но пагинацию соблюдаем — вдруг вырастет
+  let offset = 0
+  const codes = []
+  for (;;) {
+    const page = await listPromoCodes(a, { limit: 200, offset })
+    if (!page.ok) return { ok: false, error: page.error }
+    const items = page.data?.items || []
+    codes.push(...items)
+    const total = Number(page.data?.total || items.length)
+    offset += items.length
+    if (!items.length || offset >= total) break
+  }
+
+  for (const pc of codes) {
+    const detail = await getPromoCode(a, pc.id)
+    if (!detail.ok) continue           // один сбойный код не должен валить весь прогон
+    const d = detail.data || {}
+    const uses = Array.isArray(d.recent_uses) ? d.recent_uses : []
+    const cur = Number(d.current_uses ?? pc.current_uses ?? 0)
+    seen[String(pc.id)] = cur
+
+    const before = prevSeen[String(pc.id)]
+    if (before != null) {
+      const grew = cur - Number(before)
+      if (grew > uses.length) {
+        missedNow += grew - uses.length
+        missedCodes.push(`${d.code || pc.code}: +${grew}, получено ${uses.length}`)
+      }
+    }
+
+    const kind = promoKind(d.id ? d : pc)
+    for (const u of uses) {
+      const r = await db.query(
+        `INSERT INTO bedolaga_promo_uses
+           (account_id, use_id, promocode_id, code, promo_type,
+            subscription_days, balance_bonus_kopeks,
+            user_id, user_telegram_id, user_username, user_full_name, used_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (account_id, use_id) DO NOTHING`,
+        [a.id, u.id, pc.id, d.code || pc.code, kind,
+         Number(d.subscription_days || 0), Number(d.balance_bonus_kopeks || 0),
+         u.user_id, u.user_telegram_id, u.user_username, u.user_full_name, u.used_at]
+      )
+      added += r.rowCount
+    }
+  }
+
+  const note = missedCodes.length
+    ? `Между прогонами потеряно активаций: ${missedNow}. ${missedCodes.join('; ')}`
+    : null
+
+  await db.query(
+    `INSERT INTO bedolaga_promo_sync_state
+       (account_id, last_run_at, status, error, added, seen_uses, missed_total, missed_note)
+     VALUES ($1, NOW(), 'ok', NULL, $2, $3, $4, $5)
+     ON CONFLICT (account_id) DO UPDATE SET
+       last_run_at = NOW(), status = 'ok', error = NULL,
+       added = EXCLUDED.added, seen_uses = EXCLUDED.seen_uses,
+       missed_total = EXCLUDED.missed_total, missed_note = EXCLUDED.missed_note`,
+    [a.id, added, JSON.stringify(seen), prevMissed + missedNow, note]
+  )
+
+  return { ok: true, added, codes: codes.length, missedNow, note }
+}
+
+
+// ─── Тикеты: запись ───────────────────────────────────────────────────────────
+
+/**
+ * Ответ в тикет. POST — БЕЗ ретраев: повтор отправит клиенту второе сообщение.
+ * Единственная точка, из которой ассистент пишет живым людям.
+ */
+async function replyToTicket(a, ticketId, text) {
+  const msg = String(text || '').slice(0, 4000)   // жёсткий предел API
+  if (!msg.trim()) return { ok: false, error: 'Пустой текст ответа' }
+  return call(a, `/tickets/${encodeURIComponent(ticketId)}/reply`, {
+    method: 'POST',
+    body: { message_text: msg },
+  })
+}
+
+// Документация значения не перечисляет; берём enum из списка тикетов.
+const TICKET_STATUSES = ['open', 'answered', 'closed', 'pending']
+
+/** Смена статуса тикета. Значение сверяем с белым списком, чтобы опечатка
+ *  не ушла в API и не перевела тикет в неизвестное состояние. */
+async function setTicketStatus(a, ticketId, status) {
+  if (!TICKET_STATUSES.includes(status)) {
+    return { ok: false, error: `Недопустимый статус: ${status}` }
+  }
+  return call(a, `/tickets/${encodeURIComponent(ticketId)}/status`, {
+    method: 'POST',
+    body: { status },
+  })
+}
+
 module.exports = {
   call, testAccount, getOverview,
+  replyToTicket, setTicketStatus, TICKET_STATUSES,
+  listPromoCodes, getPromoCode, syncPromoUses,
   listUsers, getUser, listSubscriptions, listTransactions, listTickets, getTicket,
   getRevenue, getSubscriptionStats, sendBroadcast, getBroadcast, getSquadNames, BROADCAST_TARGETS,
 }

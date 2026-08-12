@@ -25,6 +25,14 @@ const ADMIN_NOTIFICATION_KEYS = [
   { key: 'admin_selectel_low_balance', label: 'Selectel — низкий баланс',   hint: 'Когда баланс аккаунта Selectel опустился ниже заданного порога (проверка раз в час)' },
   { key: 'admin_payment_received',     label: 'Платёж получен',             hint: 'После любого успешного платежа от юзера' },
   { key: 'admin_user_registered',      label: 'Новый юзер',                 hint: 'Спам-уведомление при каждой регистрации (по умолчанию off)' },
+  // Приходят вебхуком от RemnaWave: панель шлёт событие сама, опроса нет.
+  { key: 'admin_node_down',            label: 'Нода RemnaWave — упала',     hint: 'Вебхук node.connection_lost. Приходит мгновенно, с причиной обрыва' },
+  { key: 'admin_node_up',              label: 'Нода RemnaWave — поднялась', hint: 'Вебхук node.connection_restored. Простой считается по журналу событий' },
+  { key: 'admin_node_created',         label: 'Нода RemnaWave — добавлена', hint: 'Вебхук node.created. С адресом, провайдером и железом' },
+  { key: 'admin_node_deleted',         label: 'Нода RemnaWave — удалена',   hint: 'Вебхук node.deleted' },
+  { key: 'admin_node_disabled',        label: 'Нода RemnaWave — отключена', hint: 'Вебхук node.disabled — ноду выключили в панели' },
+  { key: 'admin_node_enabled',         label: 'Нода RemnaWave — включена',  hint: 'Вебхук node.enabled, парный к отключению' },
+  { key: 'admin_node_traffic',         label: 'Нода RemnaWave — трафик',    hint: 'Вебхук node.traffic_notify — достигнут порог трафика ноды' },
 ]
 
 const TEXT_KEYS = [
@@ -48,6 +56,13 @@ const TEMPLATE_HINTS = {
   admin_selectel_low_balance: '{account}, {balance}, {threshold}',
   admin_payment_received:     '{login}, {amount}, {plan}',
   admin_user_registered:      '{login}, {source}',
+  admin_node_down:            '{name}, {address}, {country}, {users}, {reason}',
+  admin_node_up:              '{name}, {address}, {country}, {downtime}, {xray}, {nodeVer}',
+  admin_node_created:         '{name}, {address}, {country}, {provider}, {cpu}, {ram}, {profile}, {inbounds}',
+  admin_node_deleted:         '{name}, {address}, {country}',
+  admin_node_disabled:        '{name}, {address}, {country}',
+  admin_node_enabled:         '{name}, {address}, {country}',
+  admin_node_traffic:         '{name}, {country}, {used}, {limit}, {percent}',
 }
 
 // Уведомления, чей текст генерируется кодом (группировка/спойлер) — шаблон не применяется.
@@ -74,6 +89,23 @@ const DEFAULT_TEMPLATES = {
     '👤 <b>Новый юзер</b>\nЛогин: {login}\nИсточник: {source}',
   admin_payment_received:
     '💰 <b>Платёж получен</b>\nЮзер: {login}\nСумма: {amount} ₽\nТариф: {plan}',
+
+  // Ноды RemnaWave. Тексты совпадают с services/telegramBot/notify.js —
+  // здесь редактируемая копия, там значения по умолчанию.
+  admin_node_down:
+    '🔴 <b>Нода упала</b>\n\n<b>{name}</b> ({country})\nАдрес: <code>{address}</code>\nБыло онлайн: {users}\nПричина: {reason}',
+  admin_node_up:
+    '🟢 <b>Нода снова на связи</b>\n\n<b>{name}</b> ({country})\nАдрес: <code>{address}</code>\nПростой: {downtime}\nXray {xray} / node {nodeVer}',
+  admin_node_created:
+    '➕ <b>Добавлена нода</b>\n\n<b>{name}</b> ({country})\nАдрес: <code>{address}</code>\nПровайдер: {provider}\nЖелезо: {cpu}, {ram}\nПрофиль: {profile}, inbound: {inbounds}',
+  admin_node_deleted:
+    '➖ <b>Нода удалена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
+  admin_node_disabled:
+    '⏸ <b>Нода отключена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
+  admin_node_enabled:
+    '▶️ <b>Нода включена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
+  admin_node_traffic:
+    '📊 <b>Трафик ноды на пределе</b>\n\n<b>{name}</b> ({country})\nИспользовано: {used} из {limit} (порог {percent}%)',
 }
 
 // Демо-данные для предпросмотра/теста по каждому ключу.
@@ -87,6 +119,13 @@ const SAMPLE_DATA = {
   admin_selectel_low_balance: { account: 'Selectel основной', balance: '350', threshold: '500' },
   admin_payment_received:     { login: 'ivan', amount: '299', plan: 'Premium' },
   admin_user_registered:      { login: 'ivan', source: 'сайт' },
+  admin_node_down:            { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE', users: 37, reason: 'connection timeout' },
+  admin_node_up:              { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE', downtime: '5 мин', xray: '25.9.11', nodeVer: '2.1.0' },
+  admin_node_created:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE', provider: 'Hetzner', cpu: '4 ядер', ram: '8.0 ГБ', profile: 'задан', inbounds: 2 },
+  admin_node_deleted:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE' },
+  admin_node_disabled:        { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE' },
+  admin_node_enabled:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE' },
+  admin_node_traffic:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE', used: '900 ГБ', limit: '1.0 ТБ', percent: 90 },
 }
 
 // Встроенные пресеты-варианты (кроме дефолта). Пользователь может «Применить» и/или отредактировать.

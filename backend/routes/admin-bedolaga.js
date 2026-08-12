@@ -177,6 +177,113 @@ router.get('/accounts/:id/subscription-stats', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// Истекающие подписки, сгруппированные по месяцам окончания.
+// Данные берутся из того же кэша, что и статистика подписок — дополнительных
+// запросов к боту не делается.
+router.get('/accounts/:id/expiring', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const r = await bedolaga.getSubscriptionStats(a, { force: req.query.force === '1' })
+    if (!r.ok) return res.status(502).json({ error: r.error })
+
+    const monthsAhead = Math.min(24, Math.max(1, parseInt(req.query.months, 10) || 6))
+    const search = String(req.query.search || '').trim().toLowerCase()
+
+    const now = new Date()
+    const limit = new Date(now.getFullYear(), now.getMonth() + monthsAhead + 1, 1).getTime()
+
+    let items = r.stats.expiringList || []
+    if (search) {
+      items = items.filter(x =>
+        String(x.username || '').toLowerCase().includes(search) ||
+        String(x.telegram_id || '').includes(search) ||
+        String(x.user_id || '').includes(search) ||
+        [x.first_name, x.last_name].filter(Boolean).join(' ').toLowerCase().includes(search)
+      )
+    }
+
+    const MONTH = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+                   'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь']
+    const groups = new Map()
+    let overdue = 0, thisMonth = 0, nextMonth = 0, total = 0
+    const curKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const nx = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const nextKey = `${nx.getFullYear()}-${String(nx.getMonth() + 1).padStart(2, '0')}`
+
+    for (const it of items) {
+      const d = new Date(it.end_date)
+      if (isNaN(d)) continue
+      const isOverdue = it.days_left < 0
+      // Просроченные показываем всегда, будущие — в пределах горизонта.
+      if (!isOverdue && d.getTime() >= limit) continue
+
+      const key = isOverdue ? 'overdue' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          label: isOverdue ? 'Просрочено' : `${MONTH[d.getMonth()]} ${d.getFullYear()}`,
+          overdue: isOverdue,
+          current: key === curKey,
+          items: [],
+        })
+      }
+      groups.get(key).items.push(it)
+      total++
+      if (isOverdue) overdue++
+      else if (key === curKey) thisMonth++
+      else if (key === nextKey) nextMonth++
+    }
+
+    // Просроченные первыми, дальше по возрастанию месяца.
+    const months = [...groups.values()].sort((x, y) => {
+      if (x.overdue) return -1
+      if (y.overdue) return 1
+      return x.key.localeCompare(y.key)
+    }).map(g => ({ ...g, count: g.items.length }))
+
+    res.json({
+      months,
+      summary: { overdue, thisMonth, nextMonth, total },
+      months_ahead: monthsAhead,
+      computed_at: r.stats.computed_at,
+      cached: !!r.cached,
+    })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Личное сообщение пользователю Bedolaga через НАШ Telegram-бот.
+// У API Bedolaga персональной отправки нет (только сегментные рассылки), а наш
+// бот может написать первым лишь тем, кто сам его запускал, — поэтому здесь
+// возможен штатный отказ, и его нужно показать понятно.
+router.post('/accounts/:id/notify-user', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const { telegram_id, text } = req.body || {}
+    if (!telegram_id) return res.status(400).json({ error: 'Не указан telegram_id' })
+    if (!text || !String(text).trim()) return res.status(400).json({ error: 'Текст сообщения обязателен' })
+
+    const tgSettings = require('../services/telegramBot/settings')
+    const { rawSendMessage } = require('../services/telegramBot/notify')
+    const s = await tgSettings.getSettings()
+    const token = s.bot_token || process.env.TELEGRAM_BOT_TOKEN
+    if (!token) return res.status(503).json({ error: 'Наш Telegram-бот не настроен' })
+
+    const r = await rawSendMessage({ token, chatId: telegram_id, text: String(text).trim() })
+    if (!r.ok) {
+      // 403 — самый частый случай: юзер не нажимал /start у нашего бота.
+      const blocked = /can't initiate|blocked|not found|chat not found/i.test(r.error || '')
+      return res.status(200).json({
+        ok: false,
+        error: blocked
+          ? 'Пользователь не запускал нашего бота — Telegram запрещает писать первым. Напишите ему напрямую.'
+          : (r.error || 'Не удалось отправить'),
+      })
+    }
+    audit.write(req, 'bedolaga.notify.user', { type: 'bedolaga_account', id: a.id }, { telegram_id }).catch(() => {})
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // Отправка рассылки сегменту (РЕАЛЬНОЕ действие — шлёт сообщения пользователям)
 router.post('/accounts/:id/broadcast', async (req, res) => {
   try {
@@ -225,5 +332,120 @@ setTimeout(async () => {
     for (const a of rows) bedolaga.getSubscriptionStats(a).catch(() => {})
   } catch { /* прогрев необязателен */ }
 }, 5000)
+
+
+// ─── Промокоды ────────────────────────────────────────────────────────────────
+
+// Список промокодов из API бота (live)
+router.get('/accounts/:id/promo-codes', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const { limit, offset, is_active } = req.query
+    relay(res, await bedolaga.listPromoCodes(a, { limit, offset, is_active }))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Карточка промокода — вместе с recent_uses (последние 10 активаций)
+router.get('/accounts/:id/promo-codes/:pid', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    relay(res, await bedolaga.getPromoCode(a, req.params.pid))
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Накопленная база активаций (наша БД) ─────────────────────────────────────
+
+/**
+ * Выборка активаций из нашей таблицы. Именно она даёт историю глубже десяти
+ * записей: API бота столько не отдаёт, а тут копится с каждой синхронизации.
+ */
+router.get('/accounts/:id/promo-uses', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const { code, promo_type, search, from, to } = req.query
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 500)
+    const offset = Math.max(Number(req.query.offset) || 0, 0)
+
+    const where = ['account_id = $1']
+    const params = [a.id]
+    const add = (sql, val) => { params.push(val); where.push(sql.replace('$$', '$' + params.length)) }
+
+    if (code)       add('code = $$', code)
+    if (promo_type) add('promo_type = $$', promo_type)
+    if (from)       add('used_at >= $$', from)
+    if (to)         add('used_at <= $$', to)
+    if (search) {
+      // Ищем сразу по username, имени и telegram_id — так удобнее, чем
+      // заставлять выбирать поле в интерфейсе.
+      params.push(`%${search}%`)
+      const p = '$' + params.length
+      where.push(`(user_username ILIKE ${p} OR user_full_name ILIKE ${p} OR CAST(user_telegram_id AS TEXT) ILIKE ${p})`)
+    }
+    const w = where.join(' AND ')
+
+    const [rows, total, byType] = await Promise.all([
+      db.query(
+        `SELECT * FROM bedolaga_promo_uses WHERE ${w}
+         ORDER BY used_at DESC NULLS LAST, id DESC
+         LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, limit, offset]
+      ),
+      db.query(`SELECT COUNT(*)::int AS n FROM bedolaga_promo_uses WHERE ${w}`, params),
+      db.query(
+        `SELECT promo_type, COUNT(*)::int AS n,
+                SUM(subscription_days)::int AS days,
+                SUM(balance_bonus_kopeks)::int AS kopeks
+           FROM bedolaga_promo_uses WHERE ${w} GROUP BY promo_type ORDER BY n DESC`,
+        params
+      ),
+    ])
+
+    const st = await db.query('SELECT * FROM bedolaga_promo_sync_state WHERE account_id = $1', [a.id])
+
+    res.json({
+      items: rows.rows,
+      total: total.rows[0].n,
+      limit, offset,
+      by_type: byType.rows,
+      sync: st.rows[0] ? {
+        last_run_at: st.rows[0].last_run_at,
+        status: st.rows[0].status,
+        error: st.rows[0].error,
+        added: st.rows[0].added,
+        missed_total: st.rows[0].missed_total,
+        missed_note: st.rows[0].missed_note,
+      } : null,
+    })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// Справочники для фильтров — коды и типы, реально встречающиеся в базе
+router.get('/accounts/:id/promo-uses/facets', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const [codes, types] = await Promise.all([
+      db.query(`SELECT code, COUNT(*)::int AS n FROM bedolaga_promo_uses
+                WHERE account_id = $1 AND code IS NOT NULL GROUP BY code ORDER BY n DESC`, [a.id]),
+      db.query(`SELECT promo_type, COUNT(*)::int AS n FROM bedolaga_promo_uses
+                WHERE account_id = $1 GROUP BY promo_type ORDER BY n DESC`, [a.id]),
+    ])
+    res.json({ codes: codes.rows, types: types.rows })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/**
+ * Ручной запуск синхронизации. POST без ретраев — повтор безопасен по данным
+ * (UPSERT), но лишний прогон зря дёргает API бота.
+ */
+router.post('/accounts/:id/promo-uses/sync', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const r = await bedolaga.syncPromoUses(db, a)
+    if (!r.ok) return res.status(502).json({ error: r.error })
+    audit.write(req, 'bedolaga.promo_sync', { type: 'bedolaga_account', id: a.id },
+              { added: r.added, missed: r.missedNow }).catch(() => {})
+    res.json(r)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
 
 module.exports = router

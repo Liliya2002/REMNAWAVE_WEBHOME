@@ -2,10 +2,49 @@
 <html lang="ru">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover обязателен: без него env(safe-area-inset-*) всегда 0,
+         и отступы под чёлку и home-индикатор просто не сработают. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
-    <meta name="theme-color" content="#06b6d4" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- === Приложение на домашнем экране iPhone ===================== -->
+    <!-- Запуск без адресной строки Safari. apple-* понимают старые iOS,
+         mobile-web-app-capable — стандартный вариант (iOS 16.4+, Android). -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Подпись под значком. Без неё берётся <title> и обрезается. -->
+    <meta name="apple-mobile-web-app-title" content="VPN Webhome" />
+    <!-- default, а не black-translucent: у сайта две темы, а цвет символов
+         статус-бара в translucent-режиме всегда белый — в светлой теме их
+         не было бы видно. В режиме default iOS красит полоску в theme-color
+         и сам подбирает контрастный цвет символов. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <!-- Значение синхронизируется с активной темой скриптом ниже и
+         ThemeContext'ом: светлая — sky-50, тёмная — верх градиента .site-bg. -->
+    <meta name="theme-color" content="#f0f9ff" />
+
+    <!-- iOS не умеет SVG в apple-touch-icon: при ссылке на .svg система
+         вместо значка ставит скриншот страницы. Только PNG 180×180, без
+         скруглений — маску iOS накладывает сама. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Экраны запуска. Без них при старте секунду висит белый прямоугольник —
+         главный признак «это сайт». Разрешение подбирается по точкам экрана
+         и плотности пикселей. -->
+    <link rel="apple-touch-startup-image" href="/splash/1320x2868.png" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1284x2778.png" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1242x2688.png" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/828x1792.png"  media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1242x2208.png" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1206x2622.png" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1179x2556.png" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/1125x2436.png" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" />
+    <link rel="apple-touch-startup-image" href="/splash/750x1334.png"  media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" />
+
     <title>VPN Webhome</title>
     <!-- Telegram Mini App SDK. Загружается всегда (вне Telegram просто не создаёт
          window.Telegram.WebApp.initData), нужен для авто-авторизации по initData. -->
@@ -19,6 +58,10 @@
           var dark = pref === 'dark' ||
             (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           if (dark) document.documentElement.classList.add('dark');
+          // Статус-бар iOS в standalone красится в theme-color. Ставим цвет
+          // здесь же: если ждать React, полоска мигнёт чужим цветом.
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute('content', dark ? '#060913' : '#f0f9ff');
         } catch (e) {}
       })();
     </script>

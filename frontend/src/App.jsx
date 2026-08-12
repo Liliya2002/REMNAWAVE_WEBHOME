@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useSiteConfig } from './contexts/SiteConfigContext'
 import { AdminUiProvider, useAdminUi } from './contexts/AdminUiContext'
@@ -38,6 +39,11 @@ import AdminTrafficGuard from './pages/AdminTrafficGuard'
 import AdminYandexCloud from './pages/AdminYandexCloud'
 import AdminSelectel from './pages/AdminSelectel'
 import AdminBedolaga from './pages/AdminBedolaga'
+import AdminBedolagaExpiring from './pages/AdminBedolagaExpiring'
+import AdminBedolagaPromo from './pages/AdminBedolagaPromo'
+import AdminBedolagaPromoUses from './pages/AdminBedolagaPromoUses'
+import AdminAiAssistant from './pages/AdminAiAssistant'
+import AdminConfigBuilder from './pages/AdminConfigBuilder'
 import RuvdsLayout from './pages/ruvds/RuvdsLayout'
 import RuvdsServers from './pages/ruvds/RuvdsServers'
 import RuvdsStats from './pages/ruvds/RuvdsStats'
@@ -60,6 +66,7 @@ function Navigation(){
   const [isAuth, setIsAuth] = useState(!!localStorage.getItem('token'))
   const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const [landingMenu, setLandingMenu] = useState([])
   const navigate = useNavigate()
   const location = useLocation()
@@ -110,11 +117,23 @@ function Navigation(){
     checkStatus()
   }, [location])
 
+  // Выход: сначала гасим кабинет виньеткой с размытием, затем уводим на
+  // страницу входа, где форма «материализуется» из точки. Флаг в sessionStorage
+  // переживает навигацию и говорит Login.jsx проиграть появление.
   function handleLogout(){
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     localStorage.removeItem('token')
-    setIsAuth(false)
     setIsAdmin(false)
-    navigate('/')
+    sessionStorage.setItem('auth_materialize', '1')
+
+    if (reduced) { setIsAuth(false); navigate('/login'); return }
+
+    setLoggingOut(true)
+    setTimeout(() => {
+      setIsAuth(false)
+      setLoggingOut(false)
+      navigate('/login')
+    }, 1300)
   }
 
   const navLinkClass = ({isActive}) => `transition-colors ${
@@ -146,6 +165,9 @@ function Navigation(){
 
   return (
     <div className="flex items-center gap-4">
+      {/* Затемнение при выходе. Портал в body — иначе backdrop-blur шапки
+          обрежет fixed-слой, как это было с панелью уведомлений. */}
+      {loggingOut && createPortal(<div className="logout-veil" aria-hidden />, document.body)}
       {/* Desktop nav */}
       <nav className="hidden md:flex items-center gap-6">
         {navLinks}
@@ -210,12 +232,17 @@ function Navigation(){
 function AppShell(){
   const { config } = useSiteConfig()
   const location = useLocation()
+  const navigate = useNavigate()
   const { version } = useAdminUi()
 
   // В новом (v2) виде админки публичный header/footer скрываем — админка
   // занимает весь экран (свой сайдбар + топ-бар). В классическом виде публичная
   // шапка остаётся как раньше.
   const hideChrome = location.pathname.startsWith('/admin') && version === 'v2'
+  // На страницах входа/регистрации футер прижимаем вплотную: их фон занимает
+  // всю ширину, и обычный отступ mt-24 оставлял пустую полосу с резким стыком.
+  const isAuthPage = ['/login', '/register', '/forgot-password', '/reset-password', '/tg-login']
+    .some(p => location.pathname.startsWith(p))
 
   // Динамические значения из конфигурации
   const siteTitle = config?.site_title || 'VPN Webhome'
@@ -226,7 +253,7 @@ function AppShell(){
   const logoUrl = config?.site_logo_url || '/logo.svg'
 
   return (
-      <div className="relative min-h-screen overflow-x-hidden bg-sky-100 text-sky-900 dark:bg-transparent dark:text-slate-200 font-sans">
+      <div className={`relative min-h-screen overflow-x-hidden ${isAuthPage ? "auth-page " : ""}bg-sky-100 text-sky-900 dark:bg-transparent dark:text-slate-200 font-sans`}>
         {/* Анимированный фон (звёзды + метеоры) — только в тёмной теме */}
         <SiteBackground />
         {/* Декоративные blur-пятна — только в светлой теме для "живого" эффекта */}
@@ -240,7 +267,10 @@ function AppShell(){
         {!hideChrome && <header className="sticky top-0 z-40 border-b border-sky-200 bg-sky-50/80 dark:border-slate-800/50 dark:bg-slate-950/80 backdrop-blur-xl">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
             <div
-              onClick={() => window.location.href = '/'}
+              // navigate, а не window.location: полная перезагрузка на домашнем
+              // экране iPhone даёт белую вспышку и заново тянет весь бандл —
+              // выглядит как «сайт», а не как приложение.
+              onClick={() => navigate('/')}
               className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-400 dark:to-cyan-400 bg-clip-text text-transparent cursor-pointer hover:scale-105 transition-transform flex items-center gap-2 truncate max-w-[180px] sm:max-w-none"
             >
               {logoUrl && <img src={logoUrl} alt="" className="w-6 h-6 sm:w-8 sm:h-8 rounded flex-shrink-0" />}
@@ -278,6 +308,12 @@ function AppShell(){
               <Route path="selectel" element={<AdminSelectel />} />
               <Route path="payment-settings" element={<AdminPaymentSettings />} />
               <Route path="bedolaga" element={<AdminBedolaga />} />
+              <Route path="bedolaga/expiring" element={<AdminBedolagaExpiring />} />
+              <Route path="config-builder" element={<AdminConfigBuilder />} />
+              <Route path="ai" element={<AdminAiAssistant />} />
+              <Route path="ai/:section" element={<AdminAiAssistant />} />
+              <Route path="bedolaga/promo" element={<AdminBedolagaPromo />} />
+              <Route path="bedolaga/promo-uses" element={<AdminBedolagaPromoUses />} />
               <Route path="bedolaga/:section" element={<AdminBedolaga />} />
               <Route path="ruvds" element={<RuvdsLayout />}>
                 <Route index element={<Navigate to="servers" replace />} />
@@ -308,7 +344,7 @@ function AppShell(){
         </main>
 
         {/* Footer */}
-        {!hideChrome && <footer className="border-t border-sky-200 bg-sky-50 dark:border-slate-800/50 dark:bg-slate-950/50 py-8 sm:py-12 px-4 sm:px-6 lg:px-8 mt-12 sm:mt-24">
+        {!hideChrome && <footer className={`border-t border-sky-200 bg-sky-50 dark:border-slate-800/50 dark:bg-slate-950/50 py-8 sm:py-12 px-4 sm:px-6 lg:px-8 ${isAuthPage ? '' : 'mt-12 sm:mt-24'}`}>
           <div className="max-w-7xl mx-auto">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 sm:gap-8 mb-8">
               <div className="col-span-2 md:col-span-1">

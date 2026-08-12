@@ -471,6 +471,8 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
     default_cloud_id: existingAccount?.default_cloud_id || '',
     default_folder_id: existingAccount?.default_folder_id || '',
     billing_account_id: existingAccount?.billing_account_id || '',
+    low_balance_threshold: existingAccount?.low_balance_threshold ?? 200,
+    low_balance_repeat_hours: existingAccount?.low_balance_repeat_hours ?? 0,
     socks5_url: '',
     notes: existingAccount?.notes || '',
     is_readonly: !!existingAccount?.is_readonly,
@@ -653,6 +655,25 @@ function AccountFormModal({ mode, accountId, existingAccount, onClose, onSaved }
               className="w-full px-3 py-2.5 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none"
             />
           </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Порог низкого баланса, ₽" hint="Пусто или 0 — не следить.">
+              <input autoComplete="off" type="number" min="0" step="1"
+                value={form.low_balance_threshold}
+                onChange={e => setField('low_balance_threshold', e.target.value)}
+                placeholder="200"
+                className="w-full px-3 py-2.5 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none"
+              />
+            </Field>
+            <Field label="Напоминать каждые, часов" hint="0 — уведомить один раз при падении.">
+              <input autoComplete="off" type="number" min="0" max="168" step="1"
+                value={form.low_balance_repeat_hours}
+                onChange={e => setField('low_balance_repeat_hours', e.target.value)}
+                placeholder="0"
+                className="w-full px-3 py-2.5 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm font-mono focus:border-blue-500 focus:outline-none"
+              />
+            </Field>
+          </div>
 
           {/* SOCKS5 */}
           <Field label="SOCKS5 (опционально)" hint="Все запросы к Yandex.Cloud API для этого аккаунта пойдут через этот прокси.">

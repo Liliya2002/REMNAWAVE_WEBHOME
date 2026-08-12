@@ -600,11 +600,17 @@ function SubStatsBlocks({ stats, loading, err, onRefresh, onNotify }) {
                   </div>
                 ))}
               </div>
-              <button onClick={onNotify} disabled={!stats}
-                className="mt-4 self-start px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-300 hover:bg-sky-500/25 flex items-center gap-2 disabled:opacity-50">
-                <Send className="w-3.5 h-3.5" /> Уведомить истекающих
-              </button>
-              <div className="text-[10px] text-slate-500 mt-1.5">Telegram-рассылка сегменту бота «истекающие»</div>
+              <div className="flex items-center gap-2 mt-4 flex-wrap">
+                <button onClick={onNotify} disabled={!stats}
+                  className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-300 hover:bg-sky-500/25 flex items-center gap-2 disabled:opacity-50">
+                  <Send className="w-3.5 h-3.5" /> Уведомить истекающих
+                </button>
+                <a href="/admin/bedolaga/expiring"
+                  className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800/60 border border-slate-700/50 text-slate-300 hover:text-white flex items-center gap-2">
+                  <CalendarClock className="w-3.5 h-3.5" /> Все по месяцам
+                </a>
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1.5">Рассылка — сегменту бота «истекающие»; список по месяцам — с адресной отправкой</div>
             </>
           )}
       </div>

@@ -26,6 +26,7 @@ function safeAccount(a) {
     has_api_key: !!a.api_key,
     has_service_password: !!a.service_password,
     low_balance_threshold: a.low_balance_threshold != null ? Number(a.low_balance_threshold) : null,
+    low_balance_repeat_hours: a.low_balance_repeat_hours != null ? Number(a.low_balance_repeat_hours) : 0,
     low_balance_notified: a.low_balance_notified,
     last_balance_rub: a.last_balance_rub != null ? Number(a.last_balance_rub) : null,
     balance_checked_at: a.balance_checked_at,
@@ -96,6 +97,11 @@ router.put('/accounts/:id', async (req, res) => {
     if ('is_active' in b) put('is_active', !!b.is_active)
     // При изменении порога сбрасываем флаг уведомления (пересчитается на след. тике).
     if ('low_balance_threshold' in b) { put('low_balance_threshold', normThreshold(b.low_balance_threshold)); put('low_balance_notified', false) }
+    // Интервал повтора: 0 = один раз, потолок в неделю — большее бессмысленно
+    if ('low_balance_repeat_hours' in b) {
+      const h = Number(b.low_balance_repeat_hours)
+      put('low_balance_repeat_hours', isFinite(h) ? Math.min(Math.max(Math.round(h), 0), 168) : 0)
+    }
     // Секреты: '' = не менять; null = стереть; строка = зашифровать
     if ('api_key' in b && b.api_key !== '') put('api_key', b.api_key === null ? null : encrypt(b.api_key))
     if ('service_password' in b && b.service_password !== '') put('service_password', b.service_password === null ? null : encrypt(b.service_password))

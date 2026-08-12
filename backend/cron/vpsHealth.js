@@ -22,12 +22,9 @@ const db = require('../db')
 const tgNotify = require('../services/telegramBot/notify')
 const externalCheck = require('../services/externalCheck')
 
-const TICK_MINUTES   = parseInt(process.env.VPS_HEALTH_INTERVAL_MIN || '10', 10)
-const PING_PORT      = parseInt(process.env.VPS_HEALTH_PING_PORT     || '22', 10)
-const CHECK_NODES    = parseInt(process.env.VPS_HEALTH_CHECK_NODES    || '3', 10)
-const ENABLED        = process.env.VPS_HEALTH_CHECK_ENABLED !== 'false'
-// Бережём внешний сервис от rate-limit: невысокая параллельность.
-const PARALLELISM    = parseInt(process.env.VPS_HEALTH_PARALLELISM || '2', 10)
+// Настройки читаются из БД с откатом на .env (services/vpsSettings.js) —
+// их можно менять в админке без перезапуска backend.
+const vpsSettings = require('../services/vpsSettings')
 
 function fmtDuration(ms) {
   if (!ms || ms < 0) return '<1 мин'
@@ -48,9 +45,9 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;')
 }
 
-async function checkOne(vps) {
+async function checkOne(vps, cfg) {
   // Внешняя проверка. Если сам сервис недоступен — пропускаем (статус не трогаем).
-  const chk = await externalCheck.isReachable(vps.ip_address, PING_PORT, { maxNodes: CHECK_NODES })
+  const chk = await externalCheck.isReachable(vps.ip_address, cfg.health_ping_port, { maxNodes: cfg.health_check_nodes })
   if (!chk.ok) {
     return { changed: false, reachable: vps.is_reachable, skipped: true }
   }
@@ -108,13 +105,17 @@ async function checkOne(vps) {
     name:     escapeHtml(vps.name),
     ip:       vps.ip_address,
     provider: vps.hosting_provider || '—',
-    port:     PING_PORT,
+    port:     cfg.health_ping_port,
   }).catch(err => console.warn('[VPS-health] notify unreachable error:', err.message))
   return { changed: true, reachable: false }
 }
 
 async function tick() {
   try {
+    // Настройки читаем на каждом тике: изменённые в админке применяются сразу.
+    const cfg = await vpsSettings.get()
+    if (!cfg.health_enabled) return
+
     const { rows } = await db.query(
       `SELECT id, name, ip_address, hosting_provider, is_reachable, last_unreachable_at
          FROM vps_servers
@@ -125,11 +126,11 @@ async function tick() {
     // Ограничиваем параллельность чтобы не выжигать сетевой стек.
     const queue = rows.slice()
     let stats = { ok: 0, fail: 0, changed: 0, skipped: 0 }
-    const workers = Array.from({ length: Math.min(PARALLELISM, queue.length) }, async () => {
+    const workers = Array.from({ length: Math.min(cfg.health_parallelism, queue.length) }, async () => {
       while (queue.length) {
         const v = queue.shift()
         try {
-          const r = await checkOne(v)
+          const r = await checkOne(v, cfg)
           if (r.skipped) stats.skipped++
           else if (r.reachable) stats.ok++
           else stats.fail++
@@ -148,15 +149,30 @@ async function tick() {
   }
 }
 
-function start() {
-  if (!ENABLED) {
-    console.log('[VPS-health cron] отключён через VPS_HEALTH_CHECK_ENABLED=false')
+// Таймер держим в переменной, чтобы перепланировать его при смене интервала
+// в админке — иначе новое значение подхватилось бы только после перезапуска.
+let timer = null
+
+async function schedule() {
+  const cfg = await vpsSettings.get({ force: true })
+  if (timer) { clearInterval(timer); timer = null }
+  if (!cfg.health_enabled) {
+    console.log('[VPS-health cron] отключён в настройках')
     return
   }
-  // Первый прогон через 30 сек после старта — даём backend'у дойти до зрелого состояния.
-  setTimeout(tick, 30 * 1000)
-  setInterval(tick, TICK_MINUTES * 60 * 1000)
-  console.log(`[VPS-health cron] запущен, интервал ${TICK_MINUTES} мин, внешняя проверка TCP/${PING_PORT} (check-host.net)`)
+  timer = setInterval(tick, cfg.health_interval_min * 60 * 1000)
+  console.log(`[VPS-health cron] интервал ${cfg.health_interval_min} мин, проверка TCP/${cfg.health_ping_port} (check-host.net)`)
 }
 
-module.exports = { start, tick }
+function start() {
+  // Первый прогон через 30 сек после старта — даём backend'у дойти до зрелого состояния.
+  setTimeout(tick, 30 * 1000)
+  schedule().catch(err => console.error('[VPS-health cron] schedule error:', err.message))
+}
+
+// Вызывается после сохранения настроек в админке.
+function reschedule() {
+  return schedule().catch(err => console.error('[VPS-health cron] reschedule error:', err.message))
+}
+
+module.exports = { start, tick, reschedule }

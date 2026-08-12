@@ -1,257 +1,324 @@
+<div align="center">
+
+<img src="frontend/public/icon-192.png" width="96" alt="VPN Webhome" />
+
 # VPN Webhome
 
-Полноценный self-hosted SaaS-каркас для VPN-сервиса на базе [RemnaWave](https://remna.st):
-веб-кабинет пользователя, админ-панель, биллинг, реферальная программа,
-многоуровневый Traffic Guard и интеграция с Yandex Cloud для управления нодами.
+**Готовый self-hosted сервис продажи VPN поверх панели [RemnaWave](https://remna.st)**
 
-> **Текущая версия:** см. [VERSION](VERSION) · **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+Сайт с личным кабинетом · админ-панель · Telegram-бот · приём платежей ·
+управление серверами у нескольких хостеров · ИИ-ассистент поддержки
+
+[![Build](https://github.com/Liliya2002/REMNAWAVE_WEBHOME/actions/workflows/build-images.yml/badge.svg)](https://github.com/Liliya2002/REMNAWAVE_WEBHOME/actions/workflows/build-images.yml)
+![Node](https://img.shields.io/badge/Node-20.19%2B-339933?logo=node.js&logoColor=white)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white)
+
+Текущая версия — в [VERSION](VERSION) · история изменений — в [CHANGELOG.md](CHANGELOG.md)
+
+</div>
+
+---
+
+## Что это
+
+RemnaWave отлично раздаёт VPN, но не умеет его **продавать**. Этот проект
+закрывает всё остальное: витрину с тарифами, регистрацию и оплату, личный
+кабинет с ключами и статистикой трафика, бота в Telegram, панель администратора
+и обвязку вокруг инфраструктуры — от заказа VPS до уведомления «нода упала»
+через полсекунды после падения.
+
+Всё разворачивается одним `docker compose up` на своём сервере. Никаких внешних
+SaaS в контуре, кроме тех, что вы сами подключите ключами.
+
+---
+
+## Возможности
+
+<table>
+<tr><td width="50%" valign="top">
+
+### 👤 Кабинет пользователя
+
+- Регистрация по email или в один клик через **Telegram** (бот, Mini App, OIDC)
+- Подписки: пробный период, платные тарифы, смена тарифа с пересчётом
+- Ключи и QR-коды подключения, управление привязанными устройствами (HWID)
+- Графики трафика за 24 ч / 7 д / 30 д, квоты по сквадам с докупкой гигабайт
+- Реферальная программа: процент с платежей и бонусные дни
+- Уведомления в кабинете и пушем в Telegram
+- Светлая и тёмная тема, **PWA для iPhone** — ярлык на домашнем экране
+  запускается как приложение
+
+</td><td width="50%" valign="top">
+
+### 🛠️ Админ-панель `/admin`
+
+- Пользователи, тарифы, платежи, рефералы, рассылки, аудит действий
+- Два вида интерфейса на выбор (классический и сайдбар), переключается в шапке
+- **Админский режим** — сайт закрывается для всех, кроме администраторов
+- Конструктор лендингов с санитайзером и SEO-разметкой, любой лендинг
+  можно сделать главной страницей
+- **Конструктор конфигов** RemnaWave: сборка JSON профиля с генерацией
+  ключей Reality
+- Настройки платёжек, Telegram-бота и провайдеров — **в базе, не в `.env`**
+
+</td></tr>
+<tr><td valign="top">
+
+### 🌐 Серверы и инфраструктура
+
+- **RemnaWave** — синхронизация нод, сквадов и статистики
+- **VPS** — управление по SSH, установка ноды одной кнопкой, внешний
+  health-check через check-host.net, напоминания об оплате
+- **Yandex Cloud** — мультиаккаунт (OAuth и сервисные аккаунты), CRUD
+  виртуалок, публичные IP, биллинг, поиск свободного IP в CIDR
+- **Selectel**, **RUVDS** — баланс, серверы, уведомления
+- **Bedolaga Bot** — мониторинг стороннего бота продаж: пользователи,
+  подписки, промокоды, тикеты
+- Уведомления о низком балансе у провайдеров с настраиваемым порогом
+  и интервалом повтора
+
+</td><td valign="top">
+
+### 🤖 Автоматика
+
+- **ИИ-ассистент поддержки** — сам отвечает на тикеты, решает когда диалог
+  завершён, закрывает старое. Запросы о возврате денег **никогда** не
+  обрабатывает автоматически — эскалирует человеку
+- **Вебхуки RemnaWave** — «нода упала / поднялась / добавлена» приходят
+  в Telegram мгновенно, без опроса панели
+- **Traffic Guard** — автоблокировка превышений по ноде, тарифу и скваду
+- **P2P-детектор** — блокировка торрентов агентом на нодах
+- Одиннадцать фоновых задач: продление, снапшоты трафика, здоровье VPS,
+  балансы провайдеров, синхронизация промокодов
+
+</td></tr>
+</table>
+
+---
 
 ## Стек
 
 | Слой | Технологии |
 |---|---|
-| **Frontend** | React 18, Vite, Tailwind CSS, react-router, Helmet, Lucide icons, CodeMirror |
-| **Backend** | Node 20, Express, PostgreSQL, jsonwebtoken, bcrypt, nodemailer, ssh2, axios |
-| **Mobile** | React Native (`VpnMobile/`) |
-| **Infra** | Docker, docker-compose, nginx (TLS + Let's Encrypt), GitHub Actions, GHCR |
-| **External APIs** | RemnaWave Panel API, Yandex Cloud (Compute / VPC / Billing / IAM), Telegram Bot API, Платёжные провайдеры (Platega) |
+| **Backend** | Node 20, Express, PostgreSQL (чистый `pg`, без ORM), JWT, grammY, ssh2, Anthropic SDK |
+| **Frontend** | React 18, Vite, Tailwind CSS, react-router, Lucide, CodeMirror |
+| **Мобильное** | React Native (`VpnMobile/`) + PWA для iOS |
+| **Инфраструктура** | Docker Compose, nginx с Let's Encrypt, GitHub Actions → GHCR |
+| **Внешние API** | RemnaWave, Yandex Cloud, Selectel, RUVDS, Telegram Bot API, Platega |
 
-## Возможности
+Масштаб: **41** роут, **33** сервиса, **11** кронов, **33** миграции, **43** страницы фронта.
 
-### Кабинет пользователя
-
-- **Регистрация / вход** по email или через Telegram
-  - Case-insensitive логин и email (`Vasya`, `vasya`, `VASYA` — один пользователь)
-  - Подтверждение email кодом (опционально)
-  - CapsLock-warning на форме входа
-- **Подписки** — Free Trial + платные тарифы с автопродлением
-  - График потребления трафика (24ч, 7д, 30д)
-  - Squad Quotas — лимиты по серверам с возможностью покупки доп. ГБ
-  - Смена тарифа с расчётом доплаты / возврата
-- **Подключённые устройства** — управление HWID-привязками
-- **Реферальная программа** с процентом от платежей и бонусными днями
-- **Колесо удачи** (опц.)
-- **Уведомления** в личном кабинете + push в Telegram
-- **Mobile bottom-nav** — фиксированная панель на мобилке с подсветкой активной вкладки
-- Светлая / тёмная тема
-
-### Админ-панель (`/admin`)
-
-- **Пользователи** — поиск, фильтры, баланс, история подписок и платежей, метаданные RemnaWave
-- **Тарифы** — CRUD планов, tier-система, цвета
-- **Реферальная программа** — настройки процентов, лимитов, бонус-дней
-- **Серверы и хостинг:**
-  - **RemnaWave** — синхронизация нод, squads, traffic-stats
-  - **VPS** — управление по SSH, установка ноды одной кнопкой, Traffic Agent
-  - **Yandex Cloud** — мульти-аккаунт (OAuth + SA-key), VM CRUD, публичные IP, биллинг с грантами, поиск IP в CIDR
-  - **Заказ хостинга** — каталог offer'ов
-- **Лендинги** — визуальный редактор HTML с DOMPurify-санитайзером, SEO-теги, OG, JSON-LD, audit-log
-- **Главная страница как лендинг** — любой лендинг можно сделать главной; есть кнопка «Импорт текущей главной»
-- **Traffic Guard 2.0** — авто-блокировка превышений per-node / per-plan / per-squad с разными стратегиями
-- **P2P-детектор** — torrent-block через SSH-агент на нодах
-- **IP-баны** — банлист по IP с привязкой к нарушениям
-- **Аудит-лог** всех действий админов
-- **Состояние системы** — мониторинг
-
-### Yandex Cloud интеграция (`/admin/yandex-cloud`)
-
-- **Мульти-аккаунт** — несколько YC-аккаунтов одновременно (OAuth и Service Account JSON)
-- **Опциональный SOCKS5 per-account** — все запросы идут через прокси
-- **VM** — list / create / start / stop / restart / delete с цветовой статус-плашкой
-  - Создание VM: 9 семейств образов, 4 пресета CPU/RAM, public IP toggle, SSH-ключ из сохранённых
-- **Публичные IP** — alloc / reserve (static) / release / attach
-- **Биллинг** — баланс + грант (ручной ввод, т.к. YC API не отдаёт), статус автоплатежа, deep-link на пополнение
-- **Поиск IP в CIDR** — background-job, hard-cap 50 попыток, поддержка нескольких CIDR (textarea + загрузка из `.txt`), сохранённые списки per account
-- **Сохранённые SSH-ключи** per account с дедупом по fingerprint
-- **Privacy mode** — toggle для записи видео: блюрит все IP, ID, CIDR, имена
-
-### Traffic Agent
-
-Узкий SSH-агент на нодах RemnaWave для:
-- **Phase 2** — on-demand lookup настоящего IP клиента при автоблокировке
-- **Phase 3** — периодический scan на P2P/torrent-нарушения
-
-Установка одной кнопкой из админки, журнал попыток с classification ошибок.
-Подробнее: [infra/node-agent/README.md](infra/node-agent/README.md)
+---
 
 ## Быстрый старт
 
-Требования: **Node 20.19+**, **PostgreSQL 14+**, доступ к работающей RemnaWave-панели.
-
-### 1. Клонирование и зависимости
+Нужны **Node 20.19+**, **PostgreSQL 14+** и доступ к работающей панели RemnaWave.
 
 ```bash
 git clone https://github.com/Liliya2002/REMNAWAVE_WEBHOME.git
 cd REMNAWAVE_WEBHOME
 
-# Backend deps
-cd backend && npm install && cd ..
-
-# Frontend deps
+cd backend  && npm install && cd ..
 cd frontend && npm install && cd ..
 ```
 
-### 2. Конфигурация
-
-Создай `backend/.env` (минимум):
+Минимальный `backend/.env` — полный список в [backend/.env.example](backend/.env.example):
 
 ```env
-# PostgreSQL
 PGHOST=localhost
 PGPORT=5432
 PGUSER=vpn_user
 PGPASSWORD=secret
 PGDATABASE=vpn_db
 
-# JWT
 JWT_SECRET=<openssl rand -hex 32>
-
-# Шифрование sensitive данных в БД (SSH-пароли, OAuth-токены, SA-ключи)
 ENCRYPTION_KEY=<openssl rand -hex 32>
 
-# RemnaWave Panel
 REMNWAVE_API_URL=https://your-panel.example.com
-REMNWAVE_API_TOKEN=<your_token>
-REMNWAVE_SECRET_KEY=cookie_key:cookie_value  # опционально
+REMNWAVE_API_TOKEN=<token>
 
-# Email (можно оставить пустым в dev)
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=user
-SMTP_PASS=pass
-SMTP_FROM=noreply@example.com
-
-# Frontend URL (для генерации ссылок в письмах)
 FRONTEND_URL=http://localhost:5173
 ```
 
-Полный список переменных — см. [backend/.env.example](backend/.env.example).
-
-### 3. Миграции БД
-
-```bash
-cd backend
-npm run migrate:status   # посмотреть какие применены
-npm run migrate:up       # накатить все pending
-```
-
-### 4. Запуск dev
+> ⚠️ **`ENCRYPTION_KEY` обязателен.** Без него SSH-пароли, токены провайдеров
+> и ключи платёжек лягут в базу **открытым текстом** — сервис запустится и
+> только предупредит в логе.
 
 ```bash
-# Терминал 1 — backend
-cd backend && npm start
-
-# Терминал 2 — frontend
-cd frontend && npm run dev
+cd backend && npm run migrate:up   # накатить схему
+cd backend && npm start            # API на :4000
+cd frontend && npm run dev         # SPA на :5173, проксирует /api на бэкенд
 ```
 
-Открыть: [http://localhost:5173/](http://localhost:5173/)
+Первому зарегистрированному пользователю выдайте права:
 
-Backend API: [http://localhost:4000/](http://localhost:4000/)
-
-### 5. Создание первого админа
-
-После регистрации первого пользователя через UI — выдай админку через psql:
 ```sql
-UPDATE users SET is_admin = true WHERE login = 'твой_логин';
+UPDATE users SET is_admin = true WHERE login = 'ваш_логин';
 ```
 
-## Production деплой
+### Что настраивается не в `.env`
+
+Ключи, которые меняются на живом проекте, лежат в базе и правятся из админки —
+перезапуск не нужен:
+
+| Что | Где в админке | Таблица |
+|---|---|---|
+| Платёжная система | Настройки → Платёжки | `payment_settings` |
+| Telegram-бот и тексты уведомлений | `/admin/telegram` | `telegram_settings` |
+| ИИ-ассистент | `/admin/ai/connection` | `ai_assistant_settings` |
+| Аккаунты хостеров | страница провайдера | `*_accounts` |
+
+Секреты всегда проходят через `services/encryption.js`; наружу отдаётся флаг
+`has_*`, а не значение.
+
+---
+
+## Продакшн
 
 ### Docker Compose
 
 ```bash
-# Скопировать продовый .env
-cp .env.production.example .env
+sed "s|\${DOMAIN}|your.domain.com|g" \
+  nginx/conf.d/app.conf.template > nginx/conf.d/app.conf
 
-# Конфиг nginx — заменить ${DOMAIN} на свой
-sed "s|\${DOMAIN}|your.domain.com|g" nginx/conf.d/app.conf.template > nginx/conf.d/app.conf
+docker compose run --rm certbot certonly \
+  --webroot -w /var/www/certbot -d your.domain.com
 
-# Получить SSL-сертификат
-docker compose run --rm certbot certonly --webroot -w /var/www/certbot -d your.domain.com
-
-# Поднять
 docker compose up -d
 ```
 
-### Готовые образы из GHCR
+Поднимаются: `db`, `migrate` (одноразовый), `backend`, `frontend`, `nginx`,
+`certbot`, `deploy-runner`.
 
-При push'е тэга `vX.Y.Z` GitHub Actions собирает и публикует образы:
-
-```
-ghcr.io/liliya2002/remnawave_webhome-backend:v0.1.8
-ghcr.io/liliya2002/remnawave_webhome-frontend:v0.1.8
-ghcr.io/liliya2002/remnawave_webhome-deploy-runner:v0.1.8
-```
-
-Use `latest` тэг для последнего стабильного.
-
-### Релиз через `deploy.sh`
+### Релиз
 
 ```bash
-git fetch && git checkout v0.1.8
-bash deploy/deploy.sh v0.1.8
+# локально
+echo 0.2.0 > VERSION           # поднять версию
+git commit -am "release: v0.2.0"
+git tag v0.2.0 && git push origin main --tags
 ```
 
-Что делает скрипт:
-1. Pull новых образов из GHCR
-2. Применяет миграции БД
-3. Rolling restart backend + frontend + nginx
-4. Smoke-test на `/api/health` (timeout 120s)
-
-## Структура проекта
+Push тега запускает GitHub Actions: собираются образы в GHCR и создаётся
+GitHub Release.
 
 ```
-.
-├── backend/                  # Node/Express API
-│   ├── routes/              # endpoint'ы по модулям (auth, users, vps, yandex-cloud, ...)
-│   ├── services/            # бизнес-логика (remnwave, email, encryption, yandexCloud/, ...)
-│   ├── middleware/          # auth, maintenance, ip-ban, landing-ssr
-│   ├── cron/                # Cron-задачи (expireSubscriptions, trafficGuard, p2pDetector, squadQuota)
-│   ├── migrations/          # SQL миграции (numbered)
-│   └── scripts/migrate.js   # CLI для миграций
-├── frontend/                # React/Vite SPA
-│   ├── src/pages/          # страницы (Dashboard, Admin*, Login, Register, ...)
-│   ├── src/pages/dashboard/  # секции личного кабинета
-│   ├── src/components/     # переиспользуемые
-│   ├── src/services/       # API-клиенты
-│   └── src/contexts/       # React Context (Theme, SiteConfig, Notifications)
-├── VpnMobile/               # React Native клиент
-├── infra/node-agent/        # SSH-агент для нод (Traffic Guard / P2P)
-├── nginx/                   # nginx-конфиги (template для compose)
-├── deploy/                  # Скрипты деплоя
-├── docs/                    # Документация по релизам и фичам
-├── docker-compose.yml       # Production compose
-├── VERSION                  # Текущая версия
-└── CHANGELOG.md             # История релизов
+ghcr.io/liliya2002/remnawave_webhome-backend:v0.2.0
+ghcr.io/liliya2002/remnawave_webhome-frontend:v0.2.0
+ghcr.io/liliya2002/remnawave_webhome-deploy-runner:v0.2.0
 ```
 
-## Миграции БД
-
-Используется самодельный runner с advisory-lock и SHA-256 checksum-проверкой:
+На сервере:
 
 ```bash
-npm run migrate:status      # показать состояние
-npm run migrate:up [count]  # применить pending (или count следующих)
-npm run migrate:down [count] # откатить N последних (default 1)
-npm run migrate:create <name> # создать пустой шаблон NNNN_<name>.up/.down.sql
-npm run migrate:bootstrap   # пометить все существующие как applied (для миграции старого прода)
-npm run migrate:verify      # проверить checksum применённых
+cd /opt/vpnwebhome && bash deploy/deploy.sh v0.2.0
 ```
 
-Каждая миграция выполняется в одной транзакции. Изменение применённого файла → abort с понятной ошибкой.
+Скрипт сам делает бэкап базы, тянет образы, применяет миграции, перезапускает
+сервисы, прогоняет smoke-тест `/api/health` и **откатывается при сбое**.
+Ручной откат — `deploy/rollback.sh`.
+
+---
+
+## Структура
+
+```
+backend/
+  routes/       HTTP-эндпоинты; admin-*.js — всё под /api/admin/*
+  services/     бизнес-логика и клиенты внешних API
+  cron/         фоновые задачи, стартуют из index.js
+  middleware/   admin-only гвард, бан IP, SSR лендингов
+  migrations/   нумерованные .up.sql / .down.sql
+frontend/src/
+  pages/        страницы, включая Admin*.jsx
+  components/   переиспользуемые компоненты
+  contexts/     SiteConfig, Notification, Theme, Effects, AdminUi
+  config/       adminNav.js — единый источник меню админки
+frontend/scripts/
+                gen-pwa-icons.py — пересборка иконок и splash для PWA
+VpnMobile/      React Native приложение
+infra/          node-agent — SSH-агент для нод (Traffic Guard, P2P)
+deploy/         deploy.sh, backup.sh, rollback.sh
+nginx/          конфиг и шаблон app.conf.template
+docs/           заметки по фичам и планы
+```
+
+### Фоновые задачи
+
+| Задача | Интервал | Что делает |
+|---|---|---|
+| `expireSubscriptions` | 5 мин | снимает истёкшие подписки |
+| `squadQuota`, `p2pDetector` | 5 мин | квоты по сквадам, детект торрентов |
+| `vpsHealth` | 10 мин | внешняя проверка доступности VPS |
+| `aiTickets` | 10 мин | ответы ИИ на тикеты поддержки |
+| `trafficGuard` | 15 мин | блокировка превышений трафика |
+| `vpsExpiry` | 30 мин | напоминания об оплате серверов |
+| `selectelBalance`, `ycBalance` | 60 мин | балансы провайдеров |
+| `bedolagaPromoSync` | настраивается | синхронизация промокодов |
+| `trafficSnapshots` | 24 ч | снимки трафика для графиков |
+
+---
+
+## Миграции
+
+Свой раннер: одна транзакция на миграцию, advisory-lock и проверка SHA-256.
+**Уже применённый файл править нельзя** — раннер остановится с ошибкой
+несовпадения контрольной суммы.
+
+```bash
+npm run migrate:status          # что применено
+npm run migrate:up [N]          # накатить все pending или N следующих
+npm run migrate:down [N]        # откатить N последних (по умолчанию 1)
+npm run migrate:create <имя>    # создать пару NNNN_<имя>.up/.down.sql
+npm run migrate:verify          # сверить контрольные суммы
+npm run migrate:bootstrap       # пометить существующие как применённые
+```
+
+---
+
+## Разработка
+
+Договорённости, которые стоит соблюдать:
+
+- Общение и комментарии в коде — **по-русски**.
+- Ретраи — только для GET. Повтор POST может создать второй сервер,
+  отправить рассылку дважды или списать деньги повторно.
+- Перед массовыми действиями (рассылка, слияние аккаунтов, удаление) —
+  подтверждение и dry-run.
+- Новый пункт меню админки: `frontend/src/config/adminNav.js` + роут в `App.jsx`.
+- Новые эндпоинты провайдеров — по образцу `admin-selectel.js`.
+- Пустая строка в `PUT` для секрета означает «не менять».
+
+**Telegram-вход, Mini App, вебхуки и PWA на iOS локально не проверить** —
+нужен публичный HTTPS. Диагностика по логам:
+
+```bash
+docker compose logs --tail=50 backend
+```
+
+Известные грабли, каждая из которых уже стоила времени, собраны в
+[CLAUDE.md](CLAUDE.md) — читать перед тем, как трогать авторизацию через
+Telegram, режим обслуживания, фиксированное позиционирование в шапке или
+пул PostgreSQL.
+
+---
 
 ## Документация
 
-- [CHANGELOG.md](CHANGELOG.md) — история всех релизов
-- [docs/](docs/) — детальные release-notes и заметки по фичам
-- [infra/node-agent/README.md](infra/node-agent/README.md) — установка Traffic Agent на ноду
-- API endpoints: см. соответствующие `backend/routes/*.js`
+- [CHANGELOG.md](CHANGELOG.md) — история релизов
+- [CLAUDE.md](CLAUDE.md) — карта проекта и грабли
+- [docs/](docs/) — планы и заметки по фичам
+- [infra/node-agent/README.md](infra/node-agent/README.md) — установка агента на ноду
+- [deploy/README.md](deploy/README.md) — деплой и откат
 
 ## Лицензия
 
-Проприетарный проект.
+Проприетарный проект. Все права защищены.
 
-## Контакты
+---
 
-Issues и feature-requests — через GitHub Issues этого репозитория.
+<div align="center">
+<sub>Вопросы и предложения — через GitHub Issues репозитория.</sub>
+</div>

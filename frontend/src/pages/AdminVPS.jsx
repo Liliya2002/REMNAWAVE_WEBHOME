@@ -8,14 +8,16 @@ import {
   Copy, Radio, Trash2, Search, FileCode2, RotateCw, Square, Zap,
   PauseCircle, PlayCircle, History, Filter, Database, Coins, Rocket,
   ShieldCheck, Wifi, WifiOff, Shield, FileText, Rows3, Clock3,
-  ArrowUpDown, ChevronUp, MoreHorizontal
+  ArrowUpDown, ChevronUp, MoreHorizontal, ExternalLink
 } from 'lucide-react'
 import VersionBadge, { compareVersions } from '../components/VersionBadge'
 
 const API = import.meta.env.VITE_API_URL || ''
 
 const CURRENCIES = ['RUB', 'USD', 'EUR', 'USDT']
-const PROVIDERS = ['TimeWEB', 'OVH', 'Hetzner', 'Yandex Cloud', 'VK Cloud', 'Selectel', 'Play2Go', 'AdminVPS', 'Mhost', 'WarpX', 'DoubleServers', 'UFO', 'Vultr', 'Aeza', 'Другой']
+// Резервный список: используется, пока справочник грузится с сервера, и на
+// случай пустой таблицы. Основной источник — Настройки → VPS → Провайдеры.
+const FALLBACK_PROVIDERS = ['TimeWEB', 'OVH', 'Hetzner', 'Yandex Cloud', 'VK Cloud', 'Selectel', 'RUVDS', 'AdminVPS', 'Aeza', 'Vultr']
 
 function daysLeft(dateStr) {
   if (!dateStr) return null
@@ -137,6 +139,20 @@ const SERVICE_TYPES = [
 
 export default function AdminVPS() {
   const [vpsList, setVpsList] = useState([])
+  // Справочник провайдеров (Настройки → VPS → Провайдеры).
+  const [providers, setProviders] = useState([])
+  // Ссылка на провайдера: сначала личный кабинет (там продление и оплата),
+  // иначе официальный сайт. Заполняется в Настройки → VPS → Провайдеры.
+  const providerLink = useMemo(() => {
+    const map = {}
+    for (const p of providers) map[p.name] = p.panel_url || p.website_url || null
+    return map
+  }, [providers])
+
+  const PROVIDERS = useMemo(() => {
+    const names = providers.length ? providers.map(p => p.name) : FALLBACK_PROVIDERS
+    return [...names, 'Другой']   // «Другой» всегда последним — для разовых случаев
+  }, [providers])
   const [nodes, setNodes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -220,6 +236,14 @@ export default function AdminVPS() {
   }
 
   useEffect(() => { fetchData() }, [])
+
+  // Провайдеры грузим отдельно: список меняется редко и не зависит от серверов.
+  useEffect(() => {
+    fetch(`${API}/api/admin/vps/providers`, { headers })
+      .then(r => r.ok ? r.json() : { providers: [] })
+      .then(d => setProviders(d.providers || []))
+      .catch(() => setProviders([]))
+  }, [])
 
   // Авто-обновление каждые 30 секунд
   useEffect(() => {
@@ -1292,7 +1316,16 @@ export default function AdminVPS() {
                         )}
                       </td>
                       <td className="px-4 py-3 align-top">
-                        <div className="text-slate-300">{vps.hosting_provider || '—'}</div>
+                        <div className="text-slate-300 flex items-center gap-1.5">
+                          {vps.hosting_provider || '—'}
+                          {providerLink[vps.hosting_provider] && (
+                            <a href={providerLink[vps.hosting_provider]} target="_blank" rel="noreferrer"
+                              onClick={e => e.stopPropagation()} title="Открыть кабинет провайдера"
+                              className="text-slate-500 hover:text-cyan-300 shrink-0">
+                              <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
                         {vps.location && <div className="text-xs text-slate-500 mt-0.5">{vps.location}</div>}
                       </td>
                       <td className="px-4 py-3 align-top text-xs text-slate-400 whitespace-nowrap">{cfg || '—'}</td>
@@ -1397,9 +1430,18 @@ export default function AdminVPS() {
                           </span>
                         )}
                         {vps.hosting_provider && (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-violet-500/15 border border-violet-500/30 rounded-full text-[11px] font-semibold text-violet-300">
-                            <Globe2 className="w-3 h-3" /> {vps.hosting_provider}
-                          </span>
+                          providerLink[vps.hosting_provider] ? (
+                            <a href={providerLink[vps.hosting_provider]} target="_blank" rel="noreferrer"
+                              onClick={e => e.stopPropagation()} title="Открыть кабинет провайдера"
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-violet-500/15 border border-violet-500/30 rounded-full text-[11px] font-semibold text-violet-300 hover:bg-violet-500/25 hover:border-violet-500/50 transition-colors">
+                              <Globe2 className="w-3 h-3" /> {vps.hosting_provider}
+                              <ExternalLink className="w-2.5 h-2.5 opacity-60" />
+                            </a>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-violet-500/15 border border-violet-500/30 rounded-full text-[11px] font-semibold text-violet-300">
+                              <Globe2 className="w-3 h-3" /> {vps.hosting_provider}
+                            </span>
+                          )
                         )}
                         {vps.yc_instance_id && (
                           <a href="/admin/yandex-cloud" title={`Управляется через Yandex Cloud (instance ${vps.yc_instance_id})`}
@@ -2266,6 +2308,7 @@ export default function AdminVPS() {
           setSpec={setSpec}
           customProvider={customProvider}
           setCustomProvider={setCustomProvider}
+          providers={PROVIDERS}
           nodes={nodes}
           handleNodeLink={handleNodeLink}
           saving={saving}
@@ -2483,7 +2526,7 @@ function FormNav({ items, scrollerRef }) {
   )
 }
 
-function VpsFormModal({ editId, form, setField, setSpec, customProvider, setCustomProvider, nodes, handleNodeLink, saving, onClose, onSave }) {
+function VpsFormModal({ editId, form, setField, setSpec, customProvider, setCustomProvider, providers: PROVIDERS = [], nodes, handleNodeLink, saving, onClose, onSave }) {
   const scrollerRef = useRef(null)
 
   // Прогресс заполнения — отслеживаем "ключевые" поля
