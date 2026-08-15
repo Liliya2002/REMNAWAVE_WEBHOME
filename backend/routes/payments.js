@@ -516,20 +516,39 @@ router.post('/pay-with-balance', verifyToken, verifyActive, async (req, res) => 
 });
 
 // Маппинг провайдерского статуса в наш внутренний.
+// Значения — из схемы PaymentStatus документации Platega: PENDING, CANCELED,
+// CONFIRMED, CHARGEBACKED. CHARGEBACK без окончания принимаем на всякий случай:
+// раньше в коде было только оно, и если провайдер где-то шлёт короткую форму,
+// возврат не должен молча уехать в pending.
 function mapPlategaStatus(providerStatus) {
   switch (providerStatus) {
-    case 'CONFIRMED':  return 'completed';
-    case 'CANCELED':   return 'failed';
-    case 'CHARGEBACK': return 'refunded';
-    default:           return 'pending';
+    case 'CONFIRMED':    return 'completed';
+    case 'CANCELED':     return 'failed';
+    case 'CHARGEBACKED':
+    case 'CHARGEBACK':   return 'refunded';
+    default:             return 'pending';
   }
 }
+
+// Статусы, означающие «деньги ещё не зачислены». Из любого из них платёж
+// может стать completed.
+//
+// expired здесь ОБЯЗАТЕЛЕН. Это наш локальный статус: крон expireOldPayments
+// ставит его, когда истекло expires_at — время жизни платёжной ФОРМЫ, которое
+// вернула Platega. Оно не значит «денег не будет»: подтверждение по СБП вполне
+// приходит позже. Раньше expired отсутствовал в таблице переходов, из-за чего
+// ALLOWED_STATUS_TRANSITIONS[current] давал пустой Set и вебхук с CONFIRMED
+// отбрасывался как недопустимый переход — с ответом 200, так что провайдер
+// считал колбэк доставленным и не повторял. Платёж становился незачисляемым
+// навсегда (реальный случай: пополнение на 100 ₽ 13.08.2026).
+const UNPAID_STATUSES = new Set(['pending', 'expired']);
 
 // Разрешённые переходы статуса платежа.
 // Повторный webhook с тем же статусом — допустим (идемпотентный повтор, без side effects).
 // Обратные переходы (например, refunded → completed) запрещены.
 const ALLOWED_STATUS_TRANSITIONS = {
   pending:   new Set(['pending', 'completed', 'failed', 'refunded']),
+  expired:   new Set(['expired', 'completed', 'failed', 'refunded']),
   completed: new Set(['completed', 'refunded']),
   failed:    new Set(['failed']),
   refunded:  new Set(['refunded']),
@@ -657,17 +676,27 @@ async function processPlategaWebhook(body) {
     const currentStatus = payment.status;
 
     // Сверяем сумму и валюту webhook с тем, что мы создавали в БД.
-    // Толерантность 1 копейка покрывает округления; valuta — строго совпадение.
     // Это блокирует подделку webhook с произвольной суммой.
+    //
+    // Проверяем НЕДОплату, а не точное совпадение. Platega при comissionType=0
+    // добавляет комиссию сверх суммы и списывает её с плательщика: мы создаём
+    // счёт на 100 ₽, а провайдер проводит 108 ₽ (реальная транзакция
+    // cc1d86ac от 13.08.2026). Требование точного равенства отбивало бы такие
+    // платежи с 400 — при том, что деньги уже получены.
+    //
+    // Переплата для нас безопасна: на баланс всё равно идёт payment.amount,
+    // а не сумма из webhook. Опасна недоплата — оплатили 10 ₽, а зачислили бы
+    // 100. Её и отсекаем, с допуском в копейку на округления.
     const expectedAmount = Number(payment.amount);
     const webhookAmount = Number(amount);
     const expectedCurrency = String(payment.currency || 'RUB').toUpperCase();
     const webhookCurrency = String(currency || expectedCurrency).toUpperCase();
-    if (!Number.isFinite(webhookAmount) || Math.abs(webhookAmount - expectedAmount) > 0.01 || webhookCurrency !== expectedCurrency) {
+    const underpaid = webhookAmount < expectedAmount - 0.01;
+    if (!Number.isFinite(webhookAmount) || underpaid || webhookCurrency !== expectedCurrency) {
       await client.query('ROLLBACK');
       console.error(
         `[Webhook] Amount/currency mismatch for payment ${payment.id}: ` +
-        `expected ${expectedAmount} ${expectedCurrency}, got ${webhookAmount} ${webhookCurrency}`
+        `expected >= ${expectedAmount} ${expectedCurrency}, got ${webhookAmount} ${webhookCurrency}`
       );
       return {
         outcome: 'amount_mismatch',
@@ -710,9 +739,13 @@ async function processPlategaWebhook(body) {
       [targetStatus, payment.id, JSON.stringify(webhookMeta)]
     );
 
-    // Side effects для TOPUP: пополнение и возврат из кошелька
+    // Side effects для TOPUP: пополнение и возврат из кошелька.
+    // Источником может быть и expired — см. комментарий к UNPAID_STATUSES.
+    // Условие обязано совпадать с таблицей переходов: пропустить сюда статус,
+    // которого нет в UNPAID_STATUSES, значит перевести платёж в completed,
+    // не начислив денег, — то есть потерять их молча.
     if (payment.payment_type === 'topup') {
-      if (currentStatus === 'pending' && targetStatus === 'completed') {
+      if (UNPAID_STATUSES.has(currentStatus) && targetStatus === 'completed') {
         await creditTopupToWallet(client, payment, webhookMeta);
       } else if (currentStatus === 'completed' && targetStatus === 'refunded') {
         await refundTopupFromWallet(client, payment, webhookMeta);
@@ -821,3 +854,10 @@ router.get('/history', verifyToken, verifyActive, async (req, res) => {
 });
 
 module.exports = router;
+
+// Экспортируем внутренности для scripts/reconcile-payments.js: сверка платежей
+// обязана применять РОВНО ту же машину состояний и то же начисление на кошелёк,
+// что и webhook. Своя копия логики рано или поздно разъедется с этой — а цена
+// расхождения здесь измеряется в деньгах пользователей.
+module.exports.processPlategaWebhook = processPlategaWebhook;
+module.exports.ensureWalletSchema = ensureWalletSchema;
