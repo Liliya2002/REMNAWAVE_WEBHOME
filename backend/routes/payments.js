@@ -728,15 +728,22 @@ async function processPlategaWebhook(body) {
       return { outcome: 'already_processed', payment };
     }
 
-    // Применяем переход
+    // Применяем переход.
+    //
+    // Признак «платёж закрыт» передаём ОТДЕЛЬНЫМ булевым параметром, а не
+    // сравниваем $1 внутри CASE. Раньше $1 стоял и в `SET status = $1` (там
+    // Postgres выводит тип колонки, varchar), и в `CASE WHEN $1 = 'completed'`
+    // (там — text), из-за чего запрос падал с «inconsistent types deduced for
+    // parameter $1» и переход не применялся вовсе. Приведение типов это тоже
+    // чинит, но его легко потерять при правке — булев параметр надёжнее.
     await client.query(
       `UPDATE payments
        SET status = $1,
-           completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE completed_at END,
+           completed_at = CASE WHEN $4 THEN NOW() ELSE completed_at END,
            webhook_processed_at = NOW(),
            payment_data = COALESCE(payment_data, '{}'::jsonb) || $3::jsonb
        WHERE id = $2`,
-      [targetStatus, payment.id, JSON.stringify(webhookMeta)]
+      [targetStatus, payment.id, JSON.stringify(webhookMeta), targetStatus === 'completed']
     );
 
     // Side effects для TOPUP: пополнение и возврат из кошелька.
