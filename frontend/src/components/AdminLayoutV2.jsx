@@ -4,6 +4,7 @@ import {
   LayoutGrid, ExternalLink, Menu, X, LayoutDashboard, Search, LogOut,
   ChevronDown, PanelLeftClose, PanelLeftOpen,
 } from 'lucide-react'
+import { lockDarkTheme } from '../contexts/ThemeContext'
 import { GROUPS, FLAT_ITEMS } from '../config/adminNav'
 import CursorGlow from './CursorGlow'
 import { BgToggle, CursorToggle } from './EffectsToggles'
@@ -40,21 +41,7 @@ export default function AdminLayoutV2({ onSwitchToClassic }) {
   }
 
   // Форсируем тёмную тему пока юзер в админке (как в классическом layout).
-  useEffect(() => {
-    const root = document.documentElement
-    root.classList.add('dark')
-    return () => {
-      try {
-        const pref = localStorage.getItem('vpn_theme') || 'system'
-        const sysDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-        const shouldBeDark = pref === 'dark' || (pref === 'system' && sysDark)
-        if (shouldBeDark) root.classList.add('dark')
-        else root.classList.remove('dark')
-      } catch {
-        root.classList.remove('dark')
-      }
-    }
-  }, [])
+  useEffect(() => lockDarkTheme(), [])
 
   useEffect(() => { setMobileOpen(false) }, [location.pathname])
 

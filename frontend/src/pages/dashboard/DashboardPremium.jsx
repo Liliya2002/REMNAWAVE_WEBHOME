@@ -227,15 +227,31 @@ export default function DashboardPremium({
         </div>
       </div>
 
-      {/* Мобильная навигация — снизу, чтобы не занимать экран сайдбаром */}
-      <nav className="dp-tabbar lg:hidden">
-        <div className="flex items-center gap-1 px-2 py-2 overflow-x-auto thin-scroll">
+      {/* Мобильная навигация — закреплённая полоса внизу экрана.
+          Была sticky с горизонтальным скроллом: уезжала вместе с контентом, а
+          до дальних разделов приходилось долистывать. Теперь fixed, а пункты
+          разложены в равные колонки — видно все сразу. */}
+      <nav className="dp-tabbar lg:hidden" aria-label="Разделы кабинета">
+        <div className="dp-tabbar-grid">
           {menuItems.map(item => (
-            <button key={item.id} onClick={() => setActiveSection(item.id)}
-              className={`dp-nav-item !w-auto !px-3 shrink-0 ${activeSection === item.id ? 'is-active' : ''}`}>
-              <item.Icon className="w-4 h-4 shrink-0" />
-              <span className="text-[12px] whitespace-nowrap">{item.label}</span>
-              {item.badge > 0 && <span className="dp-count !min-w-[16px] !h-4 !text-[10px]">{item.badge > 99 ? '99+' : item.badge}</span>}
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveSection(item.id)
+                // Иначе после переключения пользователь остаётся в середине
+                // прежней секции и думает, что ничего не произошло.
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+              aria-current={activeSection === item.id ? 'page' : undefined}
+              className={`dp-tab ${activeSection === item.id ? 'is-active' : ''}`}
+            >
+              <span className="dp-tab-icon">
+                <item.Icon className="w-[18px] h-[18px]" />
+                {item.badge > 0 && (
+                  <i className="dp-tab-badge">{item.badge > 9 ? '9+' : item.badge}</i>
+                )}
+              </span>
+              <span className="dp-tab-label">{item.short || item.label}</span>
             </button>
           ))}
         </div>

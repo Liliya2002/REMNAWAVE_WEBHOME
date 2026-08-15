@@ -110,13 +110,15 @@ function DashboardInner() {
     }
   }
 
+  // short — подпись для нижней панели на мобильных: колонка там около 60 px,
+  // и полные названия («Уведомления», «Безопасность») в неё не помещаются.
   const menuItems = [
-    { id: 'profile', label: 'Профиль', Icon: User },
-    { id: 'subscriptions', label: 'Подписка', Icon: Ticket },
-    { id: 'inbox', label: 'Уведомления', Icon: Inbox, badge: unreadCount },
-    { id: 'balance', label: 'Баланс', Icon: CreditCard },
-    { id: 'referrals', label: 'Рефералы', Icon: Gift },
-    { id: 'security', label: 'Безопасность', Icon: ShieldCheck },
+    { id: 'profile', label: 'Профиль', short: 'Профиль', Icon: User },
+    { id: 'subscriptions', label: 'Подписка', short: 'Подписка', Icon: Ticket },
+    { id: 'inbox', label: 'Уведомления', short: 'Входящие', Icon: Inbox, badge: unreadCount },
+    { id: 'balance', label: 'Баланс', short: 'Баланс', Icon: CreditCard },
+    { id: 'referrals', label: 'Рефералы', short: 'Рефералы', Icon: Gift },
+    { id: 'security', label: 'Безопасность', short: 'Защита', Icon: ShieldCheck },
   ]
 
   // Секции общие для обеих тем: тема меняет обрамление, а не содержимое.

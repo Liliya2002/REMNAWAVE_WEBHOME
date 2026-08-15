@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react'
 import { Outlet, useLocation, Link } from 'react-router-dom'
 import { ArrowLeft, LayoutDashboard, PanelLeft } from 'lucide-react'
+import { lockDarkTheme } from '../contexts/ThemeContext'
 
 // Сайдбар убран — навигация по разделам идёт через стартовый экран /admin
 // (groups + поиск). На каждой подстранице показываем минибар для возврата.
@@ -14,25 +15,10 @@ export default function AdminLayout({ onSwitchToV2 }) {
   const location = useLocation()
   const isOverview = location.pathname === '/admin' || location.pathname === '/admin/'
 
-  // Форсируем тёмную тему пока юзер в админке.
-  // Сохраняем предыдущее состояние класса и восстанавливаем при unmount.
-  useEffect(() => {
-    const root = document.documentElement
-    const wasDark = root.classList.contains('dark')
-    root.classList.add('dark')
-    return () => {
-      // Восстанавливаем как было ДО входа в админку (читаем из localStorage)
-      try {
-        const pref = localStorage.getItem('vpn_theme') || 'system'
-        const sysDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches
-        const shouldBeDark = pref === 'dark' || (pref === 'system' && sysDark)
-        if (shouldBeDark) root.classList.add('dark')
-        else root.classList.remove('dark')
-      } catch {
-        if (!wasDark) root.classList.remove('dark')
-      }
-    }
-  }, [])
+  // Форсируем тёмную тему пока юзер в админке; при unmount возвращаем тему из
+  // настройки. Замок нужен ещё и для того, чтобы пересинхронизация при возврате
+  // приложения из фона не сбросила админку в светлую.
+  useEffect(() => lockDarkTheme(), [])
 
   return (
     <div className="min-h-screen">

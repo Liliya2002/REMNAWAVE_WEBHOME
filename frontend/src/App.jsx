@@ -18,6 +18,7 @@ import ForgotPassword from './pages/ForgotPassword'
 import ResetPassword from './pages/ResetPassword'
 import Connect from './pages/Connect'
 import ProtectedRoute from './components/ProtectedRoute'
+import HomeRoute from './components/HomeRoute'
 import ProtectedAdminRoute from './components/ProtectedAdminRoute'
 import AdminLayoutSwitch from './components/AdminLayoutSwitch'
 import AdminOverview from './pages/AdminOverview'
@@ -144,7 +145,9 @@ function Navigation(){
 
   const navLinks = (
     <>
-      <NavLink to="/" className={navLinkClass} onClick={() => setMenuOpen(false)}>Главная</NavLink>
+      {/* Авторизованного «/» уводит в кабинет (см. HomeRoute), поэтому для
+          него ссылка ведёт на «/?home» — иначе пункт меню был бы нерабочим. */}
+      <NavLink to={isAuth ? '/?home' : '/'} className={navLinkClass} onClick={() => setMenuOpen(false)}>Главная</NavLink>
       {!adminOnly && <NavLink to="/pricing" className={navLinkClass} onClick={() => setMenuOpen(false)}>Тарифы</NavLink>}
       {!adminOnly && <NavLink to="/servers" className={navLinkClass} onClick={() => setMenuOpen(false)}>Серверы</NavLink>}
       {!adminOnly && landingMenu.map(l => (
@@ -283,7 +286,7 @@ function AppShell(){
         {/* Main Content */}
         <main className="w-full">
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<HomeRoute><Home /></HomeRoute>} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/servers" element={<Servers />} />
             <Route path="/auth" element={<Navigate to="/login" replace />} />

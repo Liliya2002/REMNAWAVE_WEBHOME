@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect } from 'react'
 import { useSiteConfig } from './SiteConfigContext'
+import { lockDarkTheme } from './ThemeContext'
 
 /**
  * Вид личного кабинета: 'classic' — исходный, 'premium' — тёмная тема
@@ -27,8 +28,12 @@ export function DashboardUiProvider({ children }) {
     // Тема Digital Premium всегда тёмная — светлый режим её сломает.
     // dp-theme красит страницу целиком и убирает звёздный фон сайта: блок
     // темы непрозрачный, и там, где он кончается, был виден стык со звёздами.
-    root.classList.add('dark', 'dp-theme')
-    return () => root.classList.remove('dp-theme')
+    // Замок, а не голый classList.add('dark'): раньше класс добавлялся и уже
+    // никогда не снимался — уйдя из premium-кабинета, пользователь со светлой
+    // темой оставался в тёмной до перезагрузки страницы.
+    root.classList.add('dp-theme')
+    const unlock = lockDarkTheme()
+    return () => { root.classList.remove('dp-theme'); unlock() }
   }, [version])
 
   return <Ctx.Provider value={{ version }}>{children}</Ctx.Provider>
