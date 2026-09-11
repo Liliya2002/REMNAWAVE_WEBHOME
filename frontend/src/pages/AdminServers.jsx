@@ -476,16 +476,16 @@ export default function AdminServers() {
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 sm:flex-none justify-center ${
+            className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-lg text-sm font-medium transition-all flex-1 sm:flex-none justify-center min-w-0 ${
               activeTab === t.id
                 ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white shadow-lg shadow-violet-500/25'
                 : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
             }`}
           >
-            <t.Icon className="w-4 h-4" />
-            <span>{t.label}</span>
+            <t.Icon className="w-4 h-4 shrink-0" />
+            <span className="truncate">{t.label}</span>
             {t.count != null && (
-              <span className={`ml-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+              <span className={`ml-0.5 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold hidden sm:inline ${
                 activeTab === t.id ? 'bg-white/20' : 'bg-slate-800/80'
               }`}>{t.count}</span>
             )}

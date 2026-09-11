@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { BrowserRouter, Routes, Route, NavLink, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useSiteConfig } from './contexts/SiteConfigContext'
@@ -69,6 +69,13 @@ function Navigation(){
   const [isAuth, setIsAuth] = useState(!!localStorage.getItem('token'))
   const [isAdmin, setIsAdmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const burgerRef = useRef(null)
+  // Высота шапки, от которой начинается выпадающее меню. Раньше здесь было
+  // жёстко вписанное 65px, а шапка на деле 73px — и ещё выше в приложении с
+  // домашнего экрана, где ей добавляется отступ под чёлку (--safe-top). Меню
+  // наезжало на шапку на 67px: логотип скрывался, а тап по бургеру попадал в
+  // пункт меню вместо закрытия.
+  const [headerBottom, setHeaderBottom] = useState(65)
   const [loggingOut, setLoggingOut] = useState(false)
   const [landingMenu, setLandingMenu] = useState([])
   const navigate = useNavigate()
@@ -139,6 +146,28 @@ function Navigation(){
     }, 1300)
   }
 
+  // Пересчитываем при открытии и при повороте экрана: в альбомной
+  // ориентации чёлка уходит в бок и высота шапки меняется.
+  useEffect(() => {
+    if (!menuOpen) return
+    const measure = () => {
+      const h = burgerRef.current && burgerRef.current.closest('header')
+      if (h) setHeaderBottom(Math.round(h.getBoundingClientRect().bottom))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+    }
+  }, [menuOpen])
+
+  // Открытое меню закрываем при уходе на другую страницу: ссылки внутри
+  // закрывают его сами, но переход может случиться и мимо них — из бота,
+  // по кнопке «назад», после выхода из аккаунта.
+  useEffect(() => { setMenuOpen(false) }, [location.pathname])
+
   const navLinkClass = ({isActive}) => `transition-colors ${
     isActive
       ? 'text-blue-600 dark:text-blue-400 font-semibold'
@@ -199,6 +228,7 @@ function Navigation(){
         <ThemeToggle />
         {isAuth && <NotificationBell />}
         <button
+          ref={burgerRef}
           onClick={() => setMenuOpen(!menuOpen)}
           className="relative w-10 h-10 flex flex-col items-center justify-center gap-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800/50 transition-colors"
           aria-label="Меню"
@@ -209,9 +239,15 @@ function Navigation(){
         </button>
       </div>
 
-      {/* Mobile drawer */}
-      {menuOpen && (
-        <div className="md:hidden fixed inset-0 top-[65px] z-50">
+      {/* Выпадающее меню — порталом в body.
+          Внутри шапки оно быть не может: у шапки backdrop-blur, а он делает
+          её containing block для position: fixed (те же грабли, что у панели
+          уведомлений — см. CLAUDE.md). Следствий было два. Затемнение
+          «inset-0» получало высоту шапки, а не экрана — на деле 7px, поэтому
+          тап мимо меню его не закрывал. И всё меню оказывалось заперто в слое
+          шапки (z-40), так что нижняя панель кабинета рисовалась поверх него. */}
+      {menuOpen && createPortal(
+        <div className="md:hidden fixed inset-x-0 bottom-0 z-50" style={{ top: headerBottom }}>
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMenuOpen(false)} />
           {/* Menu */}
@@ -228,7 +264,8 @@ function Navigation(){
               )}
             </div>
           </nav>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

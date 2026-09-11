@@ -121,6 +121,15 @@ async function buildContext(account, settings) {
   const promoPerf = await stats.promoPerformance(account, { windowDays: 7 })
     .catch(() => ({ ok: false }))
 
+  // Отдача по деньгам, дни простоя сегментов и недавние тексты — три вещи,
+  // которых модели не хватало: чем рассылка закончилась, где давно не писали
+  // и что именно не надо повторять.
+  const [revenue, neglect, recent] = await Promise.all([
+    stats.revenueLift(account).catch(() => ({ ok: false })),
+    stats.segmentNeglect(account).catch(() => ({})),
+    stats.recentTexts(account, { days: 14, limit: 8 }).catch(() => []),
+  ])
+
   // Активные промокоды — единственное, на что модели разрешено ссылаться.
   const promoCodes = promo.ok
     ? ((promo.data && promo.data.items) || []).map(p => p.code).filter(Boolean).slice(0, 20)
@@ -129,7 +138,7 @@ async function buildContext(account, settings) {
   const lastByTarget = {}
   for (const b of items) if (!lastByTarget[b.target_type]) lastByTarget[b.target_type] = b
 
-  return { items, segs: segs.ok ? segs.segments : [], best, worst, rejected, templates, promoCodes, lastByTarget, rules, promoPerf }
+  return { items, segs: segs.ok ? segs.segments : [], best, worst, rejected, templates, promoCodes, lastByTarget, rules, promoPerf, revenue, neglect, recent }
 }
 
 function buildPrompt(settings, ctx, allowedTargets) {
@@ -142,16 +151,29 @@ function buildPrompt(settings, ctx, allowedTargets) {
   parts.push('\n── Доступные сегменты ──')
   for (const id of allowedTargets) {
     const s = ctx.segs.find(x => x.id === id)
-    const last = ctx.lastByTarget[id]
     const size = s && s.lastSent ? `${s.lastSent.count} получателей` : 'размер неизвестен'
-    const when = last ? `последняя рассылка ${fmtDate(last.created_at)}` : 'ещё не отправлялся'
+    // Дни простоя, а не дата: «не писали 45 дней» — сразу повод, а дату
+    // модели пришлось бы вычитать из сегодняшней в уме.
+    const idle = ctx.neglect ? ctx.neglect[id] : null
+    const when = idle == null
+      ? 'ещё не отправлялся'
+      : `не писали ${idle} дн.`
     const rule = ctx.rules ? ctx.rules[id] : null
     const extra = []
+    if (rule && rule.is_sandbox) extra.push('ПОЛИГОН: здесь можно пробовать новое, аудитория маленькая')
+
+    // Отдача — наблюдение, а не правило, поэтому отдельной припиской. Порог в
+    // пять рассылок: по трём медиана скачет от одной удачной отправки, и
+    // модель выучила бы шум.
+    const rev = ctx.revenue && ctx.revenue.ok
+      ? ctx.revenue.by_segment.find(x => x.target === id) : null
+    const revNote = rev && rev.n >= 5
+      ? `; выручка после рассылок x${rev.median} к обычному дню (по ${rev.n})` : ''
     if (rule && rule.purpose === 'sales') extra.push('только продающие сообщения')
     if (rule && rule.purpose === 'service') extra.push('только сервисные новости, без продаж')
     if (rule && rule.min_interval_hours) extra.push(`не чаще раза в ${rule.min_interval_hours} ч`)
     if (rule && rule.note) extra.push(rule.note)
-    parts.push(`${id} — ${s ? s.hint : ''}; ${size}; ${when}${extra.length ? '; ПРАВИЛО: ' + extra.join('; ') : ''}`)
+    parts.push(`${id} — ${s ? s.hint : ''}; ${size}; ${when}${revNote}${extra.length ? '; ПРАВИЛО: ' + extra.join('; ') : ''}`)
   }
 
   if (ctx.templates.length) {
@@ -179,6 +201,21 @@ function buildPrompt(settings, ctx, allowedTargets) {
     for (const r of ctx.rejected) {
       parts.push(`[${r.target}] причина отказа: ${r.reject_reason}\n${String(r.message_text).slice(0, 200)}`)
     }
+  }
+
+  if (ctx.revenue && ctx.revenue.ok && ctx.revenue.measured >= 10) {
+    parts.push('\n── Что рассылки дают в деньгах ──')
+    parts.push(`По ${ctx.revenue.measured} рассылкам: выручка за сутки после отправки относительно обычного дня (тот же день недели, среднее за 3 недели). 1.0 — без изменений.`)
+    parts.push(`В среднем по всем: x${ctx.revenue.overall}.`)
+    parts.push('Если по сегменту показатель около единицы или ниже — рассылки туда не окупаются, и это повод не писать, а не писать чаще.')
+  }
+
+  if (ctx.recent && ctx.recent.length) {
+    parts.push('\n── Что уже отправляли за последние две недели. НЕ ПОВТОРЯЙ ──')
+    for (const r of ctx.recent) {
+      parts.push(`[${r.target}, ${fmtDate(r.created_at)}] ${r.text}`)
+    }
+    parts.push('Похожий текст в тот же сегмент будет отклонён автоматически.')
   }
 
   // Отдача кодов — только если данные и надёжны, и содержательны.

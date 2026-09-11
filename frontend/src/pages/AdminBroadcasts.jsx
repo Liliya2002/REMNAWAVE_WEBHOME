@@ -128,6 +128,9 @@ export default function AdminBroadcasts() {
   const [openBc, setOpenBc] = useState(null)      // рассылка, открытая на просмотр
   const [rules, setRules] = useState({})
   const [promoPerf, setPromoPerf] = useState(null)
+  const [revenue, setRevenue] = useState(null)
+  const [neglect, setNeglect] = useState({})
+  const [dup, setDup] = useState(null)            // похожая недавняя рассылка
 
   useEffect(() => {
     authFetch(`${API}/accounts`).then(r => r.json()).then(d => {
@@ -170,12 +173,41 @@ export default function AdminBroadcasts() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  // Выручку и простой сегментов грузим только при открытии вкладки настроек:
+  // revenueLift перебирает все пополнения бота, и тянуть это на каждый вход
+  // на страницу незачем.
+  useEffect(() => {
+    if (tab !== 'settings' || !accId || revenue !== null) return
+    Promise.all([
+      authFetch(`${API}/accounts/${accId}/revenue-lift`).then(r => r.json()).catch(() => ({})),
+      authFetch(`${API}/accounts/${accId}/segment-neglect`).then(r => r.json()).catch(() => ({})),
+    ]).then(([rv, ng]) => {
+      setRevenue(rv && rv.ok ? rv : { ok: false })
+      setNeglect((ng && ng.neglect) || {})
+    })
+  }, [tab, accId, revenue])
+
   const seg = useMemo(() => segments.find(s => s.id === target) || null, [segments, target])
   const aud = seg ? audienceOf(seg) : null
   const pendingCount = proposals.filter(p => p.status === 'pending').length
   const threshold = Number(settings?.confirm_typing_threshold ?? 1000)
   const needTyping = aud?.value != null && threshold > 0 && aud.value >= threshold
   const typingOk = !needTyping || typed.trim() === String(aud.value)
+
+  // Повтор человеку не запрещаем — только показываем. Причина отправить то же
+  // самое ещё раз бывает, и знает её человек, а не мы.
+  async function checkDuplicate() {
+    setDup(null)
+    try {
+      const r = await authFetch(`${API}/accounts/${accId}/broadcast-duplicate-check`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target, message_text: text }),
+      })
+      const d = await r.json()
+      if (r.ok && d.duplicate) setDup(d)
+    } catch { /* проверка необязательна — молчим */ }
+  }
 
   async function send() {
     setStage('sending'); setError(null)
@@ -326,7 +358,12 @@ export default function AdminBroadcasts() {
         <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/40 text-emerald-300 text-sm">{notice}</div>
       )}
 
-      <div className="flex gap-1 border-b border-slate-800">
+      {/* Полоса вкладок прокручивается вбок. На экране 393px четыре вкладки
+          занимают 478px, а корневая обёртка админки — overflow-x: hidden:
+          «Шаблоны» и «ИИ» просто обрезались, без полосы прокрутки и без
+          возможности до них добраться. Счётчики в подписях растут, так что
+          ужать padding недостаточно — нужна именно прокрутка. */}
+      <div className="flex gap-1 border-b border-slate-800 overflow-x-auto thin-scroll">
         {[
           { id: 'send', label: 'Отправка', Icon: Send },
           { id: 'settings', label: 'Настройки', Icon: Settings },
@@ -334,10 +371,10 @@ export default function AdminBroadcasts() {
           { id: 'ai', label: 'ИИ' + (pendingCount ? ' · ' + pendingCount : ''), Icon: Bot },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm flex items-center gap-2 border-b-2 -mb-px transition ${
+            className={`px-3 sm:px-4 py-2 text-sm flex items-center gap-2 border-b-2 -mb-px transition shrink-0 whitespace-nowrap ${
               tab === t.id ? 'border-cyan-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}>
-            <t.Icon className="w-4 h-4" /> {t.label}
+            <t.Icon className="w-4 h-4 shrink-0" /> {t.label}
           </button>
         ))}
       </div>
@@ -426,7 +463,7 @@ export default function AdminBroadcasts() {
 
           <div className="flex justify-end">
             <button
-              onClick={() => { setTyped(''); setStage('confirm') }}
+              onClick={() => { setTyped(''); setStage('confirm'); checkDuplicate() }}
               disabled={!target || !text.trim() || overLimit}
               className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white font-semibold text-sm"
             >
@@ -454,6 +491,18 @@ export default function AdminBroadcasts() {
             <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-[#182533] px-3 py-2 text-[14px] leading-snug text-slate-100 break-words"
               dangerouslySetInnerHTML={{ __html: telegramPreview(text) }} />
           </div>
+
+          {dup && (
+            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/40 text-sm text-amber-200">
+              <div className="font-semibold flex items-center gap-1.5">
+                <Copy className="w-4 h-4" /> Похоже на повтор
+              </div>
+              <div className="mt-1 text-amber-200/90">{dup.message}</div>
+              <div className="mt-1 text-[11px] text-amber-200/60">
+                Отправить всё равно можно — это предупреждение, а не запрет.
+              </div>
+            </div>
+          )}
 
           <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-sm text-red-300">
             Отменить, приостановить или отозвать рассылку после запуска <b>нельзя</b> —
@@ -559,7 +608,8 @@ export default function AdminBroadcasts() {
       {tab === 'settings' && settings && (
         <div className="space-y-8">
           <SettingsTab settings={settings} segments={segments} onSave={saveSettings} />
-          <SegmentRulesTab rules={rules} segments={segments} onSave={saveRule} />
+          <SegmentRulesTab rules={rules} segments={segments} neglect={neglect} onSave={saveRule} />
+          <RevenueBlock data={revenue} />
           <PromoPerfBlock perf={promoPerf} />
         </div>
       )}
@@ -1180,7 +1230,7 @@ function BroadcastModal({ b, onClose, onReuse }) {
  * Раньше это выражалось только словами в свободном поле промпта, а промпт
  * соблюдается ненадёжно. Здесь — проверки, которые выполняет код.
  */
-function SegmentRulesTab({ rules, segments, onSave }) {
+function SegmentRulesTab({ rules, segments, neglect, onSave }) {
   const PURPOSES = [
     { id: 'any', label: 'Любые' },
     { id: 'sales', label: 'Только продающие' },
@@ -1200,11 +1250,19 @@ function SegmentRulesTab({ rules, segments, onSave }) {
       <div className="space-y-2">
         {segments.map(sg => {
           const r = rules[sg.id] || {}
+          const idle = neglect ? neglect[sg.id] : null
           const set = patch => onSave(sg.id, { ...r, ...patch })
           return (
             <div key={sg.id} className="p-3 rounded-xl bg-slate-900/40 border border-slate-700/50">
               <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-semibold text-white min-w-[120px]">{sg.label}</span>
+                {idle != null && (
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded ${
+                    idle >= 30 ? 'bg-amber-500/15 text-amber-300' : 'text-slate-500'
+                  }`} title="Дней с последней рассылки в этот сегмент">
+                    {idle} дн. молчим
+                  </span>
+                )}
 
                 <label className="flex items-center gap-1.5 text-xs text-slate-300">
                   <input type="checkbox" className="accent-cyan-500" checked={r.manual_allowed !== false}
@@ -1215,6 +1273,12 @@ function SegmentRulesTab({ rules, segments, onSave }) {
                   <input type="checkbox" className="accent-violet-500" checked={r.ai_allowed !== false}
                     onChange={e => set({ ai_allowed: e.target.checked })} />
                   ИИ
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-300"
+                  title="ИИ узнает, что здесь можно пробовать непривычные формулировки">
+                  <input type="checkbox" className="accent-emerald-500" checked={!!r.is_sandbox}
+                    onChange={e => set({ is_sandbox: e.target.checked })} />
+                  полигон
                 </label>
 
                 <select value={r.purpose || 'any'} onChange={e => set({ purpose: e.target.value })}
@@ -1240,6 +1304,53 @@ function SegmentRulesTab({ rules, segments, onSave }) {
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Что рассылки дают в деньгах.
+ *
+ * База — тот же день недели за три предыдущие недели, а не «вчера»: выручка
+ * сильно зависит от дня, и сравнение с соседним днём давало бы шум. Рассылки,
+ * у которых база меньше 500 ₽, в расчёт не идут — при базе в 60 ₽ одна
+ * случайная покупка рисует «рост в тридцать раз».
+ */
+function RevenueBlock({ data }) {
+  if (!data) return <div className="text-xs text-slate-600">Считаем отдачу…</div>
+  if (!data.ok || !data.measured) return null
+
+  const color = v => (v == null ? 'text-slate-500'
+    : v >= 1.3 ? 'text-emerald-400' : v <= 0.9 ? 'text-red-400' : 'text-slate-300')
+
+  return (
+    <div>
+      <div className="text-sm font-semibold text-white flex items-center gap-2 mb-1">
+        <TrendingUp className="w-4 h-4 text-emerald-400" /> Отдача в деньгах
+      </div>
+      <div className="text-[11px] text-slate-500 mb-3">
+        Выручка за сутки после отправки к обычному такому же дню недели.
+        1.0 — рассылка ничего не изменила. Посчитано по {data.measured} рассылкам
+        из {data.total}: у остальных слишком маленькая база для сравнения.
+      </div>
+
+      <div className="p-3 rounded-xl bg-slate-900/40 border border-slate-700/50 mb-2 flex items-baseline gap-3">
+        <span className={`text-2xl font-bold ${color(data.overall)}`}>×{data.overall}</span>
+        <span className="text-xs text-slate-500">медиана по всем сегментам</span>
+      </div>
+
+      <div className="space-y-1.5">
+        {data.by_segment.map(x => (
+          <div key={x.target} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-900/30 border border-slate-800 text-xs">
+            <span className="text-slate-300 font-medium min-w-[110px]">{x.target}</span>
+            <span className={`font-semibold ${color(x.median)}`}>×{x.median}</span>
+            <span className="text-slate-600">по {x.n} рассылкам</span>
+            <span className="ml-auto text-slate-500">
+              заметный рост в {x.share_positive} % случаев
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )

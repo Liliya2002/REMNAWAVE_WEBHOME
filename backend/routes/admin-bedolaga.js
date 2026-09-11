@@ -403,6 +403,41 @@ router.get('/accounts/:id/promo-performance', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+/** Отдача рассылок в деньгах: выручка за сутки после отправки к обычному дню. */
+router.get('/accounts/:id/revenue-lift', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const r = await broadcastStats.revenueLift(a, { windowHours: Number(req.query.hours) || 24 })
+    if (!r.ok) return res.status(502).json({ error: r.error })
+    res.json(r)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/**
+ * Не повтор ли текст. Для ручной отправки — только предупреждение: решение
+ * остаётся за человеком, поэтому ответ всегда 200, а «нельзя» передаётся полем.
+ */
+router.post('/accounts/:id/broadcast-duplicate-check', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const { message_text, target } = req.body || {}
+    if (!message_text) return res.status(400).json({ error: 'Пустой текст' })
+    const r = await broadcastStats.checkDuplicate(a, message_text, { target })
+    res.json({ duplicate: !r.ok, message: r.message || null, match: r.match || r.closest || null })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Сколько дней сегментам не писали. */
+router.get('/accounts/:id/segment-neglect', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    res.json({ neglect: await broadcastStats.segmentNeglect(a) })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── Предложения ИИ ─────────────────────────────────────────────────────────
 
 /** Список предложений и последние решения ИИ (в т.ч. холостые прогоны). */

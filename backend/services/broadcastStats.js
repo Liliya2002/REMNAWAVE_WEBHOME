@@ -126,7 +126,7 @@ async function promoPerformance(account, { windowDays = 7 } = {}) {
 
 const DEFAULT_RULE = {
   ai_allowed: true, manual_allowed: true,
-  min_interval_hours: null, purpose: 'any', note: null,
+  min_interval_hours: null, purpose: 'any', note: null, is_sandbox: false,
 }
 
 /** Правила для всех сегментов; отсутствующие добираются умолчаниями. */
@@ -149,19 +149,21 @@ async function upsertSegmentRule(segment, patch) {
       ? null : Number(patch.min_interval_hours),
     purpose: ['any', 'sales', 'service'].includes(patch.purpose) ? patch.purpose : 'any',
     note: patch.note ? String(patch.note).slice(0, 1000) : null,
+    is_sandbox: !!patch.is_sandbox,
   }
   const { rows } = await db.query(
-    `INSERT INTO broadcast_segment_rules (segment, ai_allowed, manual_allowed, min_interval_hours, purpose, note)
-     VALUES ($1,$2,$3,$4,$5,$6)
+    `INSERT INTO broadcast_segment_rules (segment, ai_allowed, manual_allowed, min_interval_hours, purpose, note, is_sandbox)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
      ON CONFLICT (segment) DO UPDATE SET
        ai_allowed = EXCLUDED.ai_allowed,
        manual_allowed = EXCLUDED.manual_allowed,
        min_interval_hours = EXCLUDED.min_interval_hours,
        purpose = EXCLUDED.purpose,
        note = EXCLUDED.note,
+       is_sandbox = EXCLUDED.is_sandbox,
        updated_at = NOW()
      RETURNING *`,
-    [segment, f.ai_allowed, f.manual_allowed, f.min_interval_hours, f.purpose, f.note]
+    [segment, f.ai_allowed, f.manual_allowed, f.min_interval_hours, f.purpose, f.note, f.is_sandbox]
   )
   return rows[0]
 }
@@ -198,8 +200,217 @@ async function checkSegmentInterval(accountId, segment) {
   return { ok: true }
 }
 
+// ─── Отдача по деньгам ───────────────────────────────────────────────────────
+
+const _depCache = new Map()          // id → { ts, rows }
+const DEP_TTL_MS = 10 * 60 * 1000
+const DAY_MS = 86400000
+
+/** Все завершённые пополнения. Тяжело (тысячи записей), поэтому кэш. */
+async function fetchDeposits(account, { force = false } = {}) {
+  const c = _depCache.get(account.id)
+  if (!force && c && Date.now() - c.ts < DEP_TTL_MS) return c.rows
+
+  const out = []
+  for (let off = 0; off < 40000; off += 200) {
+    const r = await bedolaga.call(account, '/transactions', {
+      query: { type: 'deposit', is_completed: 'true', limit: 200, offset: off },
+    })
+    if (!r.ok) break
+    const items = (r.data && r.data.items) || []
+    if (!items.length) break
+    for (const t of items) {
+      const amt = Number(t.amount_rubles) || 0
+      if (amt > 0) out.push({ ts: new Date(t.created_at).getTime(), amt })
+    }
+    if (items.length < 200) break
+  }
+  out.sort((a, b) => a.ts - b.ts)
+  _depCache.set(account.id, { ts: Date.now(), rows: out })
+  return out
+}
+
+/**
+ * Насколько рассылка подняла выручку.
+ *
+ * База — тот же день недели за три предыдущие недели: выручка сильно зависит
+ * от дня, и сравнение со «вчера» давало бы шум вместо сигнала.
+ *
+ * Отношение считается только при базе выше MIN_BASE: при базе в 60 ₽ любая
+ * случайная покупка даёт «рост в 30 раз», и такие числа затопили бы статистику.
+ * У Veltrix ровно это и произошло в январе: x29 при базе 67 ₽.
+ */
+const MIN_BASE_RUB = 500
+
+async function revenueLift(account, { windowHours = 24 } = {}) {
+  const [hist, deposits] = await Promise.all([
+    bedolaga.getBroadcastHistory(account),
+    fetchDeposits(account),
+  ])
+  if (!hist.ok) return { ok: false, error: hist.error }
+
+  const win = windowHours * 3600000
+  const sumIn = (t0, t1) => {
+    let s = 0
+    for (const d of deposits) { if (d.ts >= t1) break; if (d.ts >= t0) s += d.amt }
+    return s
+  }
+
+  const items = []
+  for (const b of hist.items) {
+    if (!b.sent_count) continue
+    const t = new Date(b.created_at).getTime()
+    const after = sumIn(t, t + win)
+    const baseline = [1, 2, 3].map(k => sumIn(t - k * 7 * DAY_MS, t - k * 7 * DAY_MS + win))
+    const base = baseline.reduce((s, x) => s + x, 0) / 3
+
+    items.push({
+      id: b.id, target: b.target_type, created_at: b.created_at,
+      revenue_after: Math.round(after),
+      baseline: Math.round(base),
+      // null означает «сравнивать не с чем», а не «нуль»
+      lift: base >= MIN_BASE_RUB ? +(after / base).toFixed(2) : null,
+    })
+  }
+
+  const withLift = items.filter(x => x.lift != null)
+  const median = xs => {
+    if (!xs.length) return null
+    const s = [...xs].sort((a, b) => a - b)
+    return +s[Math.floor(s.length / 2)].toFixed(2)
+  }
+
+  const bySegment = {}
+  for (const it of withLift) (bySegment[it.target] = bySegment[it.target] || []).push(it.lift)
+
+  return {
+    ok: true,
+    items,
+    window_hours: windowHours,
+    overall: median(withLift.map(x => x.lift)),
+    measured: withLift.length,
+    total: items.length,
+    by_segment: Object.entries(bySegment).map(([target, v]) => ({
+      target,
+      n: v.length,
+      median: median(v),
+      share_positive: Math.round(v.filter(x => x > 1.2).length / v.length * 100),
+    })).sort((a, b) => b.n - a.n),
+  }
+}
+
+// ─── Похожесть текстов ───────────────────────────────────────────────────────
+
+/** Текст к сравнимому виду: без разметки, эмодзи, пунктуации и регистра. */
+function normalizeText(t) {
+  return String(t || '')
+    .replace(/<[^>]+>/g, ' ')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * Похожесть двух текстов, 0..1 — коэффициент Жаккара по словам.
+ *
+ * Сравнение по началу строки (как в разовом разборе) ловит только буквальные
+ * копии: достаточно поменять первое предложение, и повтор пройдёт. По набору
+ * слов совпадение видно даже при переставленных абзацах.
+ */
+function similarity(a, b) {
+  const wa = new Set(normalizeText(a).split(' ').filter(w => w.length > 2))
+  const wb = new Set(normalizeText(b).split(' ').filter(w => w.length > 2))
+  if (!wa.size || !wb.size) return 0
+  let inter = 0
+  for (const w of wa) if (wb.has(w)) inter++
+  return +(inter / (wa.size + wb.size - inter)).toFixed(3)
+}
+
+/**
+ * Не повтор ли это недавней рассылки В ТОТ ЖЕ СЕГМЕНТ.
+ *
+ * Сегмент здесь принципиален. В истории 34 почти одинаковых сообщения за две
+ * недели, но из них 13 — одно сообщение разным аудиториям, и это нормальная
+ * практика: сказать одно и то же тем, кто без подписки, и тем, у кого она
+ * истекла. Настоящая проблема — оставшиеся 21, отправленные ПОВТОРНО в тот же
+ * сегмент, иногда через 18 часов. Проверка без учёта сегмента ругалась бы на
+ * законные рассылки и быстро научила бы её игнорировать.
+ *
+ * @returns {{ok: true, closest} | {ok: false, reason, message, match}}
+ */
+async function checkDuplicate(account, text, { target, threshold, windowDays } = {}) {
+  const broadcasts = require('./broadcasts')
+  const s = await broadcasts.getSettings()
+  const th = Number(threshold ?? s.duplicate_similarity) || 0.7
+  const days = Number(windowDays ?? s.duplicate_window_days) || 14
+  if (th >= 1) return { ok: true }                 // 1.0 = проверка выключена
+
+  const hist = await bedolaga.getBroadcastHistory(account)
+  if (!hist.ok) return { ok: true }                // нет истории — не мешаем
+
+  const since = Date.now() - days * DAY_MS
+  let best = null
+  for (const b of hist.items) {
+    if (new Date(b.created_at).getTime() < since) continue
+    if (target && b.target_type !== target) continue
+    const sim = similarity(text, b.message_text)
+    if (!best || sim > best.similarity) best = { id: b.id, target: b.target_type, created_at: b.created_at, similarity: sim }
+  }
+
+  if (best && best.similarity >= th) {
+    const hoursAgo = Math.round((Date.now() - new Date(best.created_at).getTime()) / 3600000)
+    const ago = hoursAgo < 48 ? `${hoursAgo} ч` : `${Math.round(hoursAgo / 24)} дн.`
+    return {
+      ok: false,
+      reason: 'duplicate',
+      message: `Почти то же самое уже уходило в «${best.target}» ${ago} назад — рассылка №${best.id}, совпадение ${Math.round(best.similarity * 100)} %`,
+      match: best,
+    }
+  }
+  return { ok: true, closest: best }
+}
+
+/** Недавние тексты — чтобы показать модели, чего не повторять. */
+async function recentTexts(account, { days = 14, limit = 8 } = {}) {
+  const hist = await bedolaga.getBroadcastHistory(account)
+  if (!hist.ok) return []
+  const since = Date.now() - days * DAY_MS
+  return hist.items
+    .filter(b => new Date(b.created_at).getTime() >= since)
+    .slice(0, limit)
+    .map(b => ({
+      id: b.id, target: b.target_type, created_at: b.created_at,
+      text: String(b.message_text || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').slice(0, 200),
+    }))
+}
+
+// ─── Заброшенные сегменты ────────────────────────────────────────────────────
+
+/**
+ * Сколько дней сегменту не писали. Дата в промпте («последняя 2026-07-28»)
+ * требует от модели считать в уме; число дней — сразу повод.
+ */
+async function segmentNeglect(account) {
+  const hist = await bedolaga.getBroadcastHistory(account)
+  const last = {}
+  if (hist.ok) {
+    for (const b of hist.items) {
+      if (!last[b.target_type]) last[b.target_type] = new Date(b.created_at).getTime()
+    }
+  }
+  const out = {}
+  for (const s of bedolaga.BROADCAST_SEGMENTS) {
+    out[s.id] = last[s.id] == null ? null : Math.round((Date.now() - last[s.id]) / DAY_MS)
+  }
+  return out
+}
+
 module.exports = {
   extractCodes, promoPerformance,
   getSegmentRules, upsertSegmentRule, checkSegmentInterval,
-  NOT_CODES,
+  revenueLift, fetchDeposits,
+  normalizeText, similarity, checkDuplicate, recentTexts,
+  segmentNeglect,
+  NOT_CODES, MIN_BASE_RUB,
 }

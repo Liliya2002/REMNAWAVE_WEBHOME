@@ -25,7 +25,16 @@ const DEFAULTS = {
   timezone_offset_minutes: 180,
   confirm_typing_threshold: 1000,
   allowed_targets: [],
+  ai_mode: 'off',
+  ai_dry_run: true,
+  ai_interval_hours: 24,
+  ai_allowed_targets: [],
+  ai_min_confidence: 0.70,
+  ai_prompt: null,
+  ai_auto_delay_minutes: 30,
 }
+
+const AI_MODES = ['off', 'prepare', 'auto']
 
 async function getSettings({ force = false } = {}) {
   if (!force && _cache && Date.now() - _cache.ts < SETTINGS_TTL_MS) return _cache.data
@@ -37,26 +46,90 @@ async function getSettings({ force = false } = {}) {
 
 function invalidate() { _cache = null }
 
-const FIELDS = [
-  'min_interval_minutes', 'max_per_week', 'quiet_from_hour', 'quiet_to_hour',
-  'timezone_offset_minutes', 'confirm_typing_threshold', 'allowed_targets',
-]
+/**
+ * Что разрешено менять и как приводить значение.
+ *
+ * Тип обязателен у каждого поля: раньше приведение по умолчанию делало
+ * Number(v), и текстовое ai_prompt превратилось бы в NaN. Список должен
+ * покрывать ВСЕ изменяемые колонки — см. предупреждение в updateSettings.
+ */
+const FIELDS = {
+  min_interval_minutes:     'int',
+  max_per_week:             'int',
+  quiet_from_hour:          'hour',
+  quiet_to_hour:            'hour',
+  timezone_offset_minutes:  'int',
+  confirm_typing_threshold: 'int',
+  allowed_targets:          'targets',
+
+  // Добавлены миграцией 0037. Их отсутствие здесь было причиной того, что
+  // настройки ИИ молча не сохранялись: updateSettings отбрасывал их как
+  // неизвестные, а роут отвечал 200 — интерфейс показывал «Сохранено».
+  ai_mode:                  'mode',
+  ai_dry_run:               'bool',
+  ai_interval_hours:        'int',
+  ai_allowed_targets:       'targets',
+  ai_min_confidence:        'float',
+  ai_prompt:                'text',
+  ai_auto_delay_minutes:    'int',
+}
+
+// Колонки, которые менять нельзя, — чтобы отличить их от забытых.
+const NOT_SETTABLE = new Set(['id', 'updated_at', 'ai_last_run_at'])
+
+function coerce(kind, v) {
+  switch (kind) {
+    case 'targets':
+      return Array.isArray(v) ? v.filter(x => bedolaga.BROADCAST_TARGETS.includes(x)) : []
+    case 'hour':
+      return (v === '' || v == null) ? null : Number(v)
+    case 'bool':
+      return !!v
+    case 'text':
+      return (v === '' || v == null) ? null : String(v).slice(0, 4000)
+    case 'float':
+      return Number(v)
+    case 'mode': {
+      const m = String(v || 'off')
+      if (!AI_MODES.includes(m)) throw new Error(`Неизвестный режим ИИ: ${m}`)
+      return m
+    }
+    default:
+      return Number(v)
+  }
+}
+
+let _columnsCache = null
+
+/** Колонки таблицы — чтобы поймать поле, забытое в FIELDS после миграции. */
+async function tableColumns() {
+  if (_columnsCache) return _columnsCache
+  const { rows } = await db.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'broadcast_settings'`
+  )
+  _columnsCache = rows.map(r => r.column_name)
+  return _columnsCache
+}
 
 async function updateSettings(patch) {
-  const cols = FIELDS.filter(f => Object.prototype.hasOwnProperty.call(patch, f))
+  const cols = Object.keys(FIELDS).filter(f => Object.prototype.hasOwnProperty.call(patch, f))
+
+  // Молчаливый отброс — худший вид ошибки: пользователь жмёт «Сохранить»,
+  // видит успех, а значение не изменилось. Если в запросе пришла колонка
+  // таблицы, которой нет в FIELDS, это забытая после миграции настройка —
+  // шумим в лог, чтобы это нашлось сразу, а не через неделю.
+  const columns = await tableColumns().catch(() => [])
+  const forgotten = Object.keys(patch).filter(
+    k => columns.includes(k) && !FIELDS[k] && !NOT_SETTABLE.has(k)
+  )
+  if (forgotten.length) {
+    console.error(`[broadcasts] настройки не сохранены — полей нет в FIELDS: ${forgotten.join(', ')}`)
+  }
+
   if (!cols.length) return getSettings({ force: true })
 
   const sets = cols.map((c, i) => `${c} = $${i + 1}`)
-  const vals = cols.map(c => {
-    const v = patch[c]
-    if (c === 'allowed_targets') {
-      return Array.isArray(v) ? v.filter(x => bedolaga.BROADCAST_TARGETS.includes(x)) : []
-    }
-    if (c === 'quiet_from_hour' || c === 'quiet_to_hour') {
-      return (v === '' || v == null) ? null : Number(v)
-    }
-    return Number(v)
-  })
+  const vals = cols.map(c => coerce(FIELDS[c], patch[c]))
 
   await db.query(
     `UPDATE broadcast_settings SET ${sets.join(', ')}, updated_at = NOW() WHERE id = 1`,
@@ -185,6 +258,16 @@ async function send(account, { target, message_text, source = 'manual', template
   const gate = await checkCanSend(account.id, target, source)
   if (!gate.ok) return { ok: false, blocked: true, reason: gate.reason, error: gate.message }
 
+  // Повтор блокируем только для ИИ. У человека бывает причина отправить то же
+  // самое ещё раз, и он её знает; у модели такого знания нет, а в истории 21
+  // повтор в тот же сегмент, часть — через 18 часов. Человеку тот же факт
+  // показывается предупреждением на шаге подтверждения.
+  if (source === 'ai') {
+    const stats = require('./broadcastStats')
+    const dup = await stats.checkDuplicate(account, message_text, { target })
+    if (!dup.ok) return { ok: false, blocked: true, reason: dup.reason, error: dup.message }
+  }
+
   const r = await bedolaga.sendBroadcast(account, { target, message_text })
   if (!r.ok) return { ok: false, error: r.error }
 
@@ -240,7 +323,7 @@ async function deleteTemplate(id) {
 }
 
 module.exports = {
-  getSettings, updateSettings, invalidate,
+  getSettings, updateSettings, invalidate, FIELDS, AI_MODES,
   checkCanSend, inQuietHours, send,
   listTemplates, createTemplate, updateTemplate, deleteTemplate,
   DEFAULTS,
