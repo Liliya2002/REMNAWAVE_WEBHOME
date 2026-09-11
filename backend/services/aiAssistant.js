@@ -207,6 +207,64 @@ function makeClient(settings) {
   })
 }
 
+// Запас по умолчанию. 8000 не хватало: лимит общий на мышление и текст, а
+// мышление на Opus 4.8 включено и не отображается — на длинной переписке JSON
+// обрывался на середине. Документация рекомендует ~16000 для непотокового
+// запроса, чтобы не упереться ещё и в таймаут HTTP.
+const DEFAULT_MAX_TOKENS = 16000
+
+/**
+ * Разбор ответа модели в объект.
+ *
+ * Строгий JSON.parse ломался на живом проде. Причина не одна:
+ *  • output_config.format мог не дойти до модели — прокси-провайдер вправе его
+ *    не передать, и тогда ответ приходит прозой или в ```json-заборе;
+ *  • модель иногда добавляет пояснение до или после объекта.
+ * Поэтому сначала пробуем как есть, затем снимаем ограждение markdown, затем
+ * вырезаем первый сбалансированный объект. Кавычки внутри строк учитываем —
+ * простой поиск последней «}» ломался бы на JSON со скобкой в тексте ответа.
+ */
+function parseModelJson(raw) {
+  const text = String(raw || '').trim()
+  if (!text) return { ok: false }
+
+  const attempt = s => { try { return { ok: true, data: JSON.parse(s) } } catch { return null } }
+
+  const direct = attempt(text)
+  if (direct) return direct
+
+  // ```json … ``` или просто ``` … ```
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fenced) {
+    const r = attempt(fenced[1].trim())
+    if (r) return r
+  }
+
+  // Первый сбалансированный объект верхнего уровня
+  const start = text.indexOf('{')
+  if (start !== -1) {
+    let depth = 0, inStr = false, esc = false
+    for (let i = start; i < text.length; i++) {
+      const ch = text[i]
+      if (esc) { esc = false; continue }
+      if (ch === '\\') { esc = true; continue }
+      if (ch === '"') { inStr = !inStr; continue }
+      if (inStr) continue
+      if (ch === '{') depth++
+      else if (ch === '}') {
+        depth--
+        if (depth === 0) {
+          const r = attempt(text.slice(start, i + 1))
+          if (r) return r
+          break
+        }
+      }
+    }
+  }
+
+  return { ok: false }
+}
+
 /**
  * Одно обращение к модели. Возвращает разобранный объект по REPLY_SCHEMA.
  *
@@ -218,9 +276,9 @@ function makeClient(settings) {
 async function askModel(settings, templates, ticket) {
   const client = makeClient(settings)
 
-  const res = await client.messages.create({
+  const body = {
     model: settings.model || 'claude-opus-4-8',
-    max_tokens: Number(settings.max_tokens) || 8000,
+    max_tokens: Number(settings.max_tokens) || DEFAULT_MAX_TOKENS,
     thinking: { type: 'adaptive' },
     output_config: {
       effort: settings.effort || 'low',
@@ -230,7 +288,9 @@ async function askModel(settings, templates, ticket) {
       { type: 'text', text: buildSystemPrompt(settings, templates), cache_control: { type: 'ephemeral' } },
     ],
     messages: [{ role: 'user', content: buildConversation(ticket) }],
-  })
+  }
+
+  const res = await client.messages.create(body)
 
   // Классификаторы провайдера могут отклонить запрос — это не ошибка HTTP.
   // Проверяем ДО чтения content, иначе упадём на пустом массиве.
@@ -241,9 +301,30 @@ async function askModel(settings, templates, ticket) {
   const textBlock = (res.content || []).find(b => b.type === 'text')
   if (!textBlock) return { ok: false, error: 'Пустой ответ модели' }
 
-  let data
-  try { data = JSON.parse(textBlock.text) }
-  catch { return { ok: false, error: 'Ответ модели не разобрался как JSON' } }
+  // Обрыв по лимиту проверяем ДО разбора: обрезанный JSON не парсится, и без
+  // этой ветки причина выглядела бы как «модель отвечает мусором», хотя на
+  // деле не хватило max_tokens. Он общий на мышление и текст, а мышление на
+  // Opus 4.8 включено (thinking: adaptive) и по умолчанию не отображается —
+  // то есть съедает бюджет незаметно.
+  if (res.stop_reason === 'max_tokens') {
+    return {
+      ok: false,
+      error: `Ответ обрезан лимитом max_tokens (${body.max_tokens}). ` +
+             'Увеличьте его в настройках ассистента — лимит общий на мышление и текст.',
+    }
+  }
+
+  const parsed = parseModelJson(textBlock.text)
+  if (!parsed.ok) {
+    // Кусок ответа в тексте ошибки: без него причина неотличима от любой
+    // другой и приходится гадать. Журнал показывает её админу как есть.
+    const head = String(textBlock.text || '').replace(/\s+/g, ' ').slice(0, 200)
+    return {
+      ok: false,
+      error: `Ответ модели не разобрался как JSON (stop_reason=${res.stop_reason}). Начало ответа: ${head}`,
+    }
+  }
+  const data = parsed.data
 
   return {
     ok: true,
@@ -275,5 +356,7 @@ async function ping(settings) {
 
 module.exports = {
   ping, getSettings, normalize, matchStopWord, buildSystemPrompt, buildConversation,
+  parseModelJson, DEFAULT_MAX_TOKENS,
+  makeClient,
   askModel, REPLY_SCHEMA, BASE_PROMPT,
 }

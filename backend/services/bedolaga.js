@@ -166,31 +166,9 @@ async function _computeSubStats(a) {
   // Идём по пользователям: их встроенные подписки содержат tariff_name/tariff_id
   // (список /subscriptions тариф НЕ отдаёт). Считаем только активные подписки.
   // Пользователей много (тысячи) → грузим страницы параллельно батчами.
-  const PAGE = 200
-  let totalUsers = 0
-  const ov = await call(a, '/stats/overview')
-  if (ov.ok) totalUsers = Number(ov.data && ov.data.users && ov.data.users.total) || 0
-
-  const allUsers = []
-  if (totalUsers > 0) {
-    const pageCount = Math.ceil(totalUsers / PAGE)
-    const CONC = 6
-    for (let i = 0; i < pageCount; i += CONC) {
-      const batch = []
-      for (let j = i; j < Math.min(i + CONC, pageCount); j++) batch.push(call(a, '/users', { query: { limit: PAGE, offset: j * PAGE } }))
-      const rs = await Promise.all(batch)
-      for (const r of rs) { if (!r.ok) return { ok: false, error: r.error }; allUsers.push(...((r.data && r.data.items) || [])) }
-    }
-  } else {
-    // fallback: последовательно, пока страница полная
-    for (let page = 0, offset = 0; page < 500; page++, offset += PAGE) {
-      const r = await call(a, '/users', { query: { limit: PAGE, offset } })
-      if (!r.ok) return { ok: false, error: r.error }
-      const items = (r.data && r.data.items) || []
-      allUsers.push(...items)
-      if (items.length < PAGE) break
-    }
-  }
+  const ru = await fetchAllUsers(a)
+  if (!ru.ok) return { ok: false, error: ru.error }
+  const allUsers = ru.users
 
   for (const u of allUsers) {
     const subs = (u.subscriptions && u.subscriptions.length) ? u.subscriptions : (u.subscription ? [u.subscription] : [])
@@ -244,9 +222,159 @@ async function _computeSubStats(a) {
   return { ok: true, data }
 }
 
+// ─── Сегменты рассылки ───────────────────────────────────────────────────────
+
+/**
+ * Сегменты, которые принимает POST /broadcasts.
+ *
+ * Список выведен из ФАКТИЧЕСКОЙ истории 110 рассылок бота, а не из
+ * документации: OpenAPI он не отдаёт (/openapi.json, /docs, /redoc и ещё
+ * четыре пути — 404), других источников нет.
+ *
+ * verified: false означает «в истории не встречался ни разу». Такой сегмент
+ * нельзя проверить иначе как реальной отправкой тысячам людей, поэтому в
+ * интерфейсе он помечен, а не выдаётся за равный остальным.
+ */
+const BROADCAST_SEGMENTS = [
+  { id: 'all',      label: 'Все',                 hint: 'Все пользователи бота',                    verified: true,  usedTimes: 52 },
+  { id: 'no',       label: 'Без подписки',        hint: 'Никогда не покупали или подписки нет',     verified: true,  usedTimes: 38 },
+  { id: 'expired',  label: 'Истёкшие',            hint: 'Подписка была и закончилась',              verified: true,  usedTimes: 14 },
+  { id: 'trial',    label: 'Пробный период',      hint: 'Сейчас на триале',                         verified: true,  usedTimes: 3  },
+  { id: 'expiring', label: 'Скоро истекут',       hint: 'Подписка заканчивается в ближайшие дни',   verified: true,  usedTimes: 3  },
+  { id: 'active',   label: 'Активные',            hint: 'Действующая платная подписка',             verified: false, usedTimes: 0  },
+]
+
+const BROADCAST_TARGETS = BROADCAST_SEGMENTS.map(s => s.id)
+
+/**
+ * Все пользователи бота одним списком. Вынесено из _computeSubStats: тем же
+ * обходом пользуется подсчёт сегментов, а тысячи записей тянуть дважды незачем.
+ */
+async function fetchAllUsers(a) {
+  const PAGE = 200
+  let totalUsers = 0
+  const ov = await call(a, '/stats/overview')
+  if (ov.ok) totalUsers = Number(ov.data && ov.data.users && ov.data.users.total) || 0
+
+  const out = []
+  if (totalUsers > 0) {
+    const pageCount = Math.ceil(totalUsers / PAGE)
+    const CONC = 6
+    for (let i = 0; i < pageCount; i += CONC) {
+      const batch = []
+      for (let j = i; j < Math.min(i + CONC, pageCount); j++) {
+        batch.push(call(a, '/users', { query: { limit: PAGE, offset: j * PAGE } }))
+      }
+      const rs = await Promise.all(batch)
+      for (const r of rs) {
+        if (!r.ok) return { ok: false, error: r.error }
+        out.push(...((r.data && r.data.items) || []))
+      }
+    }
+  } else {
+    for (let page = 0, offset = 0; page < 500; page++, offset += PAGE) {
+      const r = await call(a, '/users', { query: { limit: PAGE, offset } })
+      if (!r.ok) return { ok: false, error: r.error }
+      const items = (r.data && r.data.items) || []
+      out.push(...items)
+      if (items.length < PAGE) break
+    }
+  }
+  return { ok: true, users: out }
+}
+
+const _segmentCache = new Map()          // id → { ts, data }
+const SEGMENTS_TTL_MS = 5 * 60 * 1000
+
+/**
+ * Размер каждого сегмента.
+ *
+ * Отдаём ДВЕ цифры, и это принципиально:
+ *
+ *   estimate — наш подсчёт по /users. Правила сегментов внутри бота нам
+ *              неизвестны, поэтому это оценка, а не истина.
+ *   lastSent — сколько получателей было у ПОСЛЕДНЕЙ реальной рассылки в этот
+ *              сегмент (total_count из истории). Вот это факт: именно столько
+ *              бот взял, когда отправлял.
+ *
+ * Выдавать одну оценку за точное число нельзя: разойдись она с поведением
+ * бота — админ подтвердит отправку, рассчитывая на одно количество людей, а
+ * получит другое. Отменить будет нечем.
+ */
+async function getSegmentSizes(a, { force = false } = {}) {
+  const cached = _segmentCache.get(a.id)
+  if (!force && cached && Date.now() - cached.ts < SEGMENTS_TTL_MS) {
+    return { ok: true, segments: cached.data, cached: true }
+  }
+
+  const ru = await fetchAllUsers(a)
+  if (!ru.ok) return { ok: false, error: ru.error }
+
+  const now = Date.now()
+  const soon = now + 3 * 86400000
+  const count = { all: 0, no: 0, expired: 0, trial: 0, expiring: 0, active: 0 }
+
+  for (const u of ru.users) {
+    count.all++
+    const subs = (u.subscriptions && u.subscriptions.length)
+      ? u.subscriptions
+      : (u.subscription ? [u.subscription] : [])
+
+    const live = subs.filter(s => (s.status || s.actual_status) === 'active')
+    if (!live.length) {
+      // Разделяем «никогда не было» и «было и кончилось»: для рассылки это
+      // разные люди — первым продают, вторых возвращают.
+      if (subs.length || u.has_had_paid_subscription) count.expired++
+      else count.no++
+      continue
+    }
+    if (live.some(s => s.is_trial)) count.trial++
+    if (live.some(s => !s.is_trial)) count.active++
+    for (const s of live) {
+      const end = s.end_date ? new Date(s.end_date).getTime() : null
+      if (end && end >= now && end <= soon) { count.expiring++; break }
+    }
+  }
+
+  // Факт: сколько получателей было в последней рассылке каждого сегмента
+  const lastSent = {}
+  const hist = await call(a, '/broadcasts', { query: { limit: 50, offset: 0 } })
+  if (hist.ok) {
+    const items = (hist.data && hist.data.items) || []
+    items.sort((x, y) => new Date(y.created_at) - new Date(x.created_at))
+    for (const b of items) {
+      if (!lastSent[b.target_type]) {
+        lastSent[b.target_type] = { count: b.total_count, at: b.created_at }
+      }
+    }
+  }
+
+  // Наша оценка годится не для всех сегментов: правила бота нам неизвестны, и
+  // проверка на живых данных показала, что для trial расхождение 55-кратное
+  // (56 против 3104) — у бота это, видимо, «когда-либо был триал», а не «на
+  // триале сейчас». Такую цифру показывать нельзя: админ подтвердит отправку,
+  // рассчитывая на полсотни человек, а уйдёт три тысячи, и отменить будет
+  // нечем. Поэтому оценку помечаем недостоверной, когда она заметно расходится
+  // с тем, сколько бот реально взял в последний раз.
+  // 10 %, а не больше: на сегменте all расхождение было 1072 человека —
+  // формально 20 %, но это тысяча людей, и выдавать такое за точную цифру нельзя.
+  const TOLERANCE = 0.10
+  const segments = BROADCAST_SEGMENTS.map(s => {
+    const estimate = count[s.id] ?? null
+    const fact = lastSent[s.id] || null
+    let estimateReliable = null                 // null = сравнить не с чем
+    if (estimate != null && fact && fact.count > 0) {
+      estimateReliable = Math.abs(estimate - fact.count) / fact.count <= TOLERANCE
+    }
+    return { ...s, estimate, estimateReliable, lastSent: fact }
+  })
+
+  _segmentCache.set(a.id, { ts: Date.now(), data: segments })
+  return { ok: true, segments }
+}
+
 // ─── Отправка рассылки (реальное действие!) ───────────────────────────────────
-// target — сегмент бота из белого списка; message_text — текст. POST /broadcasts.
-const BROADCAST_TARGETS = ['expiring', 'expired', 'active', 'trial', 'all']
+// target — сегмент из BROADCAST_TARGETS; message_text — текст. POST /broadcasts.
 
 async function sendBroadcast(a, { target, message_text }) {
   if (!BROADCAST_TARGETS.includes(target)) return { ok: false, error: 'Недопустимый сегмент рассылки' }
@@ -271,6 +399,73 @@ async function getSquadNames(a) {
   }
   _squadNamesCache.set(a.id, { ts: Date.now(), data: map })
   return map
+}
+
+const _historyCache = new Map()          // id → { ts, data }
+const HISTORY_TTL_MS = 60 * 1000
+
+/**
+ * Вся история рассылок с посчитанными показателями.
+ *
+ * Две производные колонки считаются здесь, а не берутся из API, и считать их
+ * наивно нельзя:
+ *
+ *  • blocked_count у бота относится К СЕГМЕНТУ, а не ко всей базе. Разность
+ *    между соседними записями общего списка бессмысленна: переход no → trial
+ *    даёт «−475 заблокировавших», чего не бывает. Сравниваем только соседние
+ *    рассылки ОДНОГО сегмента.
+ *
+ *  • сырой прирост растёт просто оттого, что между рассылками прошло больше
+ *    дней. Поэтому делим на интервал и получаем блокировок в сутки — только
+ *    эта величина сопоставима между рассылками.
+ *
+ * Где сравнение некорректно (первая рассылка сегмента, отрицательная разность
+ * из-за пересчёта аудитории у бота, интервал меньше пяти часов) — отдаём null,
+ * а не выдуманное число.
+ */
+async function getBroadcastHistory(a, { force = false } = {}) {
+  const cached = _historyCache.get(a.id)
+  if (!force && cached && Date.now() - cached.ts < HISTORY_TTL_MS) {
+    return { ok: true, items: cached.data, cached: true }
+  }
+
+  let all = []
+  for (let off = 0; off < 5000; off += 50) {
+    const r = await call(a, '/broadcasts', { query: { limit: 50, offset: off } })
+    if (!r.ok) return { ok: false, error: r.error }
+    const items = (r.data && r.data.items) || []
+    if (!items.length) break
+    all = all.concat(items)
+    if (items.length < 50) break
+  }
+
+  all.sort((x, y) => new Date(x.created_at) - new Date(y.created_at))
+
+  const prevBySeg = {}
+  for (const b of all) {
+    b.delivery_pct = b.total_count ? +(b.sent_count / b.total_count * 100).toFixed(1) : null
+    b.blocked_delta = null
+    b.blocked_per_day = null
+    b.gap_days = null
+
+    const prev = prevBySeg[b.target_type]
+    if (prev) {
+      const days = (new Date(b.created_at) - new Date(prev.created_at)) / 86400000
+      const delta = b.blocked_count - prev.blocked_count
+      b.gap_days = days > 0 ? +days.toFixed(2) : null
+      if (delta >= 0) {
+        b.blocked_delta = delta
+        // Меньше пяти часов — интервал слишком мал, деление раздувает цифру
+        // до бессмыслицы (три блокировки за 10 минут дали бы 400 в сутки).
+        if (days > 0.2) b.blocked_per_day = +(delta / days).toFixed(1)
+      }
+    }
+    prevBySeg[b.target_type] = b
+  }
+
+  all.reverse()                              // на странице новые сверху
+  _historyCache.set(a.id, { ts: Date.now(), data: all })
+  return { ok: true, items: all }
 }
 
 // Текущее состояние рассылки (для опроса статуса после запуска).
@@ -438,5 +633,7 @@ module.exports = {
   replyToTicket, setTicketStatus, TICKET_STATUSES,
   listPromoCodes, getPromoCode, syncPromoUses,
   listUsers, getUser, listSubscriptions, listTransactions, listTickets, getTicket,
-  getRevenue, getSubscriptionStats, sendBroadcast, getBroadcast, getSquadNames, BROADCAST_TARGETS,
+  getRevenue, getSubscriptionStats, sendBroadcast, getBroadcast, getSquadNames,
+  BROADCAST_TARGETS, BROADCAST_SEGMENTS, getSegmentSizes, fetchAllUsers,
+  getBroadcastHistory,
 }

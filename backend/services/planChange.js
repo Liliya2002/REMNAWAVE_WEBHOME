@@ -65,6 +65,8 @@ function daysBetween(later, earlier) {
   return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)))
 }
 
+const db = require('../db')
+
 /**
  * Вычисляет стоимость смены тарифа и новую дату истечения.
  *
@@ -179,4 +181,41 @@ function calculateChange({ subscription, currentPlan, targetPlan, period = 'rema
   }
 }
 
-module.exports = { calculateChange, dailyPrice, daysBetween, PERIOD_DAYS, PERIOD_PRICE_KEY }
+/**
+ * Подписка пользователя вместе с текущим и целевым тарифом.
+ *
+ * Перенесено из routes/subscriptions.js: тем же набором пользуется
+ * предпросмотр промокода (routes/promo.js), которому нужно посчитать доплату
+ * серверной стороной. Тянуть роут из роута — плохая связность.
+ */
+async function loadSubAndPlans(userId, subscriptionId, targetPlanId) {
+  const subQ = subscriptionId
+    ? await db.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subscriptionId, userId])
+    : await db.query(
+        `SELECT * FROM subscriptions
+         WHERE user_id=$1 AND is_active=true
+         ORDER BY expires_at DESC NULLS LAST LIMIT 1`,
+        [userId]
+      )
+  const sub = subQ.rows[0]
+  if (!sub) return { error: 'Активная подписка не найдена' }
+
+  // current plan: сначала plan_id, потом fallback на name
+  let currentPlan = null
+  if (sub.plan_id) {
+    const r = await db.query('SELECT * FROM plans WHERE id=$1', [sub.plan_id])
+    currentPlan = r.rows[0] || null
+  }
+  if (!currentPlan && sub.plan_name) {
+    const r = await db.query('SELECT * FROM plans WHERE name=$1 LIMIT 1', [sub.plan_name])
+    currentPlan = r.rows[0] || null
+  }
+
+  const tgtQ = await db.query('SELECT * FROM plans WHERE id=$1', [targetPlanId])
+  const targetPlan = tgtQ.rows[0]
+  if (!targetPlan) return { error: 'Целевой тариф не найден' }
+
+  return { sub, currentPlan, targetPlan }
+}
+
+module.exports = { calculateChange, loadSubAndPlans, dailyPrice, daysBetween, PERIOD_DAYS, PERIOD_PRICE_KEY }

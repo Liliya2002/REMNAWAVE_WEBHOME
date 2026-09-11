@@ -135,7 +135,7 @@ export default function Pricing(){
     setShowPeriodModal(true)
   }
   
-  const handleCreatePayment = async (period) => {
+  const handleCreatePayment = async (period, promoCode = null) => {
     const token = localStorage.getItem('token')
     
     if (!token || !selectedPlan) return
@@ -149,7 +149,8 @@ export default function Pricing(){
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           plan_id: selectedPlan.id,
-          period: period
+          period: period,
+          promo_code: promoCode || undefined
         })
       })
       
@@ -158,7 +159,18 @@ export default function Pricing(){
       if (!res.ok) {
         throw new Error(data.error || 'Ошибка создания платежа')
       }
-      
+
+      // Промокод покрыл всю стоимость — платёжной страницы не будет,
+      // подписка активирована сразу.
+      if (data.free) {
+        setSuccess(data.message || 'Подписка активирована по промокоду')
+        setShowPeriodModal(false)
+        setSelectedPlan(null)
+        setPaymentLoading(false)
+        await checkActiveSubscription(token)
+        return
+      }
+
       // Redirect to Platega payment page
       if (data.paymentUrl) {
         window.location.href = data.paymentUrl
@@ -173,7 +185,7 @@ export default function Pricing(){
     }
   }
 
-  const handlePayWithBalance = async (period) => {
+  const handlePayWithBalance = async (period, promoCode = null) => {
     const token = localStorage.getItem('token')
     if (!token || !selectedPlan) return
 
@@ -188,6 +200,7 @@ export default function Pricing(){
         body: JSON.stringify({
           plan_id: selectedPlan.id,
           period,
+          promo_code: promoCode || undefined,
         }),
       })
 

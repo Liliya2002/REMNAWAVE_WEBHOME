@@ -6,6 +6,7 @@ const config = require('../config')
 const { createRemnwaveUser, updateRemnwaveUser } = require('../services/remnwave')
 const { verifyToken, verifyActive } = require('../middleware')
 const planChange = require('../services/planChange')
+const { loadSubAndPlans } = require('../services/planChange')
 const squadQuota = require('../services/squadQuota')
 
 /**
@@ -515,35 +516,6 @@ router.get('/setup-guide', verifyToken, verifyActive, async (req, res) => {
 /**
  * Helper: получить активную подписку юзера + связанные планы.
  */
-async function loadSubAndPlans(userId, subscriptionId, targetPlanId) {
-  const subQ = subscriptionId
-    ? await pool.query('SELECT * FROM subscriptions WHERE id=$1 AND user_id=$2', [subscriptionId, userId])
-    : await pool.query(
-        `SELECT * FROM subscriptions
-         WHERE user_id=$1 AND is_active=true
-         ORDER BY expires_at DESC NULLS LAST LIMIT 1`,
-        [userId]
-      )
-  const sub = subQ.rows[0]
-  if (!sub) return { error: 'Активная подписка не найдена' }
-
-  // current plan: сначала plan_id, потом fallback на name
-  let currentPlan = null
-  if (sub.plan_id) {
-    const r = await pool.query('SELECT * FROM plans WHERE id=$1', [sub.plan_id])
-    currentPlan = r.rows[0] || null
-  }
-  if (!currentPlan && sub.plan_name) {
-    const r = await pool.query('SELECT * FROM plans WHERE name=$1 LIMIT 1', [sub.plan_name])
-    currentPlan = r.rows[0] || null
-  }
-
-  const tgtQ = await pool.query('SELECT * FROM plans WHERE id=$1', [targetPlanId])
-  const targetPlan = tgtQ.rows[0]
-  if (!targetPlan) return { error: 'Целевой тариф не найден' }
-
-  return { sub, currentPlan, targetPlan }
-}
 
 /**
  * POST /api/subscriptions/calculate-change
@@ -602,7 +574,7 @@ router.post('/calculate-change', verifyToken, verifyActive, async (req, res) => 
  * POST /api/subscriptions/change
  * Применить смену тарифа.
  *
- * body: { subscription_id?, target_plan_id, period, payment_method: 'balance'|'gateway' }
+ * body: { subscription_id?, target_plan_id, period, payment_method: 'balance'|'gateway', promo_code? }
  *
  * Если payment_method='balance' и хватает средств — применяется немедленно.
  * Если 'gateway' (или не хватает баланса) — создаётся payment с типом 'subscription_change',
@@ -611,7 +583,7 @@ router.post('/calculate-change', verifyToken, verifyActive, async (req, res) => 
  * Если payDifference == 0 (downgrade) — применяется немедленно без payment.
  */
 router.post('/change', verifyToken, verifyActive, async (req, res) => {
-  const { subscription_id, target_plan_id, period = 'remaining', payment_method = 'balance' } = req.body || {}
+  const { subscription_id, target_plan_id, period = 'remaining', payment_method = 'balance', promo_code } = req.body || {}
   if (!target_plan_id) {
     console.warn('[change] missing target_plan_id. body:', JSON.stringify(req.body), 'user:', req.userId)
     return res.status(400).json({ error: 'Сначала выберите тариф' })
@@ -630,6 +602,34 @@ router.post('/change', verifyToken, verifyActive, async (req, res) => {
     if (!calc.ok) return res.status(400).json(calc)
 
     const paymentService = require('../services/payment')
+    const promoService = require('../services/promoCodes')
+    const { MIN_GATEWAY_AMOUNT } = require('../services/pricing')
+
+    // Промокод уменьшает ДОПЛАТУ, а не полную цену тарифа: платит человек
+    // именно разницу, посчитанную calculateChange. Ограничения кода по тарифу
+    // проверяются против ЦЕЛЕВОГО тарифа — на него человек переходит.
+    //
+    // Здесь только предварительный расчёт, без блокировки: сам резерв делают
+    // payChangeFromBalance / createChangeGatewayPayment в своих транзакциях,
+    // где код берётся под FOR UPDATE.
+    // Эта проверка — предварительная: она выбирает ветку (бесплатно / ниже
+    // порога шлюза / обычная оплата) и даёт раннюю понятную ошибку.
+    // Решающей является перепроверка внутри payChangeFromBalance и
+    // createChangeGatewayPayment: там код берётся под FOR UPDATE, и именно
+    // оттуда берётся сумма к списанию.
+    let discount = 0, payAmount = calc.payDifference
+    if (promo_code && calc.payDifference > 0) {
+      const check = await promoService.validate(promo_code, {
+        userId: req.userId,
+        planId: targetPlan.id,
+        period,
+        amount: calc.payDifference,
+        allowTypes: promoService.DISCOUNT_TYPES,
+      })
+      if (!check.ok) return res.status(400).json({ error: check.message, reason: check.reason })
+      discount = check.discount
+      payAmount = check.finalAmount
+    }
 
     // 1. Бесплатно (downgrade или swap-cheaper) или баланс хватает
     if (calc.payDifference === 0) {
@@ -646,8 +646,8 @@ router.post('/change', verifyToken, verifyActive, async (req, res) => {
     if (payment_method === 'balance') {
       const balanceR = await pool.query('SELECT balance FROM user_wallets WHERE user_id = $1', [req.userId])
       const balance = Number(balanceR.rows[0]?.balance || 0)
-      if (balance < calc.payDifference) {
-        return res.status(400).json({ error: 'Недостаточно средств на балансе', required: calc.payDifference, balance })
+      if (balance < payAmount) {
+        return res.status(400).json({ error: 'Недостаточно средств на балансе', required: payAmount, balance })
       }
       const result = await paymentService.payChangeFromBalance({
         userId: req.userId,
@@ -657,8 +657,34 @@ router.post('/change', verifyToken, verifyActive, async (req, res) => {
         period,
         newExpiresAt: calc.newExpiresAt,
         calc,
+        promoCode: promo_code || null,
       })
-      return res.json({ ok: true, instant: true, calc, result })
+      return res.json({ ok: true, instant: true, calc, result, promo: promo_code ? { code: promo_code, discount } : null })
+    }
+
+    // Скидка может увести доплату ниже минимума шлюза. Ноль — отдельная
+    // ветвь: платить нечего, применяем смену как бесплатную, но активацию
+    // промокода при этом фиксируем через payChangeFromBalance (списания там
+    // не будет, зато создастся платёж и запись в журнале активаций).
+    if (payAmount === 0) {
+      const result = await paymentService.payChangeFromBalance({
+        userId: req.userId,
+        subscriptionId: sub.id,
+        targetPlanId: targetPlan.id,
+        amount: calc.payDifference,
+        period,
+        newExpiresAt: calc.newExpiresAt,
+        calc,
+        promoCode: promo_code,
+      })
+      return res.json({ ok: true, instant: true, free: true, calc, result, promo: { code: promo_code, discount } })
+    }
+    if (payAmount < MIN_GATEWAY_AMOUNT) {
+      return res.status(400).json({
+        error: `Со скидкой к доплате ${payAmount} ₽ — это меньше минимума платёжной системы (${MIN_GATEWAY_AMOUNT} ₽). Оплатите с баланса.`,
+        reason: 'below_gateway_minimum',
+        amount: payAmount,
+      })
     }
 
     // Gateway (Platega) — создаём pending payment с типом 'subscription_change'
@@ -670,9 +696,15 @@ router.post('/change', verifyToken, verifyActive, async (req, res) => {
       period,
       newExpiresAt: calc.newExpiresAt,
       calc,
+      promoCode: promo_code || null,
     })
-    return res.json({ ok: true, instant: false, calc, payment: gatewayResult })
+    return res.json({ ok: true, instant: false, calc, payment: gatewayResult, promo: promo_code ? { code: promo_code, discount } : null })
   } catch (err) {
+    // Отказ по промокоду из перепроверки под блокировкой — вина запроса,
+    // а не сервера: отдаём 400, иначе клиент показал бы «ошибка сервера».
+    if (err.promoReason) {
+      return res.status(400).json({ error: err.message, reason: err.promoReason })
+    }
     console.error('[change] apply error:', err)
     res.status(500).json({ error: err.message })
   }

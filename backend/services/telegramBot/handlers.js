@@ -940,8 +940,110 @@ async function handleTextMessage(ctx) {
   }
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Промокод: /promo <код>
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Защита от перебора кодов через бота.
+ *
+ * HTTP-лимитер (routes/promo.js) сюда не распространяется: бот ходит в сервис
+ * напрямую, минуя Express. Считаем неудачные попытки в памяти процесса — этого
+ * достаточно, отдельная таблица ради счётчика избыточна. Перезапуск сбрасывает
+ * окно, и это приемлемо.
+ */
+const promoAttempts = new Map()   // telegramId → { count, resetAt }
+const PROMO_WINDOW_MS = 15 * 60 * 1000
+const PROMO_MAX_FAILS = 20
+
+function promoRateLimited(telegramId) {
+  const rec = promoAttempts.get(telegramId)
+  if (!rec || rec.resetAt < Date.now()) return false
+  return rec.count >= PROMO_MAX_FAILS
+}
+
+function promoCountFail(telegramId) {
+  const now = Date.now()
+  const rec = promoAttempts.get(telegramId)
+  if (!rec || rec.resetAt < now) {
+    promoAttempts.set(telegramId, { count: 1, resetAt: now + PROMO_WINDOW_MS })
+  } else {
+    rec.count++
+  }
+  // Подчищаем протухшие записи, чтобы Map не рос бесконечно
+  if (promoAttempts.size > 500) {
+    for (const [k, v] of promoAttempts) if (v.resetAt < now) promoAttempts.delete(k)
+  }
+}
+
+async function handlePromo(ctx) {
+  const tgId = ctx.from?.id
+  if (!tgId) return
+
+  const code = String(ctx.match || '').trim()
+  if (!code) {
+    return ctx.reply(
+      [
+        '🎟 Отправь команду вместе с кодом:',
+        '<code>/promo ВАШКОД</code>',
+        '',
+        '<i>Коды со скидкой вводятся при оплате тарифа, а не здесь.</i>',
+      ].join('\n'),
+      { parse_mode: 'HTML' }
+    )
+  }
+
+  if (promoRateLimited(tgId)) {
+    return ctx.reply('Слишком много попыток. Попробуй через 15 минут.')
+  }
+
+  // Аккаунт НЕ создаём. Вход через бота ищет юзера по telegram_id, а через
+  // браузер (OIDC) — по telegram_oidc_sub: это РАЗНЫЕ идентификаторы, и
+  // findOrCreateUser здесь завёл бы человеку второй аккаунт, на который
+  // начисление ушло бы мимо его настоящего кабинета.
+  const r = await db.query('SELECT id FROM users WHERE telegram_id = $1', [parseInt(tgId, 10)])
+  const user = r.rows[0]
+  if (!user) {
+    return ctx.reply(
+      [
+        'Сначала войди в кабинет: нажми /start и открой сайт через бота.',
+        'Тогда промокод начислится на твой аккаунт.',
+      ].join('\n')
+    )
+  }
+
+  try {
+    const promoService = require('../promoCodes')
+    const res = await promoService.redeem(user.id, code)
+
+    if (!res.ok) {
+      promoCountFail(tgId)
+      return ctx.reply('❌ ' + res.message)
+    }
+
+    const lines = res.granted.days
+      ? [
+          '✅ Промокод принят!',
+          '',
+          `Начислено <b>${res.granted.days}</b> дн. подписки.`,
+          '',
+          '<i>Применить их можно в кабинете, в разделе «Подписка».</i>',
+        ]
+      : [
+          '✅ Промокод принят!',
+          '',
+          `Баланс пополнен на <b>${res.granted.balance} ₽</b>.`,
+        ]
+    return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' })
+  } catch (err) {
+    console.error('[TG bot] /promo error:', err.message)
+    return ctx.reply('Не удалось активировать промокод. Попробуй позже.')
+  }
+}
+
 module.exports = {
   handleStart,
+  handlePromo,
   handleMenuCallback,
   handleMyId,
   handleAdminCommand,

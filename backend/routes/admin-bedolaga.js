@@ -8,6 +8,9 @@ const { verifyToken, verifyAdmin } = require('../middleware')
 const db = require('../db')
 const { encrypt } = require('../services/encryption')
 const bedolaga = require('../services/bedolaga')
+const broadcasts = require('../services/broadcasts')
+const broadcastAi = require('../services/broadcastAi')
+const broadcastStats = require('../services/broadcastStats')
 const audit = require('../services/auditLog')
 
 router.use(verifyToken, verifyAdmin)
@@ -284,13 +287,262 @@ router.post('/accounts/:id/notify-user', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+/**
+ * GET /accounts/:id/segments — сегменты рассылки с размером аудитории.
+ *
+ * Обход всех пользователей бота занимает около 11 секунд, поэтому результат
+ * кэшируется на 5 минут в сервисе. ?force=1 — пересчитать принудительно.
+ */
+router.get('/accounts/:id/segments', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const r = await bedolaga.getSegmentSizes(a, { force: req.query.force === '1' })
+    if (!r.ok) return res.status(502).json({ error: r.error })
+    res.json({ segments: r.segments, cached: !!r.cached })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+/** GET /accounts/:id/broadcasts — вся история с посчитанными показателями. */
+router.get('/accounts/:id/broadcasts', async (req, res) => {
+  try {
+    const acc = await loadAccount(req.params.id)
+    if (!acc) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const r = await bedolaga.getBroadcastHistory(acc, { force: req.query.force === '1' })
+    if (!r.ok) return res.status(502).json({ error: r.error })
+    res.json({ items: r.items, cached: !!r.cached })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ─── Настройки и шаблоны рассылок ───────────────────────────────────────────
+
+router.get('/broadcast-settings', async (req, res) => {
+  try { res.json({ settings: await broadcasts.getSettings({ force: true }) }) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.put('/broadcast-settings', async (req, res) => {
+  try {
+    const s = await broadcasts.updateSettings(req.body || {})
+    audit.write(req, 'broadcast.settings.update', { type: 'broadcast_settings', id: 1 }, req.body || {}).catch(() => {})
+    res.json({ settings: s })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Можно ли отправлять прямо сейчас — чтобы страница показала причину заранее. */
+router.get('/accounts/:id/broadcast-gate', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const g = await broadcasts.checkCanSend(a.id, req.query.target || null)
+    res.json({ ok: g.ok, reason: g.reason || null, message: g.message || null, settings: g.settings })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.get('/broadcast-templates', async (req, res) => {
+  try { res.json({ items: await broadcasts.listTemplates() }) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.post('/broadcast-templates', async (req, res) => {
+  try {
+    const { name, body } = req.body || {}
+    if (!name || !body) return res.status(400).json({ error: 'Название и текст обязательны' })
+    const t = await broadcasts.createTemplate(req.body)
+    audit.write(req, 'broadcast.template.create', { type: 'broadcast_template', id: t.id }, { name }).catch(() => {})
+    res.json({ item: t })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.put('/broadcast-templates/:tid', async (req, res) => {
+  try {
+    const t = await broadcasts.updateTemplate(req.params.tid, req.body || {})
+    if (!t) return res.status(404).json({ error: 'Шаблон не найден' })
+    audit.write(req, 'broadcast.template.update', { type: 'broadcast_template', id: req.params.tid }, {}).catch(() => {})
+    res.json({ item: t })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.delete('/broadcast-templates/:tid', async (req, res) => {
+  try {
+    const ok = await broadcasts.deleteTemplate(req.params.tid)
+    if (!ok) return res.status(404).json({ error: 'Шаблон не найден' })
+    audit.write(req, 'broadcast.template.delete', { type: 'broadcast_template', id: req.params.tid }, {}).catch(() => {})
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Правила сегментов и отдача промокодов ──────────────────────────────────
+
+router.get('/segment-rules', async (req, res) => {
+  try { res.json({ rules: await broadcastStats.getSegmentRules() }) }
+  catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.put('/segment-rules/:segment', async (req, res) => {
+  try {
+    const r = await broadcastStats.upsertSegmentRule(req.params.segment, req.body || {})
+    audit.write(req, 'broadcast.segment_rule.update', { type: 'broadcast_segment_rule', id: req.params.segment },
+      req.body || {}).catch(() => {})
+    res.json({ rule: r })
+  } catch (e) { res.status(400).json({ error: e.message }) }
+})
+
+/** Отдача рассылок по промокодам: сколько активаций принесла каждая. */
+router.get('/accounts/:id/promo-performance', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const r = await broadcastStats.promoPerformance(a, { windowDays: Number(req.query.days) || 7 })
+    if (!r.ok) return res.status(502).json({ error: r.error })
+    res.json(r)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Предложения ИИ ─────────────────────────────────────────────────────────
+
+/** Список предложений и последние решения ИИ (в т.ч. холостые прогоны). */
+router.get('/accounts/:id/proposals', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const [props, runs] = await Promise.all([
+      db.query(
+        `SELECT p.*, t.name AS template_name
+           FROM broadcast_proposals p
+           LEFT JOIN broadcast_templates t ON t.id = p.template_id
+          WHERE p.account_id = $1
+          ORDER BY p.created_at DESC LIMIT 50`, [a.id]),
+      db.query(
+        `SELECT * FROM broadcast_ai_runs WHERE account_id = $1
+          ORDER BY created_at DESC LIMIT 30`, [a.id]),
+    ])
+    res.json({ items: props.rows, runs: runs.rows })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Запустить анализ прямо сейчас, не дожидаясь крона. */
+router.post('/accounts/:id/proposals/run', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const r = await broadcastAi.runOnce(a, { force: true })
+    audit.write(req, 'broadcast.ai.run', { type: 'bedolaga_account', id: a.id }, { outcome: r.outcome }).catch(() => {})
+    res.json(r)
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/**
+ * Принять предложение — то есть ОТПРАВИТЬ его.
+ *
+ * Идёт через тот же broadcasts.send, что и ручная отправка: лимиты, тихие
+ * часы и белый список сегментов проверяются заново. Между созданием карточки
+ * и нажатием кнопки могло пройти много времени, и условия могли измениться.
+ */
+router.post('/accounts/:id/proposals/:pid/approve', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+
+    const { rows } = await db.query(
+      `SELECT * FROM broadcast_proposals WHERE id = $1 AND account_id = $2`,
+      [req.params.pid, a.id]
+    )
+    const p = rows[0]
+    if (!p) return res.status(404).json({ error: 'Предложение не найдено' })
+    if (p.status !== 'pending') return res.status(409).json({ error: 'Предложение уже обработано' })
+
+    const r = await broadcasts.send(a, {
+      target: p.target,
+      message_text: p.message_text,
+      source: 'ai',
+      templateId: p.template_id,
+      userId: req.userId,
+      recipients: p.recipients,
+    })
+    if (!r.ok) return res.status(r.blocked ? 409 : 502).json({ error: r.error, reason: r.reason })
+
+    await db.query(
+      `UPDATE broadcast_proposals
+          SET status = 'approved', decided_at = NOW(), decided_by = $2, broadcast_id = $3
+        WHERE id = $1`,
+      [p.id, req.userId, r.broadcast?.id || null]
+    )
+    audit.write(req, 'broadcast.ai.approve', { type: 'broadcast_proposal', id: p.id },
+      { target: p.target, recipients: p.recipients }).catch(() => {})
+    res.json({ ok: true, broadcast: r.broadcast })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/**
+ * Снять запланированную автопилотом рассылку, пока не истекло окно отмены.
+ *
+ * Условие status='scheduled' в UPDATE — не украшение: между открытием
+ * страницы и нажатием кнопки диспетчер мог уже забрать задачу и отправить.
+ * Тогда rowCount = 0, и мы честно скажем, что отменять поздно.
+ */
+router.post('/accounts/:id/proposals/:pid/cancel', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const { rows } = await db.query(
+      `UPDATE broadcast_proposals
+          SET status = 'cancelled', decided_at = NOW(), decided_by = $2
+        WHERE id = $1 AND account_id = $3 AND status = 'scheduled'
+        RETURNING id`,
+      [req.params.pid, req.userId, a.id]
+    )
+    if (!rows[0]) return res.status(409).json({ error: 'Отменять поздно: рассылка уже ушла или снята' })
+    audit.write(req, 'broadcast.ai.cancel', { type: 'broadcast_proposal', id: req.params.pid }, {}).catch(() => {})
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Аварийный выключатель: гасит автопилот и снимает всю очередь. */
+router.post('/broadcast-ai/stop', async (req, res) => {
+  try {
+    const r = await broadcastAi.emergencyStop(req.userId)
+    audit.write(req, 'broadcast.ai.emergency_stop', { type: 'broadcast_settings', id: 1 },
+      { cancelled: r.cancelled }).catch(() => {})
+    res.json({ ok: true, cancelled: r.cancelled })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Отклонить с причиной — она уйдёт в промпт антипримером. */
+router.post('/accounts/:id/proposals/:pid/reject', async (req, res) => {
+  try {
+    const a = await loadAccount(req.params.id)
+    if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
+    const { rows } = await db.query(
+      `UPDATE broadcast_proposals
+          SET status = 'rejected', decided_at = NOW(), decided_by = $2, reject_reason = $3
+        WHERE id = $1 AND account_id = $4 AND status = 'pending'
+        RETURNING id`,
+      [req.params.pid, req.userId, (req.body && req.body.reason) || null, a.id]
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Предложение не найдено или уже обработано' })
+    audit.write(req, 'broadcast.ai.reject', { type: 'broadcast_proposal', id: req.params.pid },
+      { reason: (req.body && req.body.reason) || null }).catch(() => {})
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // Отправка рассылки сегменту (РЕАЛЬНОЕ действие — шлёт сообщения пользователям)
 router.post('/accounts/:id/broadcast', async (req, res) => {
   try {
     const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
     const { target, message_text } = req.body || {}
-    const r = await bedolaga.sendBroadcast(a, { target, message_text })
-    if (!r.ok) return res.status(502).json({ error: r.error })
+    // Только через сервис: лимиты частоты, тихие часы и список разрешённых
+    // сегментов живут там, и второй путь отправки означал бы, что их можно
+    // обойти, не заметив.
+    const r = await broadcasts.send(a, {
+      target, message_text, source: 'manual', userId: req.userId,
+    })
+    if (!r.ok) return res.status(r.blocked ? 409 : 502).json({ error: r.error, reason: r.reason })
     audit.write(req, 'bedolaga.broadcast.send', { type: 'bedolaga_account', id: a.id },
       { target, text_length: (message_text || '').length, broadcast_id: r.broadcast?.id }).catch(() => {})
     res.json({ ok: true, broadcast: r.broadcast })

@@ -46,6 +46,12 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
   const [paymentMethod, setPaymentMethod] = useState('balance')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
+  // Промокод. applied — ответ сервера целиком: суммы показываем ровно те,
+  // что посчитал бэкенд, а не пересчитываем на клиенте.
+  const [promoInput, setPromoInput] = useState('')
+  const [promo, setPromo] = useState(null)
+  const [promoError, setPromoError] = useState(null)
+  const [promoBusy, setPromoBusy] = useState(false)
 
   const calcUrl = adminMode
     ? `/api/admin/users/${userId}/subscription/${subscription.id}/calculate-change`
@@ -97,6 +103,35 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
   }, [targetPlan, period, subscription.id])
 
   // Применение
+  // Скидка считается от ДОПЛАТЫ, а доплата меняется вместе с тарифом и
+  // периодом. Оставить применённый код — значит показать сумму, которую
+  // сервер при подтверждении не примет.
+  useEffect(() => { setPromo(null); setPromoError(null) }, [targetPlan?.id, period])
+
+  const checkPromo = async () => {
+    const value = promoInput.trim()
+    if (!value || !targetPlan?.id) return
+    setPromoBusy(true); setPromoError(null)
+    try {
+      const res = await authFetch('/api/promo/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: value,
+          subscription_id: subscription?.id,
+          target_plan_id: targetPlan.id,
+          period,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setPromo(null); setPromoError(data.error || 'Промокод недоступен'); return }
+      setPromo(data)
+    } catch (err) {
+      if (err.message !== 'Unauthorized' && err.message !== 'No token') {
+        setPromo(null); setPromoError('Не удалось проверить промокод')
+      }
+    } finally { setPromoBusy(false) }
+  }
+
   const apply = async () => {
     if (!targetPlan?.id) {
       setSubmitError('Сначала выберите тариф')
@@ -106,7 +141,7 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
     try {
       const body = adminMode
         ? { target_plan_id: targetPlan.id, period }
-        : { subscription_id: subscription.id, target_plan_id: targetPlan.id, period, payment_method: paymentMethod }
+        : { subscription_id: subscription.id, target_plan_id: targetPlan.id, period, payment_method: paymentMethod, promo_code: promo ? promo.code : undefined }
       const res = await authFetch(applyUrl, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -334,6 +369,53 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
                     </div>
                   )}
 
+                  {/* Промокод */}
+                  {!adminMode && calc.payDifference > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-xs uppercase tracking-wide text-slate-500 font-semibold">Промокод</div>
+                      {!promo ? (
+                        <>
+                          <div className="flex gap-2">
+                            <input
+                              autoComplete="off"
+                              spellCheck={false}
+                              value={promoInput}
+                              onChange={e => { setPromoInput(e.target.value); setPromoError(null) }}
+                              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); checkPromo() } }}
+                              placeholder="Если есть"
+                              className="flex-1 px-3 py-2 rounded-xl bg-sky-50/30 dark:bg-slate-800/40 border border-sky-200 dark:border-slate-700/60 text-sky-900 dark:text-slate-100 text-sm font-mono uppercase placeholder:normal-case placeholder:font-sans focus:border-violet-500 focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={checkPromo}
+                              disabled={promoBusy || !promoInput.trim()}
+                              className="px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold disabled:opacity-40 whitespace-nowrap"
+                            >
+                              {promoBusy ? '…' : 'Применить'}
+                            </button>
+                          </div>
+                          {promoError && <div className="text-xs text-red-500 dark:text-red-400">{promoError}</div>}
+                        </>
+                      ) : (
+                        <div className="px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-mono text-violet-700 dark:text-violet-200 truncate">{promo.code}</div>
+                            <div className="text-xs text-violet-600 dark:text-violet-300/80">
+                              к доплате {Number(promo.final_amount).toFixed(2)} ₽ вместо {Number(promo.original_amount).toFixed(2)} ₽
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setPromo(null); setPromoInput('') }}
+                            className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline shrink-0"
+                          >
+                            убрать
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Способ оплаты */}
                   {!adminMode && calc.payDifference > 0 && (
                     <div className="space-y-2">
@@ -425,7 +507,13 @@ export default function ChangePlanModal({ subscription, currentPlan, onClose, on
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
               {adminMode
                 ? 'Применить смену (admin)'
-                : (calc?.payDifference === 0 ? 'Применить бесплатно' : `Подтвердить и оплатить ${calc?.payDifference?.toFixed(0) || '?'} ₽`)}
+                : (calc?.payDifference === 0
+                    ? 'Применить бесплатно'
+                    : promo
+                      ? (Number(promo.final_amount) === 0
+                          ? 'Применить по промокоду'
+                          : `Подтвердить и оплатить ${Number(promo.final_amount).toFixed(0)} ₽`)
+                      : `Подтвердить и оплатить ${calc?.payDifference?.toFixed(0) || '?'} ₽`)}
             </button>
           )}
         </div>

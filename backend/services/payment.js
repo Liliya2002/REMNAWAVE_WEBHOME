@@ -310,6 +310,18 @@ async function expireOldPayments() {
     );
     if (result.rows.length > 0) {
       console.log(`[Payments] Expired ${result.rows.length} old pending payments: [${result.rows.map(r => r.id).join(', ')}]`);
+
+      // Освобождаем резервы промокодов по этим платежам. Это УБОРКА, а не
+      // корректность: лимит и так не учитывает резерв с истёкшим
+      // reserved_until, поэтому даже если крон не отработает, код останется
+      // доступен. Здесь лишь проставляем released, чтобы журнал активаций в
+      // админке не показывал вечно «в резерве».
+      const promoService = require('./promoCodes');
+      for (const row of result.rows) {
+        await promoService.release(db, row.id, 'платёж просрочен').catch(err =>
+          console.error('[Payments] не удалось освободить промокод по платежу', row.id, err.message)
+        );
+      }
     }
   } catch (err) {
     console.error('[Payments] Error expiring old payments:', err.message);
@@ -397,15 +409,44 @@ async function applyPlanChange({ subscriptionId, targetPlanId, newExpiresAt, per
 /**
  * Оплата смены тарифа с баланса. Атомарная транзакция.
  */
-async function payChangeFromBalance({ userId, subscriptionId, targetPlanId, amount, period, newExpiresAt, calc }) {
-  if (amount <= 0) {
+/**
+ * Оплата доплаты за смену тарифа с баланса.
+ *
+ * promoCode передаётся СТРОКОЙ, а не готовым объектом: код перепроверяется
+ * здесь, внутри транзакции и под FOR UPDATE, и итоговая сумма считается тоже
+ * здесь. Иначе между проверкой в роуте и списанием остаётся окно, в котором
+ * одноразовый код успевают применить дважды.
+ *
+ * @param {number} amount — доплата ДО скидки (calc.payDifference)
+ */
+async function payChangeFromBalance({ userId, subscriptionId, targetPlanId, amount, period, newExpiresAt, calc, promoCode = null }) {
+  if (amount <= 0 && !promoCode) {
     // Бесплатно — без транзакции
     return applyPlanChange({ subscriptionId, targetPlanId, newExpiresAt, period, amount: 0 })
   }
 
+  const promoService = require('./promoCodes')
+  const originalAmount = amount
   const client = await db.pool.connect()
   try {
     await client.query('BEGIN')
+
+    // 0. Промокод под блокировкой — он определяет, сколько реально списать
+    let promo = null, discount = 0
+    if (promoCode) {
+      const check = await promoService.validate(promoCode, {
+        userId, planId: targetPlanId, period, amount: originalAmount,
+        client, forUpdate: true, allowTypes: promoService.DISCOUNT_TYPES,
+      })
+      if (!check.ok) {
+        const err = new Error(check.message)
+        err.promoReason = check.reason
+        throw err
+      }
+      promo = check.promo
+      discount = check.discount
+      amount = check.finalAmount
+    }
 
     // 1. Проверяем баланс с lock
     const wQ = await client.query('SELECT balance FROM user_wallets WHERE user_id=$1 FOR UPDATE', [userId])
@@ -414,9 +455,11 @@ async function payChangeFromBalance({ userId, subscriptionId, targetPlanId, amou
       throw new Error('Недостаточно средств')
     }
 
-    // 2. Списываем
-    const newBalance = +(balance - amount).toFixed(2)
-    await client.query('UPDATE user_wallets SET balance=$1, updated_at=NOW() WHERE user_id=$2', [newBalance, userId])
+    // 2. Списываем. При полной скидке списывать нечего — баланс не трогаем.
+    const newBalance = amount > 0 ? +(balance - amount).toFixed(2) : balance
+    if (amount > 0) {
+      await client.query('UPDATE user_wallets SET balance=$1, updated_at=NOW() WHERE user_id=$2', [newBalance, userId])
+    }
 
     // 3. Создаём payment (completed, source='balance', type='subscription_change')
     const payQ = await client.query(
@@ -428,15 +471,24 @@ async function payChangeFromBalance({ userId, subscriptionId, targetPlanId, amou
     )
     const paymentId = payQ.rows[0].id
 
-    // 4. wallet_transaction
-    const wtQ = await client.query(
-      `INSERT INTO wallet_transactions
-        (user_id, type, direction, amount, currency, balance_before, balance_after, reference_type, reference_id)
-       VALUES ($1, 'purchase', 'out', $2, 'RUB', $3, $4, 'payment', $5)
-       RETURNING id`,
-      [userId, amount, balance, newBalance, paymentId]
-    )
-    await client.query('UPDATE payments SET wallet_transaction_id=$1 WHERE id=$2', [wtQ.rows[0].id, paymentId])
+    // 4. wallet_transaction — только если реально списали
+    if (amount > 0) {
+      const wtQ = await client.query(
+        `INSERT INTO wallet_transactions
+          (user_id, type, direction, amount, currency, balance_before, balance_after, reference_type, reference_id)
+         VALUES ($1, 'purchase', 'out', $2, 'RUB', $3, $4, 'payment', $5)
+         RETURNING id`,
+        [userId, amount, balance, newBalance, paymentId]
+      )
+      await client.query('UPDATE payments SET wallet_transaction_id=$1 WHERE id=$2', [wtQ.rows[0].id, paymentId])
+    }
+
+    // 5. Промокод: оплата уже состоялась, поэтому резерв и подтверждение
+    // подряд — ждать вебхука тут нечего.
+    if (promo) {
+      await promoService.reserve(client, promo, { userId, paymentId, discount, originalAmount })
+      await promoService.confirm(client, paymentId)
+    }
 
     await client.query('COMMIT')
 
@@ -455,22 +507,65 @@ async function payChangeFromBalance({ userId, subscriptionId, targetPlanId, amou
  * Создаёт pending-payment в Platega для смены тарифа.
  * После webhook completed → activateSubscriptionChange().
  */
-async function createChangeGatewayPayment({ userId, subscriptionId, targetPlanId, amount, period, newExpiresAt, calc }) {
+/**
+ * Создаёт pending-платёж в шлюзе для смены тарифа.
+ * promoCode — строкой, по той же причине, что и в payChangeFromBalance.
+ * @param {number} amount — доплата ДО скидки
+ */
+async function createChangeGatewayPayment({ userId, subscriptionId, targetPlanId, amount, period, newExpiresAt, calc, promoCode = null }) {
   // Используем тот же платёжный шлюз что и для обычных платежей.
   // Создаём payment row и инициируем Platega-транзакцию.
   const platega = require('./platega')
+  const promoService = require('./promoCodes')
   const orderId = `change_${userId}_${subscriptionId}_${Date.now()}`
+  const originalAmount = amount
 
-  const r = await db.query(
-    `INSERT INTO payments
-      (user_id, plan_id, amount, currency, period, payment_provider, status,
-       payment_type, payment_source, expires_at, provider_metadata)
-     VALUES ($1, $2, $3, 'RUB', $4, 'platega', 'pending', 'subscription_change', 'gateway',
-             NOW() + INTERVAL '1 hour', $5)
-     RETURNING id`,
-    [userId, targetPlanId, amount, period, JSON.stringify({ subscriptionId, newExpiresAt, calc })]
-  )
-  const paymentId = r.rows[0].id
+  // Проверка кода, вставка платежа и резерв — одной транзакцией: код берётся
+  // под FOR UPDATE и держится до COMMIT, иначе одноразовый код успевают
+  // применить дважды. Обращение к шлюзу вынесено за транзакцию.
+  let paymentId, promo = null, discount = 0
+  const client = await db.pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    if (promoCode) {
+      const check = await promoService.validate(promoCode, {
+        userId, planId: targetPlanId, period, amount: originalAmount,
+        client, forUpdate: true, allowTypes: promoService.DISCOUNT_TYPES,
+      })
+      if (!check.ok) {
+        const err = new Error(check.message)
+        err.promoReason = check.reason
+        throw err
+      }
+      promo = check.promo
+      discount = check.discount
+      amount = check.finalAmount
+    }
+
+    const r = await client.query(
+      `INSERT INTO payments
+        (user_id, plan_id, amount, currency, period, payment_provider, status,
+         payment_type, payment_source, expires_at, provider_metadata)
+       VALUES ($1, $2, $3, 'RUB', $4, 'platega', 'pending', 'subscription_change', 'gateway',
+               NOW() + INTERVAL '1 hour', $5)
+       RETURNING id`,
+      [userId, targetPlanId, amount, period, JSON.stringify({ subscriptionId, newExpiresAt, calc })]
+    )
+    paymentId = r.rows[0].id
+
+    // Резерв: подтвердит его вебхук, когда придёт оплата.
+    if (promo) {
+      await promoService.reserve(client, promo, { userId, paymentId, discount, originalAmount })
+    }
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw err
+  } finally {
+    client.release()
+  }
 
   try {
     const txn = await platega.createTransaction({
@@ -486,6 +581,10 @@ async function createChangeGatewayPayment({ userId, subscriptionId, targetPlanId
     )
     return { paymentId, paymentUrl: txn.redirectUrl, transactionId: txn.transactionId }
   } catch (err) {
+    // Резерв освобождаем сразу: иначе код будет занят до истечения часа.
+    if (promo) {
+      await promoService.release(db, paymentId, 'ошибка создания платежа в шлюзе').catch(() => {})
+    }
     await db.query(`UPDATE payments SET status='failed' WHERE id=$1`, [paymentId])
     throw err
   }

@@ -4,67 +4,17 @@ const db = require('../db');
 const { createPayment, verifyWebhookSignature } = require('../services/platega');
 const { verifyToken, verifyActive } = require('../middleware');
 const { activateSubscription, activateSubscriptionChange, activateSquadTrafficTopup } = require('../services/payment');
+// Кошелёк живёт в services/wallet.js: промокоды начисляют на него деньги, а
+// этот роут вызывает промокоды — держать помощники здесь означало бы цикл
+// services → routes → services.
+const { ensureWalletSchema, getOrCreateWallet, addWalletTransaction } = require('../services/wallet');
+const { getPlanAndAmount, PERIOD_LABELS, MIN_GATEWAY_AMOUNT } = require('../services/pricing');
+const promoService = require('../services/promoCodes');
 
 const pgPool = db.pool;
-let schemaEnsured = false;
 
 const TOPUP_MIN = 10;
 const TOPUP_MAX = 100000;
-
-async function ensureWalletSchema() {
-  if (schemaEnsured) return;
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS user_wallets (
-      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      balance NUMERIC(12,2) NOT NULL DEFAULT 0,
-      currency VARCHAR(10) NOT NULL DEFAULT 'RUB',
-      created_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS wallet_transactions (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      type VARCHAR(30) NOT NULL,
-      direction VARCHAR(10) NOT NULL,
-      amount NUMERIC(12,2) NOT NULL,
-      currency VARCHAR(10) NOT NULL DEFAULT 'RUB',
-      balance_before NUMERIC(12,2) NOT NULL,
-      balance_after NUMERIC(12,2) NOT NULL,
-      status VARCHAR(30) NOT NULL DEFAULT 'completed',
-      reference_type VARCHAR(30),
-      reference_id BIGINT,
-      description TEXT,
-      metadata JSONB DEFAULT '{}'::jsonb,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_wallet_transactions_user_id ON wallet_transactions(user_id)`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_wallet_transactions_reference ON wallet_transactions(reference_type, reference_id)`);
-
-  await db.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_type VARCHAR(30) NOT NULL DEFAULT 'subscription'`);
-  await db.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS payment_source VARCHAR(30) NOT NULL DEFAULT 'gateway'`);
-  await db.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS wallet_transaction_id INTEGER REFERENCES wallet_transactions(id) ON DELETE SET NULL`);
-  await db.query(`ALTER TABLE payments ADD COLUMN IF NOT EXISTS webhook_processed_at TIMESTAMP`);
-
-  // Защита от дублей записей платежа с одним transactionId провайдера
-  // (если существующие данные содержат дубли — индекс не создастся, залогируем warning).
-  try {
-    await db.query(`
-      CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_provider_payment_id
-      ON payments(provider_payment_id)
-      WHERE provider_payment_id IS NOT NULL
-    `);
-  } catch (err) {
-    console.error('[SECURITY] Failed to create UNIQUE index on payments.provider_payment_id — возможно, есть дубли. Проверьте вручную.', err.message);
-  }
-
-  schemaEnsured = true;
-}
 
 function getPeriodDays(period) {
   switch (period) {
@@ -75,99 +25,7 @@ function getPeriodDays(period) {
   }
 }
 
-async function getPlanAndAmount(planId, period) {
-  const planResult = await db.query(
-    'SELECT * FROM plans WHERE id = $1 AND is_active = true',
-    [planId]
-  );
 
-  if (planResult.rows.length === 0) {
-    throw new Error('Plan not found or inactive');
-  }
-
-  const plan = planResult.rows[0];
-  if (plan.is_trial) {
-    throw new Error('Cannot create payment for trial plan');
-  }
-
-  let amount = null;
-  switch (period) {
-    case 'monthly':
-      amount = plan.price_monthly;
-      break;
-    case 'quarterly':
-      amount = plan.price_quarterly;
-      break;
-    case 'yearly':
-      amount = plan.price_yearly;
-      break;
-    default:
-      amount = null;
-  }
-
-  if (!amount || Number(amount) <= 0) {
-    throw new Error(`This plan does not support ${period} payments`);
-  }
-
-  return { plan, amount: Number(amount) };
-}
-
-async function getOrCreateWallet(client, userId) {
-  let walletRes = await client.query(
-    'SELECT user_id, balance, currency FROM user_wallets WHERE user_id = $1 FOR UPDATE',
-    [userId]
-  );
-
-  if (walletRes.rows.length === 0) {
-    await client.query(
-      'INSERT INTO user_wallets (user_id, balance, currency) VALUES ($1, 0, $2)',
-      [userId, 'RUB']
-    );
-    walletRes = await client.query(
-      'SELECT user_id, balance, currency FROM user_wallets WHERE user_id = $1 FOR UPDATE',
-      [userId]
-    );
-  }
-
-  return walletRes.rows[0];
-}
-
-async function addWalletTransaction(client, {
-  userId,
-  type,
-  direction,
-  amount,
-  currency = 'RUB',
-  balanceBefore,
-  balanceAfter,
-  referenceType,
-  referenceId,
-  description,
-  metadata = {},
-}) {
-  const txRes = await client.query(
-    `INSERT INTO wallet_transactions (
-      user_id, type, direction, amount, currency, balance_before, balance_after,
-      reference_type, reference_id, description, metadata, status
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'completed')
-    RETURNING id`,
-    [
-      userId,
-      type,
-      direction,
-      amount,
-      currency,
-      balanceBefore,
-      balanceAfter,
-      referenceType || null,
-      referenceId || null,
-      description || null,
-      JSON.stringify(metadata || {}),
-    ]
-  );
-
-  return txRes.rows[0].id;
-}
 
 /**
  * POST /api/payments/create
@@ -178,7 +36,7 @@ router.post('/create', verifyToken, verifyActive, async (req, res) => {
   try {
     await ensureWalletSchema();
 
-    const { plan_id, period } = req.body;
+    const { plan_id, period, promo_code } = req.body;
     const userId = req.userId;
 
     // Validate input
@@ -190,49 +48,130 @@ router.post('/create', verifyToken, verifyActive, async (req, res) => {
       return res.status(400).json({ error: 'Invalid period. Must be monthly, quarterly, or yearly' });
     }
 
-    const { plan, amount } = await getPlanAndAmount(plan_id, period);
+    const { plan, amount: fullAmount } = await getPlanAndAmount(plan_id, period);
 
-    // Get user details
-    const userResult = await db.query(
-      'SELECT email, login FROM users WHERE id = $1',
-      [userId]
-    );
-
+    const userResult = await db.query('SELECT email, login FROM users WHERE id = $1', [userId]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = userResult.rows[0];
+    // ── Промокод, создание платежа и резерв — одной транзакцией ─────────────
+    //
+    // Код берётся под FOR UPDATE (validate с forUpdate) и держится до COMMIT:
+    // иначе два параллельных запроса с последней активацией пройдут оба.
+    //
+    // Обращение к платёжке вынесено ЗА транзакцию: сетевой вызов под открытой
+    // блокировкой держал бы и соединение из пула, и строку промокода всё
+    // время ответа шлюза.
+    let paymentId, amount, promoInfo = null;
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
 
-    // Create payment record in database
-    const paymentResult = await db.query(
-      `INSERT INTO payments (
-        user_id, plan_id, amount, currency, period, 
-        payment_provider, status, payment_type, payment_source
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING id`,
-      [userId, plan_id, amount, 'RUB', period, 'platega', 'pending', 'subscription', 'gateway']
-    );
+      amount = fullAmount;
+      let promo = null, discount = 0;
 
-    const paymentId = paymentResult.rows[0].id;
+      if (promo_code) {
+        const check = await promoService.validate(promo_code, {
+          userId, planId: plan_id, period, amount: fullAmount,
+          client, forUpdate: true, allowTypes: promoService.DISCOUNT_TYPES,
+        });
+        if (!check.ok) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: check.message, reason: check.reason });
+        }
+        promo = check.promo;
+        discount = check.discount;
+        amount = check.finalAmount;
+      }
 
-    // Create Platega payment
-    const periodLabels = {
-      monthly: 'месяц',
-      quarterly: '3 месяца',
-      yearly: 'год'
-    };
+      // Скидка может увести заказ ниже порога шлюза. Ноль обрабатывается
+      // отдельной ветвью ниже, а «больше нуля, но меньше минимума» шлюз просто
+      // отклонит — честнее сказать это сразу и предложить оплату с баланса.
+      if (amount > 0 && amount < MIN_GATEWAY_AMOUNT) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({
+          error: `Со скидкой к оплате ${amount} ₽ — это меньше минимума платёжной системы (${MIN_GATEWAY_AMOUNT} ₽). Оплатите с баланса.`,
+          reason: 'below_gateway_minimum',
+          amount,
+        });
+      }
 
-    const description = `Оплата тарифа "${plan.name}" (${periodLabels[period]})`;
+      // В payments.amount пишем сумму СО скидкой: именно её сверяет вебхук
+      // платёжки. Полная цена сохраняется в promo_code_uses.original_amount.
+      const paymentRes = await client.query(
+        `INSERT INTO payments (
+          user_id, plan_id, amount, currency, period,
+          payment_provider, status, payment_type, payment_source
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id`,
+        [userId, plan_id, amount, 'RUB', period,
+         amount === 0 ? 'promo' : 'platega', 'pending', 'subscription',
+         amount === 0 ? 'promo' : 'gateway']
+      );
+      paymentId = paymentRes.rows[0].id;
+
+      if (promo) {
+        await promoService.reserve(client, promo, {
+          userId, paymentId, discount, originalAmount: fullAmount,
+        });
+        promoInfo = { code: promo.code, discount, original_amount: fullAmount };
+      }
+
+      // Полная скидка: платёжки в этом потоке нет вообще. Подтверждаем
+      // активацию промокода здесь же и активируем подписку после COMMIT.
+      if (amount === 0) {
+        await client.query(
+          `UPDATE payments SET status = 'completed', completed_at = NOW(),
+                  payment_data = $2::jsonb
+             WHERE id = $1`,
+          [paymentId, JSON.stringify({ free_by_promo: true, promo_code: promo?.code || null })]
+        );
+        if (promo) await promoService.confirm(client, paymentId);
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    // ── Ветвь «бесплатно по промокоду» ──────────────────────────────────────
+    if (amount === 0) {
+      const paid = await db.query('SELECT * FROM payments WHERE id = $1', [paymentId]);
+      try {
+        await activateSubscription(paid.rows[0]);
+      } catch (err) {
+        console.error('[create] активация бесплатного по промокоду платежа не удалась:', err);
+        return res.status(500).json({ error: 'Промокод применён, но активация не удалась. Обратитесь в поддержку.' });
+      }
+      return res.json({
+        success: true, paymentId, free: true, amount: 0, promo: promoInfo,
+        message: 'Промокод покрыл всю стоимость — подписка активирована',
+      });
+    }
+
+    // ── Обычная оплата через шлюз ───────────────────────────────────────────
+    const description = `Оплата тарифа "${plan.name}" (${PERIOD_LABELS[period]})`;
     const payload = `${userId}|${plan_id}|${period}|${paymentId}`;
 
-    const paymentData = await createPayment(amount, 'RUB', description, payload);
+    let paymentData;
+    try {
+      paymentData = await createPayment(amount, 'RUB', description, payload);
+    } catch (err) {
+      // Платёж и резерв уже в базе. Резерв освобождаем сразу, иначе код будет
+      // занят до истечения часа; платёж помечаем failed, чтобы он не висел
+      // в списке неоплаченных у пользователя.
+      await promoService.release(db, paymentId, 'ошибка создания платежа в шлюзе').catch(() => {});
+      await db.query(`UPDATE payments SET status = 'failed' WHERE id = $1`, [paymentId]).catch(() => {});
+      throw err;
+    }
 
-    // Calculate expires_at based on Platega expiresIn (seconds) or default 30 minutes
     const expiresInMs = (paymentData.expiresIn || 1800) * 1000;
     const paymentExpiresAt = new Date(Date.now() + expiresInMs);
 
-    // Update payment record with transaction details and expiration
     await db.query(
       `UPDATE payments 
        SET provider_payment_id = $1, payment_url = $2, payment_data = $3, expires_at = $4
@@ -252,7 +191,9 @@ router.post('/create', verifyToken, verifyActive, async (req, res) => {
       paymentUrl: paymentData.redirectUrl,
       transactionId: paymentData.transactionId,
       expiresIn: paymentData.expiresIn,
-      expiresAt: paymentExpiresAt.toISOString()
+      expiresAt: paymentExpiresAt.toISOString(),
+      amount,
+      promo: promoInfo,
     });
 
   } catch (error) {
@@ -379,7 +320,7 @@ router.post('/pay-with-balance', verifyToken, verifyActive, async (req, res) => 
   try {
     await ensureWalletSchema();
 
-    const { plan_id, period } = req.body;
+    const { plan_id, period, promo_code } = req.body;
     const userId = req.userId;
 
     if (!plan_id || !period) {
@@ -390,9 +331,30 @@ router.post('/pay-with-balance', verifyToken, verifyActive, async (req, res) => 
       return res.status(400).json({ error: 'Invalid period. Must be monthly, quarterly, or yearly' });
     }
 
-    const { plan, amount } = await getPlanAndAmount(plan_id, period);
+    const { plan, amount: fullAmount } = await getPlanAndAmount(plan_id, period);
 
     await client.query('BEGIN');
+
+    // Промокод проверяем внутри той же транзакции и под FOR UPDATE — иначе
+    // два параллельных запроса с последней активацией пройдут оба.
+    // Порога шлюза здесь нет: списание с баланса идёт без платёжной системы,
+    // поэтому любая сумма, включая нулевую, допустима.
+    let amount = fullAmount, promo = null, discount = 0, promoInfo = null;
+    if (promo_code) {
+      const check = await promoService.validate(promo_code, {
+        userId, planId: plan_id, period, amount: fullAmount,
+        client, forUpdate: true, allowTypes: promoService.DISCOUNT_TYPES,
+      });
+      if (!check.ok) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: check.message, reason: check.reason });
+      }
+      promo = check.promo;
+      discount = check.discount;
+      amount = check.finalAmount;
+      promoInfo = { code: promo.code, discount, original_amount: fullAmount };
+    }
+
     const wallet = await getOrCreateWallet(client, userId);
     const balanceBefore = Number(wallet.balance || 0);
 
@@ -429,24 +391,38 @@ router.post('/pay-with-balance', verifyToken, verifyActive, async (req, res) => 
 
     const payment = paymentRes.rows[0];
 
-    const walletTxId = await addWalletTransaction(client, {
-      userId,
-      type: 'purchase',
-      direction: 'out',
-      amount,
-      currency: 'RUB',
-      balanceBefore,
-      balanceAfter,
-      referenceType: 'payment',
-      referenceId: payment.id,
-      description: `Оплата подписки ${plan.name} (${period}) с баланса`,
-      metadata: { plan_id, period, payment_id: payment.id },
-    });
+    // При полной скидке с баланса ничего не списывается — проводку на 0 ₽
+    // не создаём, она только мусорила бы в истории операций.
+    if (amount > 0) {
+      const walletTxId = await addWalletTransaction(client, {
+        userId,
+        type: 'purchase',
+        direction: 'out',
+        amount,
+        currency: 'RUB',
+        balanceBefore,
+        balanceAfter,
+        referenceType: 'payment',
+        referenceId: payment.id,
+        description: `Оплата подписки ${plan.name} (${period}) с баланса`,
+        metadata: { plan_id, period, payment_id: payment.id, promo_code: promo?.code || null },
+      });
 
-    await client.query(
-      'UPDATE payments SET wallet_transaction_id = $1 WHERE id = $2',
-      [walletTxId, payment.id]
-    );
+      await client.query(
+        'UPDATE payments SET wallet_transaction_id = $1 WHERE id = $2',
+        [walletTxId, payment.id]
+      );
+    }
+
+    // Оплата уже состоялась, поэтому резерв и подтверждение идут подряд:
+    // ждать вебхука тут нечего. Через reserve+confirm, а не вставкой applied
+    // напрямую, чтобы путь активации был один и тот же во всех потоках.
+    if (promo) {
+      await promoService.reserve(client, promo, {
+        userId, paymentId: payment.id, discount, originalAmount: fullAmount,
+      });
+      await promoService.confirm(client, payment.id);
+    }
 
     await client.query('COMMIT');
 
@@ -487,6 +463,10 @@ router.post('/pay-with-balance', verifyToken, verifyActive, async (req, res) => 
            WHERE id = $2`,
           [JSON.stringify({ activation_error: activationError.message || 'unknown' }), payment.id]
         );
+
+        // Деньги вернули — значит и промокод должен снова стать доступен,
+        // иначе человек потратил код на то, чего не получил.
+        await promoService.release(rollbackClient, payment.id, 'активация подписки не удалась');
 
         await rollbackClient.query('COMMIT');
       } catch (rollbackErr) {
@@ -605,6 +585,13 @@ router.post('/webhook', async (req, res) => {
       }
     }
 
+    // Активация промокода прошла сверх лимита — платёж подтвердился после
+    // истечения резерва. Ошибкой это не является (деньги получены), но требует
+    // разбора: в админке такие активации помечены флагом over_limit.
+    if (result.overLimitPromo) {
+      console.warn(`[Promo] платёж ${result.payment?.id} применил промокод сверх лимита — проверьте /admin/promo`);
+    }
+
     // Telegram-уведомления (юзеру + админу) — silent skip если бот выключен / нет TG-id.
     // Кладём в setImmediate чтобы webhook ответил провайдеру быстро.
     if (result.outcome === 'applied' && result.payment) {
@@ -657,6 +644,7 @@ async function processPlategaWebhook(body) {
     currency: currency || null,
   };
 
+  let overLimitPromo = false;
   const client = await pgPool.connect();
   try {
     await client.query('BEGIN');
@@ -759,10 +747,22 @@ async function processPlategaWebhook(body) {
       }
     }
 
+    // Промокод — в той же транзакции, что и смена статуса платежа.
+    // confirm лимит не проверяет намеренно: платёж мог подтвердиться после
+    // истечения резерва (статус expired → completed), и отказать в скидке
+    // уже заплатившему хуже, чем выпустить активацию сверх лимита.
+    if (targetStatus === 'completed') {
+      const promoRes = await promoService.confirm(client, payment.id);
+      if (promoRes?.overLimit) overLimitPromo = true;
+    } else if (targetStatus === 'failed' || targetStatus === 'refunded') {
+      await promoService.release(client, payment.id,
+        targetStatus === 'refunded' ? 'возврат платежа' : 'платёж не состоялся');
+    }
+
     await client.query('COMMIT');
 
     const shouldActivate = targetStatus === 'completed' && payment.payment_type !== 'topup';
-    return { outcome: 'applied', payment, activateSubscription: shouldActivate };
+    return { outcome: 'applied', payment, activateSubscription: shouldActivate, overLimitPromo };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -867,4 +867,5 @@ module.exports = router;
 // что и webhook. Своя копия логики рано или поздно разъедется с этой — а цена
 // расхождения здесь измеряется в деньгах пользователей.
 module.exports.processPlategaWebhook = processPlategaWebhook;
+// Реэкспорт для scripts/reconcile-payments.js, который берёт его отсюда.
 module.exports.ensureWalletSchema = ensureWalletSchema;

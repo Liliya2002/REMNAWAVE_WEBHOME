@@ -84,6 +84,47 @@ router.get('/', verifyToken, verifyAdmin, async (req, res) => {
 });
 
 /**
+ * GET /api/admin/stats/promo
+ * Сводка по промокодам: сколько кодов, сколько активаций и на какую сумму
+ * роздано скидок. Отдельным эндпоинтом, а не в общей статистике: страница
+ * промокодов грузит его сама, а на главной он не нужен.
+ */
+router.get('/promo', verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const { rows } = await db.query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM promo_codes)                                       AS codes_total,
+        (SELECT COUNT(*)::int FROM promo_codes WHERE is_active
+            AND (expires_at IS NULL OR expires_at > NOW()))                           AS codes_active,
+        (SELECT COUNT(*)::int FROM promo_code_uses WHERE status = 'applied')          AS uses_applied,
+        (SELECT COUNT(*)::int FROM promo_code_uses
+            WHERE status = 'reserved' AND reserved_until > NOW())                     AS uses_reserved,
+        (SELECT COUNT(*)::int FROM promo_code_uses WHERE over_limit)                  AS uses_over_limit,
+        (SELECT COALESCE(SUM(discount_amount), 0) FROM promo_code_uses
+            WHERE status = 'applied')                                                 AS discount_total,
+        (SELECT COALESCE(SUM(granted_days), 0) FROM promo_code_uses
+            WHERE status = 'applied')                                                 AS days_total,
+        (SELECT COALESCE(SUM(granted_balance), 0) FROM promo_code_uses
+            WHERE status = 'applied')                                                 AS balance_total
+    `)
+    const r = rows[0]
+    res.json({
+      codes_total: r.codes_total,
+      codes_active: r.codes_active,
+      uses_applied: r.uses_applied,
+      uses_reserved: r.uses_reserved,
+      uses_over_limit: r.uses_over_limit,
+      discount_total: Number(r.discount_total),
+      days_total: Number(r.days_total),
+      balance_total: Number(r.balance_total),
+    })
+  } catch (error) {
+    console.error('Error getting promo stats:', error)
+    res.status(500).json({ error: 'Failed to get promo statistics' })
+  }
+})
+
+/**
  * GET /api/admin/stats/chart
  * Получить данные для графиков (подписки/платежи за период)
  * Query params: period=week/month/year, metric=subscriptions/revenue

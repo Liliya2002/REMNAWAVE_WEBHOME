@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { authFetch } from '../../services/api'
 import { CreditCard, Wallet, History } from 'lucide-react'
+import PromoRedeem from '../../components/PromoRedeem'
 
 function formatDate(date) {
   try {
@@ -180,6 +181,12 @@ export default function BalanceSection() {
                   {topupLoading ? 'Создание платежа...' : 'Пополнить баланс'}
                 </button>
               </div>
+            </div>
+
+            {/* Начисления по промокоду сразу видны в балансе и истории,
+                поэтому после активации перезагружаем раздел. */}
+            <div className="mb-6">
+              <PromoRedeem onRedeemed={loadData} />
             </div>
 
             <div className="rounded-2xl border border-slate-700/60 bg-sky-50 dark:bg-slate-900/40 p-6">

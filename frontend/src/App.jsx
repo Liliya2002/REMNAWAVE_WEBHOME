@@ -43,7 +43,9 @@ import AdminBedolaga from './pages/AdminBedolaga'
 import AdminBedolagaExpiring from './pages/AdminBedolagaExpiring'
 import AdminBedolagaPromo from './pages/AdminBedolagaPromo'
 import AdminBedolagaPromoUses from './pages/AdminBedolagaPromoUses'
+import AdminBroadcasts from './pages/AdminBroadcasts'
 import AdminAiAssistant from './pages/AdminAiAssistant'
+import AdminPromo from './pages/AdminPromo'
 import AdminConfigBuilder from './pages/AdminConfigBuilder'
 import RuvdsLayout from './pages/ruvds/RuvdsLayout'
 import RuvdsServers from './pages/ruvds/RuvdsServers'
@@ -305,6 +307,7 @@ function AppShell(){
               <Route path="payments" element={<PaymentHistory />} />
               <Route path="plans" element={<AdminPlans />} />
               <Route path="referrals" element={<AdminReferrals />} />
+              <Route path="promo" element={<AdminPromo />} />
               <Route path="servers" element={<AdminServers />} />
               <Route path="vps" element={<AdminVPS />} />
               <Route path="yandex-cloud" element={<AdminYandexCloud />} />
@@ -317,6 +320,7 @@ function AppShell(){
               <Route path="ai/:section" element={<AdminAiAssistant />} />
               <Route path="bedolaga/promo" element={<AdminBedolagaPromo />} />
               <Route path="bedolaga/promo-uses" element={<AdminBedolagaPromoUses />} />
+              <Route path="bedolaga/broadcasts" element={<AdminBroadcasts />} />
               <Route path="bedolaga/:section" element={<AdminBedolaga />} />
               <Route path="ruvds" element={<RuvdsLayout />}>
                 <Route index element={<Navigate to="servers" replace />} />

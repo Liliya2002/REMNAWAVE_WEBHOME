@@ -16,6 +16,7 @@ const USER_NOTIFICATION_KEYS = [
   { key: 'user_payment_received',      label: 'Платёж получен',             hint: 'После успешной оплаты подписки или пополнения' },
   { key: 'user_referral_bonus',        label: 'Реферальный бонус',          hint: 'При начислении бонуса за приглашённого' },
   { key: 'user_traffic_blocked',       label: 'Заблокирован за трафик',     hint: 'Когда Traffic Guard заблокировал доступ' },
+  { key: 'user_promo_applied',         label: 'Промокод активирован',       hint: 'После активации кода на дни или баланс' },
 ]
 
 const ADMIN_NOTIFICATION_KEYS = [
@@ -33,6 +34,7 @@ const ADMIN_NOTIFICATION_KEYS = [
   { key: 'admin_node_disabled',        label: 'Нода RemnaWave — отключена', hint: 'Вебхук node.disabled — ноду выключили в панели' },
   { key: 'admin_node_enabled',         label: 'Нода RemnaWave — включена',  hint: 'Вебхук node.enabled, парный к отключению' },
   { key: 'admin_node_traffic',         label: 'Нода RemnaWave — трафик',    hint: 'Вебхук node.traffic_notify — достигнут порог трафика ноды' },
+  { key: 'admin_broadcast_scheduled',  label: 'Автопилот готовит рассылку', hint: 'Приходит ДО отправки — единственное окно, чтобы отменить' },
 ]
 
 const TEXT_KEYS = [
@@ -50,6 +52,7 @@ const TEMPLATE_HINTS = {
   user_payment_received:      '{amount}, {plan}',
   user_referral_bonus:        '{amount}, {balance}, {days}',
   user_traffic_blocked:       '{usedGb}, {limitGb}, {node}',
+  user_promo_applied:         '{code}, {reward}',
   admin_vps_expiring:         '{lines}, {count}',
   admin_vps_unreachable:      '{name}, {ip}, {provider}, {port}',
   admin_vps_back_online:      '{name}, {ip}, {provider}, {downtime}',
@@ -63,6 +66,7 @@ const TEMPLATE_HINTS = {
   admin_node_disabled:        '{name}, {address}, {country}',
   admin_node_enabled:         '{name}, {address}, {country}',
   admin_node_traffic:         '{name}, {country}, {used}, {limit}, {percent}',
+  admin_broadcast_scheduled:  '{id}, {target}, {recipients}, {delay}, {text}',
 }
 
 // Уведомления, чей текст генерируется кодом (группировка/спойлер) — шаблон не применяется.
@@ -77,6 +81,8 @@ const DEFAULT_TEMPLATES = {
     '✅ <b>Платёж получен</b>\n\nСумма: <b>{amount} ₽</b>\n{plan, select, _ "" other "Тариф: {plan}\n"}Спасибо! 🙌',
   user_referral_bonus:
     '🎁 <b>Бонус за реферала</b>\n\nТебе начислено: <b>{amount} ₽</b>\nТекущий баланс: <b>{balance} ₽</b>',
+  user_promo_applied:
+    '🎟 <b>Промокод активирован</b>\n\nКод: <b>{code}</b>\nНачислено: <b>{reward}</b>',
   user_traffic_blocked:
     '🚫 <b>Доступ заблокирован: превышен лимит трафика</b>\n\nЛимит: <b>{limitGb} GB</b>\nИспользовано: <b>{usedGb} GB</b>\n\nПодожди до начала следующего периода или купи дополнительный трафик.',
   admin_vps_unreachable:
@@ -104,6 +110,8 @@ const DEFAULT_TEMPLATES = {
     '⏸ <b>Нода отключена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
   admin_node_enabled:
     '▶️ <b>Нода включена</b>\n\n<b>{name}</b> ({country})\n<code>{address}</code>',
+  admin_broadcast_scheduled:
+    '🤖 <b>Автопилот готовит рассылку</b>\n\nСегмент: <b>{target}</b>\nПолучателей: <b>{recipients}</b>\nУйдёт через <b>{delay}</b> мин.\n\n{text}',
   admin_node_traffic:
     '📊 <b>Трафик ноды на пределе</b>\n\n<b>{name}</b> ({country})\nИспользовано: {used} из {limit} (порог {percent}%)',
 }
@@ -114,6 +122,7 @@ const SAMPLE_DATA = {
   user_payment_received:      { name: 'Иван', amount: '299', plan: 'Premium' },
   user_referral_bonus:        { name: 'Иван', amount: '50', balance: '150', days: '7' },
   user_traffic_blocked:       { name: 'Иван', usedGb: '52', limitGb: '50', node: 'Finland-1' },
+  user_promo_applied:         { code: 'SUMMER25', reward: '7 дн. подписки' },
   admin_vps_unreachable:      { name: '🇩🇪 Германия', ip: '45.131.214.225', provider: 'Mhost', port: '22' },
   admin_vps_back_online:      { name: '🇩🇪 Германия', ip: '45.131.214.225', provider: 'Mhost', downtime: '12 мин' },
   admin_selectel_low_balance: { account: 'Selectel основной', balance: '350', threshold: '500' },
@@ -126,6 +135,7 @@ const SAMPLE_DATA = {
   admin_node_disabled:        { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE' },
   admin_node_enabled:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE' },
   admin_node_traffic:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE', used: '900 ГБ', limit: '1.0 ТБ', percent: 90 },
+  admin_broadcast_scheduled:  { id: 7, target: 'no', recipients: '4 744', delay: 30, text: 'Добавили новый сервер в Эстонии.' },
 }
 
 // Встроенные пресеты-варианты (кроме дефолта). Пользователь может «Применить» и/или отредактировать.
@@ -140,6 +150,9 @@ const BUILTIN_PRESETS = {
   ],
   user_referral_bonus: [
     { name: 'Компактный', text: '🎁 Реферальный бонус <b>+{amount} ₽</b>. Баланс: <b>{balance} ₽</b>' },
+  ],
+  user_promo_applied: [
+    { name: 'Компактный', text: '🎟 Промокод <b>{code}</b> принят: <b>{reward}</b>' },
   ],
   user_traffic_blocked: [
     { name: 'Мягкий', text: '⚠️ <b>Лимит трафика достигнут</b>\n\nИспользовано <b>{usedGb}</b> из <b>{limitGb} GB</b>.\nДоступ приостановлен до следующего периода. Можно докупить трафик в кабинете.' },

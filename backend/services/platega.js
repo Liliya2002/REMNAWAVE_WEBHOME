@@ -19,6 +19,33 @@ const paymentSettings = require('./paymentSettings');
  * @returns {Promise<Object>} Payment data with transactionId and redirect URL
  */
 async function createPayment(amount, currency, description, payload) {
+  return createTransaction({ amount, currency, description, payload });
+}
+
+/**
+ * Создание транзакции с необязательными адресами возврата.
+ *
+ * Существовать обязана: смена тарифа (services/payment.js) и докупка трафика
+ * (routes/subscriptions.js) вызывали platega.createTransaction, которой в
+ * модуле не было — оба потока падали с TypeError, оплата картой там не
+ * работала вовсе. Сигнатура подогнана под эти вызовы: orderId, successUrl и
+ * failUrl приходят именно так.
+ *
+ * Адреса возврата поддерживаются самим API (поля return и failedUrl в теле),
+ * поэтому пер-платёжные значения имеют смысл: они ведут обратно на страницу
+ * конкретного платежа. Не переданы — берутся общие из настроек.
+ */
+async function createTransaction({
+  amount,
+  currency = 'RUB',
+  description,
+  payload,
+  orderId,
+  successUrl,
+  returnUrl,
+  failUrl,
+  failedUrl,
+}) {
   const { platega } = await paymentSettings.get();
 
   try {
@@ -36,9 +63,9 @@ async function createPayment(amount, currency, description, payload) {
         currency: currency.toUpperCase()
       },
       description: description,
-      return: platega.successUrl,
-      failedUrl: platega.failedUrl,
-      payload: payload
+      return: successUrl || returnUrl || platega.successUrl,
+      failedUrl: failUrl || failedUrl || platega.failedUrl,
+      payload: payload || orderId
     };
 
     console.log('Creating Platega payment:', requestData);
@@ -101,5 +128,6 @@ async function verifyWebhookSignature(headers) {
 
 module.exports = {
   createPayment,
+  createTransaction,
   verifyWebhookSignature
 };

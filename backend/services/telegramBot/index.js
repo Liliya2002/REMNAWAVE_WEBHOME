@@ -34,6 +34,7 @@ function buildBot(token) {
   // Команды
   bot.command('start', handlers.handleStart)
   bot.command('myid',  handlers.handleMyId)
+  bot.command('promo', handlers.handlePromo)
   bot.command('admin', handlers.handleAdminCommand)
 
   // Главное меню — InlineKeyboard под сообщением (data="menu:<action>")

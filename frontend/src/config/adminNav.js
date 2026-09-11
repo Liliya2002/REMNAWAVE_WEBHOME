@@ -6,7 +6,7 @@ import {
   Gift, Bell,
   Sparkles, FileText,
   Globe, Server, ShoppingCart, Cloud, Ticket, LifeBuoy, HardDrive, Wallet, KeyRound, Users2, CalendarClock,
-  Activity, Palette, BookOpen, TrendingUp, Shield, MessageCircle, Wrench,
+  Activity, Palette, BookOpen, TrendingUp, Shield, MessageCircle, Wrench, Send,
 } from 'lucide-react'
 
 export const GROUPS = [
@@ -28,6 +28,7 @@ export const GROUPS = [
       { to: '/admin/traffic',       Icon: TrendingUp, label: 'Трафик / Отслеживание' },
       { to: '/admin/referrals',     Icon: Gift,       label: 'Рефералы' },
       { to: '/admin/notifications', Icon: Bell,       label: 'Уведомления' },
+      { to: '/admin/promo',         Icon: Ticket,     label: 'Промокоды' },
     ],
   },
   {
@@ -73,10 +74,13 @@ export const GROUPS = [
       { to: '/admin/bedolaga/users',         Icon: Users,      label: 'Пользователи' },
       { to: '/admin/bedolaga/subscriptions', Icon: Ticket,        label: 'Подписки' },
       { to: '/admin/bedolaga/expiring',      Icon: CalendarClock, label: 'Истекающие' },
-      { to: '/admin/bedolaga/promo',         Icon: Ticket,     label: 'Промокоды' },
+      // «бота» в названии обязательно: это чужие коды стороннего бота,
+      // только для чтения. Свои промокоды — в группе «Пользователи».
+      { to: '/admin/bedolaga/promo',         Icon: Ticket,     label: 'Промокоды бота' },
       { to: '/admin/bedolaga/promo-uses',    Icon: Database,   label: 'Активации' },
       { to: '/admin/bedolaga/transactions',  Icon: CreditCard, label: 'Транзакции' },
       { to: '/admin/bedolaga/tickets',       Icon: LifeBuoy,   label: 'Тикеты' },
+      { to: '/admin/bedolaga/broadcasts',    Icon: Send,       label: 'Рассылка сообщений' },
       { to: '/admin/ai/connection',          Icon: Bot,        label: 'ИИ-ассистент' },
     ],
   },
