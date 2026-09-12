@@ -72,7 +72,7 @@ async function handleStart(ctx) {
   } catch {}
 
   // 2. Welcome с InlineKeyboard под сообщением (с поддержкой web_app)
-  await ctx.reply(text, {
+  await withIconFallback(o => ctx.reply(text, o), {
     reply_markup: buildMainMenu(settings.menu_buttons || [], settings, { isAdmin: !!user.is_admin }),
     parse_mode: 'HTML',
   })
@@ -216,6 +216,49 @@ async function handleMyId(ctx) {
     lines.push(`<i>Вставь этот id в /admin/telegram → Админ-уведомления → Admin Chat ID. Бот должен оставаться в группе чтобы отправлять уведомления.</i>`)
   }
 
+  return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' })
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// /iconid — узнать ID кастомных эмодзи для иконок на кнопках
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Иконка кнопки задаётся не картинкой и не именем, а числовым ID кастомного
+ * эмодзи. Взять его неоткуда, кроме как из сообщения: Telegram присылает ID в
+ * сущностях (entities) того сообщения, где эмодзи использован. Поэтому —
+ * отправь боту эмодзи, получи ID, вставь в настройки кнопки.
+ *
+ * Только для админов: команда ничего не меняет, но и посторонним в ней делать
+ * нечего.
+ */
+async function handleIconId(ctx) {
+  const user = await getUserByTg(ctx.from?.id)
+  if (!user?.is_admin) return
+
+  const msg = ctx.message
+  const entities = [...(msg?.entities || []), ...(msg?.caption_entities || [])]
+  const custom = entities.filter(e => e.type === 'custom_emoji' && e.custom_emoji_id)
+
+  if (!custom.length) {
+    return ctx.reply([
+      '🎨 <b>ID иконок для кнопок меню</b>', '',
+      'Отправь мне сообщение с кастомными эмодзи — пришлю их ID.',
+      'Команду можно отправить и одним сообщением вместе с эмодзи:',
+      '<code>/iconid</code> и дальше нужные значки.', '',
+      '<i>Кастомные эмодзи — те, что из наборов, доступных с Telegram Premium.',
+      'Обычные эмодзи с клавиатуры ID не имеют и иконкой на кнопке быть не могут.</i>',
+    ].join('\n'), { parse_mode: 'HTML' })
+  }
+
+  const text = String(msg.text || msg.caption || '')
+  const lines = ['🎨 <b>ID найденных иконок</b>', '']
+  for (const e of custom) {
+    // offset/length в UTF-16, поэтому режем по коду-единицам, а не по символам.
+    const glyph = text.slice(e.offset, e.offset + e.length) || '(значок)'
+    lines.push(`${glyph} → <code>${escapeHtml(e.custom_emoji_id)}</code>`)
+  }
+  lines.push('', '<i>Вставьте ID в поле «Иконка» нужной кнопки: админка → Telegram-бот → Кнопки меню.</i>')
   return ctx.reply(lines.join('\n'), { parse_mode: 'HTML' })
 }
 
@@ -421,6 +464,9 @@ function buildExternalUrl(action, settings) {
  * иначе пары по 2.
  */
 function buildMainMenu(buttons, settings = {}, { isAdmin = false } = {}) {
+  const style = require('./buttonStyle')
+  // false только после отказа Telegram — до первой отправки считаем, что можно.
+  const iconsOk = settings.button_icons_ok !== false
   const enabled = (buttons || []).filter(b => b && b.enabled !== false)
   enabled.sort((a, b) => (a.order || 0) - (b.order || 0))
   if (enabled.length === 0 && !isAdmin) return undefined
@@ -447,6 +493,10 @@ function buildMainMenu(buttons, settings = {}, { isAdmin = false } = {}) {
     else {
       btn.callback_data = `menu:${action}`
     }
+
+    // Цвет и иконка. По умолчанию цвет только у главного действия, остальные
+    // кнопки прозрачные: полутонов у API нет, поэтому «легче» = красить меньше.
+    style.decorate(btn, b, { iconsOk })
 
     if (b.wide) {
       if (pairBuf.length > 0) { rows.push(pairBuf); pairBuf = [] }
@@ -499,14 +549,45 @@ async function sendOrEdit(ctx, text, opts = {}) {
   const isCallback = !!ctx.callbackQuery
   if (isCallback) {
     try {
-      return await ctx.editMessageText(text, opts)
+      return await withIconFallback(o => ctx.editMessageText(text, o), opts)
     } catch (err) {
       // «Bad Request: message is not modified» / «message can't be edited» —
       // fallback на отправку нового сообщения.
       console.warn('[TG bot] editMessageText fallback:', err.description || err.message)
     }
   }
-  return ctx.reply(text, opts)
+  return withIconFallback(o => ctx.reply(text, o), opts)
+}
+
+/**
+ * Отправка с откатом, если Telegram не принял иконки кнопок.
+ *
+ * Иконки (Bot API 9.4) требуют Premium у владельца бота либо юзернеймов с
+ * Fragment. Условие может перестать выполняться в любой момент — подписка
+ * заканчивается, — и тогда КАЖДАЯ отправка меню падала бы целиком: человек
+ * увидел бы не «меню без иконок», а вообще ничего. Поэтому при отказе снимаем
+ * иконки, повторяем один раз и запоминаем, чтобы не упираться в то же самое
+ * при следующем нажатии.
+ *
+ * Повтор здесь безопасен: первая попытка гарантированно ничего не отправила —
+ * Telegram отклонил запрос целиком.
+ */
+async function withIconFallback(send, opts = {}) {
+  const style = require('./buttonStyle')
+  try {
+    return await send(opts)
+  } catch (err) {
+    if (!style.isIconRejection(err) || !style.hasIcons(opts.reply_markup)) throw err
+
+    console.warn('[33m[TG bot] Telegram отклонил иконки кнопок — отправляю без них. ' +
+      'Нужен Telegram Premium у владельца бота или юзернеймы с Fragment. ' +
+      (err.description || err.message) + '[0m')
+
+    await db.query('UPDATE telegram_settings SET button_icons_ok = false WHERE id = 1')
+      .catch(e => console.warn('[TG bot] Флаг иконок не записался:', e.message))
+
+    return send({ ...opts, reply_markup: style.stripIcons(opts.reply_markup) })
+  }
 }
 
 /**
@@ -1129,6 +1210,7 @@ module.exports = {
   handleSupport,
   buildMainMenu,
   sendOrEdit,
+  handleIconId,
   renderTemplate,
   REMOVE_REPLY_KEYBOARD,
   // Используется также авторизацией Mini App (POST /auth/telegram/webapp),

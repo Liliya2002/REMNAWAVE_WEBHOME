@@ -950,16 +950,43 @@ function ButtonsTab({ settings, setField }) {
 
   return (
     <div className="space-y-3">
-      <Card icon={<LayoutGrid className="w-4 h-4 text-blue-300" />} title="Главное меню бота" subtitle="ReplyKeyboard внизу чата при /start">
+      <Card icon={<LayoutGrid className="w-4 h-4 text-blue-300" />} title="Главное меню бота" subtitle="Кнопки под приветствием при /start">
         <p className="text-[11px] text-slate-500 mb-3 flex items-start gap-1">
           <Info className="w-3 h-3 mt-0.5 shrink-0" />
-          Действие определяется по первому emoji. Оставляй emoji в начале лейбла:{' '}
-          <span className="text-cyan-300 font-mono">🌐</span> — веб-панель,{' '}
-          <span className="text-cyan-300 font-mono">👤</span> — кабинет,{' '}
-          <span className="text-cyan-300 font-mono">🛒</span> — покупка,{' '}
-          <span className="text-cyan-300 font-mono">👥</span> — рефералы,{' '}
-          <span className="text-cyan-300 font-mono">📋</span> — оферта.
+          <span>
+            Действие берётся из поля <span className="text-cyan-300 font-mono">действие</span> справа,
+            а не из эмодзи в подписи — эмодзи можно менять свободно.
+          </span>
         </p>
+
+        <div className="text-[11px] text-slate-500 mb-3 p-2.5 rounded-lg bg-slate-950/40 border border-slate-700/40 space-y-1">
+          <div>
+            <b className="text-slate-300">Цвет.</b> Telegram даёт ровно три цвета и прозрачную кнопку —
+            полутонов, осветления и прозрачности у цветных нет. Меню выглядит легче, когда цветом
+            выделено одно действие, а остальные прозрачные.
+          </div>
+          <div>
+            <b className="text-slate-300">Иконка.</b> Числовой ID кастомного эмодзи. Узнать его:
+            отправьте боту <span className="text-cyan-300 font-mono">/iconid</span> вместе с нужными
+            значками — он пришлёт ID. Когда иконка задана, эмодзи из подписи убирается автоматически,
+            чтобы не было двух значков подряд. Работает только при Telegram Premium у владельца бота;
+            если Telegram откажет, меню уйдёт без иконок, а не сломается.
+          </div>
+        </div>
+
+        {settings.button_icons_ok === false && (
+          <div className="mb-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/40 text-[11px] text-amber-200 flex items-start gap-2">
+            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              Telegram отклонил иконки — сейчас меню уходит без них. Обычно это значит, что у
+              владельца бота нет активного Telegram Premium.
+              <button onClick={() => setField('button_icons_ok', null)}
+                className="ml-2 px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/50 text-amber-100 hover:bg-amber-500/30">
+                Попробовать снова
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-2">
           {sorted.map((b, i) => (
@@ -981,10 +1008,34 @@ function ButtonsTab({ settings, setField }) {
                 className="w-4 h-4 accent-emerald-500"
                 title="Показывать в меню"
               />
-              <input autoComplete="off" value={b.label || ''} onChange={e => update(i, { label: e.target.value })}
-                placeholder="🌐 Лейбл кнопки"
-                className="flex-1 px-3 py-1.5 bg-slate-900/60 border border-slate-700 rounded text-white text-sm focus:border-blue-500 focus:outline-none" />
-              <span className="text-[10px] text-slate-500 font-mono w-12 text-right">{b.action || '—'}</span>
+              <div className="flex-1 min-w-0 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <input autoComplete="off" value={b.label || ''} onChange={e => update(i, { label: e.target.value })}
+                    placeholder="🌐 Подпись кнопки"
+                    className="flex-1 min-w-0 px-3 py-1.5 bg-slate-900/60 border border-slate-700 rounded text-white text-sm focus:border-blue-500 focus:outline-none" />
+                  <span className="text-[10px] text-slate-500 font-mono shrink-0">{b.action || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <select value={b.style || ''} onChange={e => update(i, { style: e.target.value || undefined })}
+                    title="Цвет кнопки"
+                    className="px-2 py-1 bg-slate-900/60 border border-slate-700 rounded text-slate-200 text-xs focus:border-blue-500 focus:outline-none">
+                    <option value="">по умолчанию</option>
+                    <option value="none">прозрачная</option>
+                    <option value="primary">синяя — главное действие</option>
+                    <option value="success">зелёная — покупка</option>
+                    <option value="danger">красная — отмена</option>
+                  </select>
+                  <input autoComplete="off" value={b.icon || ''} onChange={e => update(i, { icon: e.target.value.trim() || undefined })}
+                    placeholder="ID иконки — /iconid в боте"
+                    className="flex-1 min-w-[160px] px-2 py-1 bg-slate-900/60 border border-slate-700 rounded text-white text-xs font-mono focus:border-blue-500 focus:outline-none" />
+                  <label className="flex items-center gap-1 text-[11px] text-slate-400 shrink-0" title="Занимает всю строку">
+                    <input autoComplete="off" type="checkbox" checked={!!b.wide}
+                      onChange={e => update(i, { wide: e.target.checked })}
+                      className="w-3.5 h-3.5 accent-blue-500" />
+                    широкая
+                  </label>
+                </div>
+              </div>
             </div>
           ))}
         </div>

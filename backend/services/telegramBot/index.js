@@ -34,6 +34,8 @@ function buildBot(token) {
   // Команды
   bot.command('start', handlers.handleStart)
   bot.command('myid',  handlers.handleMyId)
+  // Узнать ID кастомных эмодзи для иконок на кнопках меню (только админам)
+  bot.command('iconid', handlers.handleIconId)
   bot.command('promo', handlers.handlePromo)
   bot.command('admin', handlers.handleAdminCommand)
 

@@ -74,6 +74,10 @@ async function updateSettings(patch) {
     'admin_chat_id', 'notifications_enabled', 'texts', 'texts_presets', 'menu_buttons',
     'web_app_url',
     'oidc_enabled', 'oidc_client_id', 'oidc_redirect_uri',
+    // Ставится кодом в false, когда Telegram отклонил иконки кнопок. Менять из
+    // админки нужно, чтобы после возврата Premium можно было попробовать снова:
+    // иначе флаг остался бы false навсегда и иконки не вернулись бы никогда.
+    'button_icons_ok',
   ]
   const sensitiveFields = ['bot_token', 'webhook_secret', 'oidc_client_secret']
 
