@@ -2,6 +2,7 @@ const db = require('../db');
 const remnwaveService = require('./remnwave');
 const referralService = require('./referral');
 const { notifyPaymentSuccess } = require('./notifications');
+const provisioning = require('./provisioning');
 
 /**
  * Activate subscription after successful payment
@@ -96,6 +97,8 @@ async function activateSubscription(payment) {
     const squadUuids = plan.squad_uuids || [];
 
     let subscriptionId;
+    // Текст сбоя выдачи, если он был. null — значит доступ выдан.
+    let provisionFailure = null;
 
     if (existingRemnwaveUuid) {
       // ====== СЦЕНАРИЙ 1: Пользователь уже есть в Remnwave (был пробник или предыдущая подписка) ======
@@ -122,6 +125,7 @@ async function activateSubscription(payment) {
       // Обновляем пользователя в Remnwave: expire, трафик, squads, статус ACTIVE,
       // metadata (email/telegram) и лимит устройств
       let updatedRemnwaveUser = null;
+      let updateError = null;
       try {
         updatedRemnwaveUser = await remnwaveService.updateRemnwaveUser(existingRemnwaveUuid, {
           expireAt: newExpiresAt,
@@ -133,11 +137,16 @@ async function activateSubscription(payment) {
         });
         console.log(`Remnwave user ${existingRemnwaveUuid} updated: expires=${newExpiresAt.toISOString()}, traffic=${trafficLimitBytes}`);
       } catch (err) {
+        updateError = err.message;
         console.error('Failed to update Remnwave user:', err.message);
-        // Продолжаем — обновим хотя бы БД
+        // Продолжаем — обновим хотя бы БД, а выдачу поставим в очередь на повтор.
+        // Молча пропускать нельзя: человек оплатил продление, а срок и трафик
+        // в панели остались прежними — доступа он не получил.
       }
 
       // Данные для записи в БД: приоритет — свежий ответ Remnwave, затем lookup, затем существующая запись
+      if (updateError) provisionFailure = `Не удалось обновить пользователя в панели: ${updateError}`;
+
       const rmSrc = updatedRemnwaveUser || remnwaveLookup || {};
       const remnwaveUsername = rmSrc.username || existingSub?.remnwave_username || `userweb_${payment.user_id}`;
       let subscriptionUrl = rmSrc.subscriptionUrl || existingSub?.subscription_url || null;
@@ -225,6 +234,7 @@ async function activateSubscription(payment) {
           } catch (lookupErr) {
             console.error('Remnwave fallback lookup/update failed:', lookupErr.message);
           }
+          if (!remnwaveUser) provisionFailure = `Не удалось создать пользователя в панели: ${err.message}`;
         }
 
         if (remnwaveUser) {
@@ -252,7 +262,37 @@ async function activateSubscription(payment) {
          expiresAt, plan.traffic_gb || 0, squadUuids[0] || null]
       );
       subscriptionId = subResult.rows[0].id;
-      console.log(`Created new subscription ${subscriptionId} with new Remnwave user`);
+      console.log(`Created new subscription ${subscriptionId}` +
+        (remnwaveUuid ? ` with new Remnwave user ${remnwaveUuid}` : ' WITHOUT Remnwave user'));
+    }
+
+    // ====== Доступ в панели выдан? ======
+    // Единственная точка, где это проверяется. Раньше её не было вовсе:
+    // подписка писалась в базу независимо от того, ответила ли панель, и
+    // человек видел активную подписку без доступа, а мы об этом не узнавали.
+    const checkRow = await db.query(
+      'SELECT remnwave_user_uuid FROM subscriptions WHERE id = $1',
+      [subscriptionId]
+    );
+    const provisioned = !!checkRow.rows[0]?.remnwave_user_uuid && !provisionFailure;
+
+    if (provisioned) {
+      await db.query(
+        `UPDATE subscriptions
+            SET provisioning_status = 'ok', provisioning_error = NULL,
+                provisioning_next_try_at = NULL, provisioned_at = NOW()
+          WHERE id = $1`,
+        [subscriptionId]
+      );
+    } else {
+      const reason = provisionFailure
+        || (squadUuids.length === 0
+              ? `У тарифа «${plan.name}» не задана серверная группа — доступ выдать не из чего`
+              : 'Панель RemnaWave не создала пользователя');
+      await provisioning.queueAndAlert(subscriptionId, reason, {
+        userId: payment.user_id, planName: plan.name,
+      });
+      console.warn(`Подписка ${subscriptionId}: доступ НЕ выдан (${reason}). Поставлена в очередь на повтор.`);
     }
 
     // Обновляем статус платежа

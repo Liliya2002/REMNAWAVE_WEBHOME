@@ -212,7 +212,8 @@ router.get('/my', verifyToken, verifyActive, async (req, res) => {
 
     const result = await pool.query(
       `SELECT id, plan_name, plan_id, remnwave_username, remnwave_user_uuid, subscription_url, expires_at,
-              traffic_limit_gb, traffic_used_gb, squad_uuid, is_active, created_at
+              traffic_limit_gb, traffic_used_gb, squad_uuid, is_active, created_at,
+              provisioning_status, provisioning_attempts
        FROM subscriptions
        WHERE user_id = $1
        ORDER BY created_at DESC`,

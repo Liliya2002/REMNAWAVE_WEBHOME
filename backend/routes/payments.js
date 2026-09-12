@@ -581,7 +581,16 @@ router.post('/webhook', async (req, res) => {
           await activateSubscription(result.payment);
         }
       } catch (err) {
+        // Активация упала целиком — подписки нет вообще, ни строки в базе, ни
+        // очереди повторов (её ставит сама активация, а до неё не дошло).
+        // Типичный случай: у платежа обнулился plan_id, потому что тариф
+        // удалили, пока человек оплачивал — внешний ключ стоит ON DELETE SET
+        // NULL. Деньги при этом уже приняты и платёж помечен completed.
+        // Раньше это оставалось одной строкой в логе; теперь зовём человека.
         console.error('Failed to activate subscription after payment:', err);
+        require('../services/provisioning')
+          .alertActivationFailed(result.payment, err)
+          .catch(e => console.error('Не удалось позвать админа:', e.message));
       }
     }
 

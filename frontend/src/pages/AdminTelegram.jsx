@@ -35,6 +35,9 @@ const ADMIN_NOTIFICATION_KEYS = [
   { key: 'admin_node_enabled',         label: 'Нода RemnaWave — включена',  hint: 'Вебхук node.enabled, парный к отключению' },
   { key: 'admin_node_traffic',         label: 'Нода RemnaWave — трафик',    hint: 'Вебхук node.traffic_notify — достигнут порог трафика ноды' },
   { key: 'admin_broadcast_scheduled',  label: 'Автопилот готовит рассылку', hint: 'Приходит ДО отправки — единственное окно, чтобы отменить' },
+  { key: 'admin_provisioning_failed',  label: 'Оплачено, но доступ не выдан', hint: 'Деньги взяты, а пользователя в RemnaWave создать не удалось. Выключать не стоит: иначе о проблеме узнаете от самого клиента' },
+  { key: 'admin_provisioning_fixed',   label: 'Доступ выдан после повтора',  hint: 'Парное к предыдущему — закрывает вопрос, чтобы не разбираться вручную' },
+  { key: 'admin_activation_failed',    label: 'Платёж принят, подписки нет', hint: 'Активация упала с ошибкой — подписка не создалась вообще. Само не починится, нужно выдать руками' },
 ]
 
 const TEXT_KEYS = [
@@ -67,6 +70,9 @@ const TEMPLATE_HINTS = {
   admin_node_enabled:         '{name}, {address}, {country}',
   admin_node_traffic:         '{name}, {country}, {used}, {limit}, {percent}',
   admin_broadcast_scheduled:  '{id}, {target}, {recipients}, {delay}, {text}',
+  admin_provisioning_failed:  '{sub_id}, {login}, {plan}, {error}, {attempts}, {max}, {next}',
+  admin_provisioning_fixed:   '{sub_id}, {login}, {plan}, {attempts}',
+  admin_activation_failed:    '{payment_id}, {login}, {amount}, {plan_id}, {error}',
 }
 
 // Уведомления, чей текст генерируется кодом (группировка/спойлер) — шаблон не применяется.
@@ -114,6 +120,12 @@ const DEFAULT_TEMPLATES = {
     '🤖 <b>Автопилот готовит рассылку</b>\n\nСегмент: <b>{target}</b>\nПолучателей: <b>{recipients}</b>\nУйдёт через <b>{delay}</b> мин.\n\n{text}',
   admin_node_traffic:
     '📊 <b>Трафик ноды на пределе</b>\n\n<b>{name}</b> ({country})\nИспользовано: {used} из {limit} (порог {percent}%)',
+  admin_provisioning_failed:
+    '⛔️ <b>Оплачено, но доступ не выдан</b>\n\nПодписка: <b>#{sub_id}</b>\nЮзер: <b>{login}</b>\nТариф: {plan}\nПопытка {attempts} из {max}\n\nПричина: {error}\n\n{next}',
+  admin_provisioning_fixed:
+    '✅ <b>Доступ всё-таки выдан</b>\n\nПодписка <b>#{sub_id}</b> ({login}, {plan}) — получилось с попытки {attempts}.\nВмешиваться не нужно.',
+  admin_activation_failed:
+    '🚨 <b>Платёж принят, подписка НЕ создана</b>\n\nПлатёж: <b>#{payment_id}</b>\nЮзер: <b>{login}</b>\nСумма: {amount} ₽\nТариф: {plan_id}\n\nОшибка: {error}\n\nАвтоматически это не починится — выдайте подписку вручную.',
 }
 
 // Демо-данные для предпросмотра/теста по каждому ключу.
@@ -136,6 +148,9 @@ const SAMPLE_DATA = {
   admin_node_enabled:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE' },
   admin_node_traffic:         { name: 'DE-Frankfurt-01', address: '1.2.3.4:443', country: 'DE', used: '900 ГБ', limit: '1.0 ТБ', percent: 90 },
   admin_broadcast_scheduled:  { id: 7, target: 'no', recipients: '4 744', delay: 30, text: 'Добавили новый сервер в Эстонии.' },
+  admin_provisioning_failed:  { sub_id: 142, login: 'ivan', plan: 'Премиум VPN', error: 'сторона не ответила вовремя (ETIMEDOUT)', attempts: 1, max: 10, next: 'следующая попытка скоро' },
+  admin_provisioning_fixed:   { sub_id: 142, login: 'ivan', plan: 'Премиум VPN', attempts: 3 },
+  admin_activation_failed:    { payment_id: 63, login: 'ivan', amount: 299, plan_id: 'тариф удалён', error: 'Plan not found' },
 }
 
 // Встроенные пресеты-варианты (кроме дефолта). Пользователь может «Применить» и/или отредактировать.

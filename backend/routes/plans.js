@@ -90,6 +90,16 @@ router.post('/', verifyToken, verifyAdmin, async (req, res) => {
     if (!is_trial && !price_monthly && !price_quarterly && !price_yearly) {
       return res.status(400).json({ error: 'Укажите хотя бы одну цену для платного тарифа' })
     }
+    // Без серверной группы тариф бесполезен: выдать по нему доступ не из чего.
+    // Раньше это не проверялось, и каждая покупка такого тарифа давала подписку
+    // с is_active = true и без доступа в панели — человек платил впустую.
+    // Новый тариф создаётся сразу активным (is_active = true в INSERT ниже),
+    // то есть его можно купить с первой секунды — группа обязательна.
+    if (!Array.isArray(squad_uuids) || squad_uuids.length === 0) {
+      return res.status(400).json({
+        error: 'Выберите серверную группу: без неё по тарифу нельзя выдать доступ в панели.'
+      })
+    }
 
     const result = await pool.query(
       `INSERT INTO plans (name, description, is_trial, traffic_gb, price_monthly, price_quarterly,
@@ -149,8 +159,25 @@ router.put('/:id', verifyToken, verifyAdmin, async (req, res) => {
     } = req.body
 
     // Сохраняем старое состояние для diff (определить нужен ли RemnaWave sync)
-    const oldQ = await pool.query('SELECT squad_uuids, traffic_gb, hwid_device_limit FROM plans WHERE id=$1', [id])
+    const oldQ = await pool.query('SELECT squad_uuids, traffic_gb, hwid_device_limit, is_active FROM plans WHERE id=$1', [id])
     const oldPlan = oldQ.rows[0] || null
+
+    // Активный тариф без серверной группы купить можно, а доступ по нему выдать
+    // не из чего — покупатель останется с активной подписью и без VPN.
+    // COALESCE в UPDATE ниже означает, что не переданное поле не меняется,
+    // поэтому итоговые значения считаем так же.
+    const willBeActive = is_active === undefined || is_active === null
+      ? (oldPlan ? oldPlan.is_active : true)
+      : is_active
+    const willHaveSquads = squad_uuids === undefined || squad_uuids === null
+      ? ((oldPlan?.squad_uuids || []).length > 0)
+      : (Array.isArray(squad_uuids) && squad_uuids.length > 0)
+    if (willBeActive && !willHaveSquads) {
+      return res.status(400).json({
+        error: 'Выберите серверную группу: без неё по тарифу нельзя выдать доступ в панели. ' +
+               'Либо снимите галочку «Активен», чтобы тариф нельзя было купить.'
+      })
+    }
 
     const result = await pool.query(
       `UPDATE plans SET

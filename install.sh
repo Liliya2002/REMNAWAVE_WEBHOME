@@ -550,6 +550,35 @@ phase_b_install_deps() {
   ok "docker compose: $(docker compose version | head -1)"
 
   systemctl enable --now docker >/dev/null 2>&1 || true
+
+  # Предел на логи для ВСЕХ контейнеров хоста, включая запущенные мимо compose.
+  # В compose-файле лимит тоже есть, но он не покрывает разовые `docker run`,
+  # а место кончается одинаково от любых.
+  #
+  # Существующий daemon.json не трогаем: там могут быть чужие настройки, и
+  # перезапуск демона уронил бы работающие контейнеры без предупреждения.
+  if [[ ! -f /etc/docker/daemon.json ]]; then
+    log "Ограничиваю размер логов Docker (10 МБ × 3 файла на контейнер)…"
+    mkdir -p /etc/docker
+    cat > /etc/docker/daemon.json <<'DOCKERJSON'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+DOCKERJSON
+    systemctl restart docker >/dev/null 2>&1 || true
+    ok "Логи Docker ограничены"
+  else
+    if grep -q 'max-size' /etc/docker/daemon.json 2>/dev/null; then
+      ok "Ограничение логов Docker уже настроено"
+    else
+      warn "В /etc/docker/daemon.json нет лимита на логи — они будут расти без предела."
+      warn "Добавьте вручную: \"log-opts\": { \"max-size\": \"10m\", \"max-file\": \"3\" }"
+    fi
+  fi
 }
 
 # ─── B.2 — git clone / обновление ──────────────────────────────────────────────

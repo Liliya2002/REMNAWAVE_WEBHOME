@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Gift, Zap, MailOpen, Ban, Clipboard, ClipboardCheck, Link2, Smartphone, ArrowUpDown } from 'lucide-react'
+import { Gift, Zap, MailOpen, Ban, Clipboard, ClipboardCheck, Link2, Smartphone, ArrowUpDown, Hourglass } from 'lucide-react'
 import { authFetch } from '../../services/api'
 import TrafficChart from '../../components/TrafficChart'
 import ChangePlanModal from '../../components/ChangePlanModal'
@@ -95,9 +95,34 @@ export default function SubscriptionsSection({ subscriptions, copySuccess, setCo
             ? Math.ceil((new Date(sub.expires_at) - new Date()) / (1000 * 60 * 60 * 24))
             : null
           const isExpired = !sub.is_active && daysLeft && daysLeft <= 0
-          
+          // Оплачено, но доступ в панели ещё не выдан. Молчать нельзя: без
+          // объяснения человек видит активную подписку, к которой невозможно
+          // подключиться, и решает, что его обманули.
+          const provisioning = sub.provisioning_status && sub.provisioning_status !== 'ok'
+          const provisionFailed = sub.provisioning_status === 'failed'
+
           return (
             <div key={sub.id} className="space-y-4">
+              {provisioning && (
+                <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+                  provisionFailed
+                    ? 'bg-red-500/10 border-red-500/50'
+                    : 'bg-amber-500/10 border-amber-500/50'
+                }`}>
+                  <Hourglass className={`w-6 h-6 shrink-0 ${provisionFailed ? 'text-red-500' : 'text-amber-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-sm font-bold ${provisionFailed ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                      {provisionFailed ? 'Не удалось выдать доступ' : 'Готовим доступ'}
+                    </div>
+                    <div className={`text-xs mt-0.5 ${provisionFailed ? 'text-red-700 dark:text-red-300/80' : 'text-amber-700 dark:text-amber-300/80'}`}>
+                      {provisionFailed
+                        ? 'Оплата прошла, подписка за вами. Мы уже знаем о проблеме и разбираемся — напишите в поддержку, если ждёте дольше суток.'
+                        : 'Оплата прошла, настраиваем подключение. Обычно занимает пару минут — страницу можно обновить чуть позже.'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Статус истечения подписки */}
               {isExpired && (
                 <div className="p-4 bg-red-500/10 border border-red-500/50 rounded-xl flex items-center gap-3">

@@ -604,10 +604,75 @@ router.get('/accounts/:id/revenue', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+/**
+ * Карточка тикета с полной перепиской.
+ *
+ * Помечаем реплики, отправленные ассистентом: в API бота и оператор, и
+ * ассистент приходят одинаково (is_from_admin), и без пометки невозможно
+ * понять, кто на самом деле отвечал клиенту. Сверяем по тексту — свои
+ * отправки лежат в ai_ticket_replies.
+ *
+ * Заодно отмечаем, какие пары уже попали в базу знаний, чтобы не добавлять
+ * одно и то же дважды.
+ */
 router.get('/accounts/:id/tickets/:ticketId', async (req, res) => {
   try {
     const a = await loadAccount(req.params.id); if (!a) return res.status(404).json({ error: 'Аккаунт не найден' })
-    relay(res, await bedolaga.getTicket(a, req.params.ticketId))
+    const r = await bedolaga.getTicket(a, req.params.ticketId)
+    if (!r.ok) return res.status(502).json({ error: r.error })
+
+    const ticket = r.data || {}
+    const msgs = Array.isArray(ticket.messages) ? ticket.messages : []
+    const norm = t => String(t || '').replace(/\s+/g, ' ').trim().toLowerCase()
+
+    const mine = await db.query(
+      `SELECT reply_text, action, created_at FROM ai_ticket_replies
+        WHERE account_id = $1 AND ticket_id = $2 AND reply_text IS NOT NULL`,
+      [a.id, req.params.ticketId]
+    )
+    const ownTexts = new Set(mine.rows.map(x => norm(x.reply_text)))
+
+    const knowledge = require('../services/aiKnowledge')
+    const known = await db.query(
+      `SELECT fingerprint, is_active, skip_reason FROM ai_knowledge
+        WHERE account_id = $1 AND ticket_id = $2`,
+      [a.id, req.params.ticketId]
+    )
+    const byFp = new Map(known.rows.map(x => [x.fingerprint, x]))
+
+    // Для каждой реплики поддержки собираем вопрос, на который она отвечает, —
+    // ровно так же, как это делает сборщик базы знаний, чтобы кнопка
+    // «в базу знаний» добавляла ту же пару, что добавил бы он.
+    const out = msgs.map((m, i) => {
+      const sentByAi = !!m.is_from_admin && ownTexts.has(norm(m.message_text))
+      let pair = null
+      if (m.is_from_admin && !sentByAi) {
+        const q = []
+        for (let j = i - 1; j >= 0; j--) {
+          if (msgs[j].is_from_admin) {
+            if (ownTexts.has(norm(msgs[j].message_text))) continue
+            break
+          }
+          q.unshift(String(msgs[j].message_text || '').trim())
+        }
+        const question = q.filter(Boolean).join(' ')
+        if (question) {
+          const fp = knowledge.fingerprintOf(question, m.message_text)
+          const hit = byFp.get(fp)
+          pair = {
+            question,
+            answer: String(m.message_text || ''),
+            in_knowledge: !!hit,
+            knowledge_active: hit ? hit.is_active : null,
+            skip_reason: hit ? hit.skip_reason : null,
+            check: knowledge.looksUseful(question, m.message_text),
+          }
+        }
+      }
+      return { ...m, sent_by_ai: sentByAi, pair }
+    })
+
+    res.json({ ...ticket, messages: out, ai_replies: mine.rows.length })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 

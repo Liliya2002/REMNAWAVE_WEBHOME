@@ -8,6 +8,7 @@
 const db = require('../db')
 const bedolaga = require('../services/bedolaga')
 const ai = require('../services/aiAssistant')
+const knowledge = require('../services/aiKnowledge')
 
 const TAG = '[AI-tickets cron]'
 
@@ -117,9 +118,20 @@ async function handleTicket(cfg, templates, account, ticket) {
   }
 
   // ── Слой 2: модель ─────────────────────────────────────────────────────────
+  //
+  // Перед запросом подбираем из базы знаний примеры, близкие к вопросу
+  // клиента: как на такое отвечали живые операторы. Не нашлось — идём без них,
+  // поведение то же, что было раньше.
+  let examples = []
+  try {
+    examples = await knowledge.findRelevant(account.id, clientText, { limit: 4 })
+  } catch (e) {
+    console.warn(`${TAG} подбор примеров не удался: ${e.message}`)
+  }
+
   let res
   try {
-    res = await ai.askModel(cfg, templates, ticket)
+    res = await ai.askModel(cfg, templates, ticket, examples)
   } catch (e) {
     await log({ ...base, action: 'error', escalation_reason: 'api_error', error: e.message?.slice(0, 500) })
     return `#${ticket.id} ошибка API: ${e.message}`
@@ -170,6 +182,9 @@ async function handleTicket(cfg, templates, account, ticket) {
                 reply_text: d.reply, error: sent.error, ...usage })
     return `#${ticket.id} НЕ отправлено: ${sent.error}`
   }
+
+  // Примеры пригодились — отмечаем, чтобы было видно, какие реально работают.
+  if (examples.length) knowledge.markUsed(examples.map(e => e.id)).catch(() => {})
 
   // Закрываем только когда сошлось всё сразу
   let closed = false

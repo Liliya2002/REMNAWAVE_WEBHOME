@@ -161,6 +161,119 @@ router.delete('/templates/:id', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
+// ─── База знаний ──────────────────────────────────────────────────────────────
+//
+// Сюда ассистент складывает пары «вопрос клиента → ответ живого оператора» и
+// берёт из них примеры перед каждым тикетом. Правки оператора поверх ответа
+// ассистента весят больше прочих: это прямое указание, где он ошибся.
+
+const knowledge = require('../services/aiKnowledge')
+
+/** Список с фильтрами и поиском. */
+router.get('/knowledge', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
+    const offset = Math.max(Number(req.query.offset) || 0, 0)
+    const where = []
+    const params = []
+    if (req.query.source) { params.push(req.query.source); where.push(`source = $${params.length}`) }
+    if (req.query.active === '1') where.push('is_active = true')
+    if (req.query.active === '0') where.push('is_active = false')
+    if (req.query.q) {
+      params.push(`%${String(req.query.q).slice(0, 100)}%`)
+      where.push(`(question ILIKE $${params.length} OR answer ILIKE $${params.length})`)
+    }
+    const w = where.length ? 'WHERE ' + where.join(' AND ') : ''
+
+    const [rows, total] = await Promise.all([
+      db.query(`SELECT id, account_id, source, ticket_id, question, answer, category,
+                       weight, is_active, used_count, last_used_at, created_at,
+                       skip_reason, reviewed_by_admin
+                  FROM ai_knowledge ${w}
+                 ORDER BY weight DESC, used_count DESC, id DESC
+                 LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, limit, offset]),
+      db.query(`SELECT COUNT(*)::int n FROM ai_knowledge ${w}`, params),
+    ])
+    res.json({ items: rows.rows, total: total.rows[0].n, limit, offset, stats: await knowledge.stats() })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Включить/выключить пример. Выключенный не попадает в подбор. */
+router.put('/knowledge/:id', async (req, res) => {
+  try {
+    const { is_active, question, answer, category } = req.body || {}
+    // reviewed_by_admin: человек решение принял, автоматическая перепроверка
+    // фильтрами эту строку больше не переключает. Иначе включённый вручную
+    // пример выключался бы обратно на ближайшем прогоне сборщика.
+    const { rows } = await db.query(
+      `UPDATE ai_knowledge
+          SET is_active = COALESCE($2, is_active),
+              question  = COALESCE(NULLIF($3, ''), question),
+              answer    = COALESCE(NULLIF($4, ''), answer),
+              category  = COALESCE($5, category),
+              reviewed_by_admin = true,
+              skip_reason = CASE WHEN $2 IS TRUE THEN NULL ELSE skip_reason END,
+              updated_at = NOW()
+        WHERE id = $1 RETURNING *`,
+      [req.params.id, typeof is_active === 'boolean' ? is_active : null,
+       question || '', answer || '', category ?? null]
+    )
+    if (!rows[0]) return res.status(404).json({ error: 'Пример не найден' })
+    await audit.write(req, 'ai.knowledge.update', { type: 'ai_knowledge', id: req.params.id }, req.body || {})
+    res.json({ item: rows[0] })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.delete('/knowledge/:id', async (req, res) => {
+  try {
+    const { rowCount } = await db.query('DELETE FROM ai_knowledge WHERE id = $1', [req.params.id])
+    if (!rowCount) return res.status(404).json({ error: 'Пример не найден' })
+    await audit.write(req, 'ai.knowledge.delete', { type: 'ai_knowledge', id: req.params.id })
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Добавить пример руками — вес выше собранных автоматически. */
+router.post('/knowledge', async (req, res) => {
+  try {
+    const { account_id, question, answer, category, ticket_id } = req.body || {}
+    if (!question || !answer) return res.status(400).json({ error: 'Нужны и вопрос, и ответ' })
+    const acc = account_id || (await db.query('SELECT id FROM bedolaga_accounts ORDER BY id LIMIT 1')).rows[0]?.id
+    // force: админ выбрал пару осознанно — фильтры отбора её не выключают.
+    const r = await knowledge.add({
+      accountId: acc, source: 'manual', question, answer, category,
+      ticketId: ticket_id || null, force: true,
+    })
+    // Пара уже лежала выключенной и теперь включена — это успех, а не отказ.
+    if (!r.added && !r.activated) return res.status(400).json({ error: 'Не добавлено: ' + r.reason })
+    await audit.write(req, 'ai.knowledge.create', { type: 'ai_knowledge' }, { question: String(question).slice(0, 200) })
+    res.json({ ok: true, added: r.added, activated: r.activated })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Разобрать тикеты прямо сейчас, не дожидаясь крона. */
+router.post('/knowledge/harvest', async (req, res) => {
+  try {
+    const accs = await db.query('SELECT * FROM bedolaga_accounts WHERE is_active = true ORDER BY id')
+    if (!accs.rows.length) return res.status(400).json({ error: 'Нет активных аккаунтов бота' })
+    const out = []
+    for (const a of accs.rows) out.push({ account: a.id, ...(await knowledge.harvest(a, { limit: 100 })) })
+    await audit.write(req, 'ai.knowledge.harvest', { type: 'ai_knowledge' }, { result: out })
+    res.json({ results: out, stats: await knowledge.stats() })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/** Что подберётся под конкретный вопрос — проверить, не гадая. */
+router.post('/knowledge/preview', async (req, res) => {
+  try {
+    const { text, account_id } = req.body || {}
+    if (!text) return res.status(400).json({ error: 'Нужен текст вопроса' })
+    const acc = account_id || (await db.query('SELECT id FROM bedolaga_accounts ORDER BY id LIMIT 1')).rows[0]?.id
+    const items = await knowledge.findRelevant(acc, text, { limit: 5 })
+    res.json({ items, prompt: knowledge.renderForPrompt(items) })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
 // ─── Журнал ───────────────────────────────────────────────────────────────────
 
 router.get('/log', async (req, res) => {

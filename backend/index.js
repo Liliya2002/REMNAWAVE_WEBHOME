@@ -6,6 +6,26 @@ const dotenv = require('dotenv')
 
 dotenv.config()
 
+// Формат логов ставим первым делом: всё, что печатается ниже, включая проверки
+// окружения, должно уже иметь метку времени и уровень. install() оборачивает
+// console.* — переписывать ~470 вызовов по проекту ради этого не нужно.
+const logger = require('./services/logger')
+logger.install()
+const log = logger.for('Запуск')
+
+// Падение без записи в лог — худший случай: контейнер перезапустится, а причина
+// исчезнет. Логируем и выходим с ненулевым кодом, чтобы Docker поднял заново
+// (restart: always) — поведение прежнее, но теперь с объяснением.
+process.on('uncaughtException', err => {
+  logger.for('Авария').error('Необработанная ошибка, процесс завершается', err)
+  process.exit(1)
+})
+process.on('unhandledRejection', err => {
+  logger.for('Авария').error('Необработанный отказ промиса, процесс завершается',
+    err instanceof Error ? err : new Error(String(err)))
+  process.exit(1)
+})
+
 // Проверка критичных переменных окружения
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'devsecret') {
   console.error('\x1b[31m[SECURITY] JWT_SECRET не задан или используется значение по умолчанию! Задайте надёжный JWT_SECRET в .env\x1b[0m')
@@ -17,6 +37,10 @@ const app = express()
 // Доверяем X-Forwarded-* заголовкам от nginx/reverse-proxy.
 // 1 = один прокси перед нами. Нужно для корректной работы rate-limit и логирования IP.
 app.set('trust proxy', 1)
+
+// Строка на каждый запрос. Стоит раньше лимитеров и CORS, иначе отказы от них
+// в лог не попадут — а именно они интереснее всего.
+app.use(require('./middleware/requestLog')())
 
 // Security headers + CSP
 app.use(helmet({
@@ -266,8 +290,13 @@ require('./cron/vpsExpiry').start()
 
 // Cron: VPS health-check — TCP-пинг порта 22, уведомление при смене состояния
 require('./cron/vpsHealth').start()
+// Cron: повторная выдача доступа в RemnaWave для оплаченных подписок,
+// которым его не выдали с первого раза (панель не ответила и т.п.)
+require('./cron/provisioningRetry').start()
 require('./cron/bedolagaPromoSync').start()
 require('./cron/aiTickets').start()
+// Cron: пополнение базы знаний ассистента из переписки в тикетах
+require('./cron/aiKnowledge').start()
 require('./cron/broadcastAi').start()
 require('./cron/ycBalance').start()
 
@@ -295,4 +324,12 @@ require('./services/paymentSettings').get()
   })
   .catch(() => {})
 
-app.listen(PORT, ()=> console.log(`Backend running on port ${PORT}`))
+app.listen(PORT, () => {
+  log.info(`Бэкенд запущен и слушает порт ${PORT}`)
+  log.info(`Режим: ${process.env.NODE_ENV === 'production' ? 'боевой' : 'разработка'}` +
+    ` · уровень логов: ${Object.keys(logger.LEVELS).find(k => logger.LEVELS[k] === logger.minLevel) || 'info'}` +
+    ` · время в логах: ${logger.TZ}`)
+  if (!process.env.ENCRYPTION_KEY) {
+    log.warn('ENCRYPTION_KEY не задан — токены и пароли провайдеров пишутся в базу открытым текстом')
+  }
+})

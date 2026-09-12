@@ -55,6 +55,7 @@ export default function AdminBedolaga() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [modal, setModal] = useState(null)         // { editId, form } | null
+  const [ticket, setTicket] = useState(null)      // открытая переписка тикета
   const [saving, setSaving] = useState(false)
   const [showSecret, setShowSecret] = useState({})
   const [data, setData] = useState({})             // { [id]: {...} }
@@ -127,6 +128,19 @@ export default function AdminBedolaga() {
     const d = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(d.error || 'Ошибка опроса')
     return d.broadcast
+  }
+
+  /** Открыть переписку. Список тикетов приходит без неё — нужна карточка. */
+  async function openTicket(accId, ticketId) {
+    setTicket({ loading: true, accId, id: ticketId })
+    try {
+      const r = await authFetch(`${API}/accounts/${accId}/tickets/${ticketId}`)
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Не удалось загрузить переписку')
+      setTicket({ accId, id: ticketId, data: d })
+    } catch (e) {
+      setTicket({ accId, id: ticketId, error: e.message })
+    }
   }
 
   async function save() {
@@ -309,6 +323,7 @@ export default function AdminBedolaga() {
                           onRowClick={
                             section === 'users' ? (it) => openUserCard(a.id, it.id)
                             : section === 'subscriptions' ? (it) => openUserCard(a.id, it.user_id)
+                            : section === 'tickets' ? (it) => openTicket(a.id, it.id)
                             : undefined
                           } />
                       </div>
@@ -319,6 +334,11 @@ export default function AdminBedolaga() {
             )
           })}
         </div>
+      )}
+
+      {ticket && (
+        <TicketModal t={ticket} onClose={() => setTicket(null)}
+          onReload={() => openTicket(ticket.accId, ticket.id)} />
       )}
 
       {modal && (
@@ -880,6 +900,123 @@ function SearchBox({ onSearch }) {
       <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2 top-1/2 -translate-y-1/2" />
       <input value={v} onChange={e => setV(e.target.value)} placeholder="поиск…" autoComplete="off"
         className="pl-7 pr-2 py-1 w-36 text-xs bg-slate-950/60 border border-slate-700 rounded-lg text-white focus:border-violet-500 focus:outline-none" />
+    </div>
+  )
+}
+
+// ─── Переписка тикета ─────────────────────────────────────────────────────────
+//
+// Список тикетов приходит без сообщений — API бота отдаёт их только в карточке,
+// поэтому переписка грузится по клику. Реплики ассистента помечены отдельно:
+// в API и он, и оператор приходят одинаково (is_from_admin), и без пометки не
+// понять, кто на самом деле отвечал клиенту.
+
+function TicketModal({ t, onClose, onReload }) {
+  const [busy, setBusy] = useState(null)
+  const [note, setNote] = useState(null)
+  const d = t.data
+
+  async function toKnowledge(pair) {
+    setBusy(pair.answer); setNote(null)
+    try {
+      const r = await authFetch('/api/admin/ai/knowledge', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: t.accId, ticket_id: t.id,
+          question: pair.question, answer: pair.answer, category: d?.title || null,
+        }),
+      })
+      const j = await r.json()
+      setNote(r.ok ? 'Добавлено в базу знаний' : (j.error || 'Не получилось'))
+      if (r.ok) onReload()
+    } catch (e) { setNote(e.message) } finally { setBusy(null) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-sm"
+         onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
+        <div className="flex items-start justify-between gap-3 p-4 border-b border-slate-800 shrink-0">
+          <div className="min-w-0">
+            <div className="text-white font-semibold truncate">{d?.title || `Тикет #${t.id}`}</div>
+            <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+              <span>#{t.id}</span>
+              {d?.status && <StatusBadge v={d.status} />}
+              {d?.created_at && <span>создан {fmtDate(d.created_at)}</span>}
+              {d?.ai_replies > 0 && <span className="text-violet-400">ассистент отвечал {d.ai_replies} раз</span>}
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 shrink-0">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto thin-scroll p-4 space-y-3">
+          {t.loading && <div className="text-sm text-slate-500">Загружаем переписку…</div>}
+          {t.error && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/40 text-sm text-red-300">{t.error}</div>}
+          {d && !d.messages?.length && <div className="text-sm text-slate-500">В тикете нет сообщений.</div>}
+
+          {(d?.messages || []).map((m, i) => {
+            const mine = !!m.is_from_admin
+            return (
+              <div key={m.id || i} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[85%] min-w-0 rounded-2xl px-3.5 py-2.5 ${
+                  mine
+                    ? (m.sent_by_ai ? 'bg-violet-500/15 border border-violet-500/40' : 'bg-slate-800 border border-slate-700')
+                    : 'bg-slate-950/60 border border-slate-800'
+                }`}>
+                  <div className="text-[10px] mb-1 flex items-center gap-2 flex-wrap">
+                    <span className={mine ? (m.sent_by_ai ? 'text-violet-300' : 'text-slate-400') : 'text-sky-300'}>
+                      {mine ? (m.sent_by_ai ? 'ИИ-ассистент' : 'Оператор') : 'Клиент'}
+                    </span>
+                    <span className="text-slate-600">{fmtDate(m.created_at)}</span>
+                    {m.has_media && <span className="text-amber-400/80">вложение{m.media_type ? ` · ${m.media_type}` : ''}</span>}
+                  </div>
+                  <div className="text-[13px] text-slate-200 whitespace-pre-wrap break-words">
+                    {m.message_text || <span className="text-slate-500 italic">(без текста)</span>}
+                  </div>
+
+                  {m.pair && (
+                    <div className="mt-2 pt-2 border-t border-slate-700/60">
+                      {m.pair.in_knowledge && m.pair.knowledge_active ? (
+                        <div className="text-[10px] text-emerald-400/70">
+                          ✓ в базе знаний, ассистент на это опирается
+                        </div>
+                      ) : (
+                        <>
+                          {/* Выключенная пара — не «уже есть», а «лежит, но не
+                              используется». После полного сбора это основной
+                              случай, поэтому кнопка нужна и здесь. */}
+                          <button onClick={() => toKnowledge(m.pair)} disabled={busy === m.pair.answer}
+                            className="text-[11px] px-2 py-1 rounded-lg bg-emerald-600/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-600/30 disabled:opacity-50">
+                            {busy === m.pair.answer
+                              ? 'Сохраняем…'
+                              : (m.pair.in_knowledge ? 'Включить в базе знаний' : '+ в базу знаний')}
+                          </button>
+                          {m.pair.in_knowledge && m.pair.skip_reason && (
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              сейчас выключено отбором: {m.pair.skip_reason}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {!m.pair.check?.ok && !m.pair.in_knowledge && (
+                        <div className="text-[10px] text-amber-400/70 mt-1">
+                          отбор бы отклонил: {m.pair.check?.why} — добавится всё равно, раз выбрали вручную
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {note && (
+          <div className="px-4 py-2 border-t border-slate-800 text-xs text-emerald-300 shrink-0">{note}</div>
+        )}
+      </div>
     </div>
   )
 }

@@ -76,6 +76,51 @@ async function handleStart(ctx) {
     reply_markup: buildMainMenu(settings.menu_buttons || [], settings, { isAdmin: !!user.is_admin }),
     parse_mode: 'HTML',
   })
+
+  // 3. Новому аккаунту — предупреждение про привязку.
+  //
+  // Этот чат только что стал ОТДЕЛЬНЫМ аккаунтом. Если человек уже покупал
+  // подписку на сайте, здесь её не будет: бот ищет по telegram_id, а сайт —
+  // по telegram_oidc_sub или по email, и связать их автоматически нечем.
+  // Без подсказки он просто увидит пустой кабинет и, скорее всего, купит
+  // вторую подписку.
+  if (user._isNew) {
+    await sendLinkHint(ctx, user).catch(err =>
+      console.warn('[TG bot] Подсказка о привязке не ушла:', err.message))
+  }
+}
+
+/**
+ * Подсказка новому аккаунту: как не остаться с двумя кабинетами.
+ *
+ * Текст разный. Если нашёлся аккаунт с тем же @ником без telegram_id — почти
+ * наверняка это он же, и говорим прямо. Если нет — мягкая заметка на случай,
+ * что он регистрировался по почте: такой аккаунт по нику не найти, общего
+ * признака у них нет вообще.
+ */
+async function sendLinkHint(ctx, user) {
+  const twin = user._possibleTwin
+  const lines = twin
+    ? [
+        '⚠️ <b>Кажется, у вас уже есть аккаунт на сайте</b>', '',
+        'Этот чат сейчас — <b>отдельный новый аккаунт</b>. Подписка, купленная на сайте, здесь не появится сама.', '',
+        'Чтобы оба работали как один — привяжите Telegram в кабинете.',
+      ]
+    : [
+        'ℹ️ <b>Уже покупали подписку на сайте?</b>', '',
+        'Тогда привяжите этот Telegram к своему аккаунту — иначе здесь будет отдельный пустой кабинет, а подписка останется на сайте.', '',
+        'Если вы тут впервые — ничего делать не нужно.',
+      ]
+
+  // Обычная URL-кнопка, а НЕ Mini App. Mini App открылся бы от лица этого
+  // чата, то есть от только что созданного пустого аккаунта — привязывать
+  // нужно наоборот, из старого кабинета, где человек уже залогинен в браузере.
+  const settings = await getSettings()
+  const base = (settings.web_app_url || FRONTEND_URL).replace(/\/$/, '')
+  const kb = new InlineKeyboard()
+  if (/^https?:\/\//.test(base)) kb.url('🔗 Открыть сайт и привязать', `${base}/dashboard?section=security`).row()
+
+  return ctx.reply(lines.join('\n'), { parse_mode: 'HTML', reply_markup: kb.text('👤 Кабинет этого аккаунта', 'menu:cabinet').row() })
 }
 
 async function findOrCreateUser(tgUser, payload) {
@@ -89,6 +134,31 @@ async function findOrCreateUser(tgUser, payload) {
       await db.query('UPDATE users SET telegram_username = $1 WHERE id = $2', [tgUsername, u.id])
     }
     return { ...u, _isNew: false }
+  }
+
+  // Похоже, у человека уже есть аккаунт на сайте?
+  //
+  // Зеркало проверки из OIDC-колбэка (routes/auth.js): там ищут двойника с
+  // telegram_id, здесь — наоборот, аккаунт с тем же ником, но БЕЗ telegram_id.
+  // Такой заводится при входе на сайт через Telegram: OIDC отдаёт свой sub, а
+  // не telegram_id, и связать их автоматически нечем.
+  //
+  // Сливать по @username нельзя: ник меняют, и освободившийся достаётся другому
+  // человеку — это был бы захват чужого аккаунта с подпиской. Поэтому только
+  // предупреждаем: админа в лог, человека — сообщением в боте.
+  let possibleTwin = null
+  if (tgUsername) {
+    const twin = await db.query(
+      `SELECT id, login FROM users
+        WHERE LOWER(telegram_username) = LOWER($1) AND telegram_id IS NULL
+        LIMIT 1`,
+      [tgUsername]
+    )
+    if (twin.rows.length) {
+      possibleTwin = twin.rows[0]
+      console.warn(`\x1b[33m[TG bot] Создаётся второй аккаунт для @${tgUsername}: уже есть id=${possibleTwin.id} "${possibleTwin.login}" без telegram_id. ` +
+        'Кабинеты будут разными. Слить: node scripts/merge-telegram-duplicates.js\x1b[0m')
+    }
   }
 
   const login = normLogin(tgUsername) || `tg_${telegramId}`
@@ -122,7 +192,7 @@ async function findOrCreateUser(tgUser, payload) {
   try { await referralService.createReferralLink(newUser.id) }
   catch (err) { console.warn('[TG bot] Create referral link error:', err.message) }
 
-  return { ...newUser, _isNew: true }
+  return { ...newUser, _isNew: true, _possibleTwin: possibleTwin }
 }
 
 // ────────────────────────────────────────────────────────────────────────────

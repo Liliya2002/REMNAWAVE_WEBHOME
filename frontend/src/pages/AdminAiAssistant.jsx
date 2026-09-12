@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Bot, Plug, ShieldCheck, MessageSquareText, ScrollText, RefreshCw, Save,
   AlertCircle, AlertTriangle, CheckCircle2, Plus, Trash2, Pencil, X, Send,
-  Zap, Eye, EyeOff, Play,
+  Zap, Eye, EyeOff, Play, GraduationCap, Power, Search,
 } from 'lucide-react'
 import { authFetch } from '../services/api'
 
@@ -18,8 +18,34 @@ const SECTIONS = [
   { id: 'connection', label: 'Подключение', Icon: Plug },
   { id: 'rules',      label: 'Правила',     Icon: ShieldCheck },
   { id: 'templates',  label: 'Шаблоны',     Icon: MessageSquareText },
+  { id: 'knowledge',  label: 'База знаний', Icon: GraduationCap },
   { id: 'log',        label: 'Журнал',      Icon: ScrollText },
 ]
+
+const SOURCE_LABEL = {
+  history:  'из истории',
+  operator: 'оператор поправил',
+  manual:   'добавлено руками',
+}
+const SOURCE_TONE = {
+  history:  'text-slate-400 border-slate-600',
+  operator: 'text-amber-400 border-amber-500/40 bg-amber-500/10',
+  manual:   'text-sky-400 border-sky-500/40 bg-sky-500/10',
+}
+
+function Chip({ label, value, tone = 'slate' }) {
+  const tones = {
+    slate: 'text-slate-300 border-slate-700 bg-slate-800/40',
+    emerald: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10',
+    amber: 'text-amber-300 border-amber-500/40 bg-amber-500/10',
+    sky: 'text-sky-300 border-sky-500/40 bg-sky-500/10',
+  }
+  return (
+    <span className={`px-2 py-1 rounded-lg border ${tones[tone]}`}>
+      {label}: <b>{value}</b>
+    </span>
+  )
+}
 
 const fmtDT = v => { const d = new Date(v); return isNaN(d) ? '—' : d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) }
 const fmtNum = n => (n == null || isNaN(Number(n))) ? '—' : Number(n).toLocaleString('ru-RU')
@@ -74,6 +100,10 @@ export default function AdminAiAssistant() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [editTpl, setEditTpl] = useState(null)
+  const [kb, setKb] = useState(null)
+  const [kbBusy, setKbBusy] = useState(false)
+  const [kbProbe, setKbProbe] = useState('')
+  const [kbProbeResult, setKbProbeResult] = useState(null)
 
   const set = (k, v) => setCfg(p => ({ ...p, [k]: v }))
 
@@ -97,7 +127,64 @@ export default function AdminAiAssistant() {
     if (section === 'log') {
       authFetch(`${API}/log?limit=100`).then(r => r.json()).then(setLog).catch(() => {})
     }
+    if (section === 'knowledge') loadKb()
   }, [section])
+
+  async function loadKb() {
+    try {
+      const r = await authFetch(`${API}/knowledge?limit=200`)
+      setKb(await r.json())
+    } catch { /* показывать нечего — останется «загружаем» */ }
+  }
+
+  /** Разобрать тикеты прямо сейчас. Только чтение на стороне бота. */
+  async function harvestNow() {
+    setKbBusy(true); setMsg(null); setError(null)
+    try {
+      const r = await authFetch(`${API}/knowledge/harvest`, { method: 'POST' })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error || 'Не удалось разобрать тикеты')
+      const t = (d.results || []).reduce((a, x) => ({
+        scanned: a.scanned + (x.scanned || 0),
+        added: a.added + (x.added || 0),
+        disabled: a.disabled + (x.disabled || 0),
+      }), { scanned: 0, added: 0, disabled: 0 })
+      setMsg(`Разобрано тикетов: ${t.scanned}, новых примеров: ${t.added}` +
+        (t.disabled ? `, отключено устаревших: ${t.disabled}` : ''))
+      await loadKb()
+    } catch (e) { setError(e.message) } finally { setKbBusy(false) }
+  }
+
+  async function toggleKb(item) {
+    try {
+      await authFetch(`${API}/knowledge/${item.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !item.is_active }),
+      })
+      await loadKb()
+    } catch { /* молча: список перечитается при следующем действии */ }
+  }
+
+  async function removeKb(item) {
+    if (!confirm('Удалить пример? Ассистент перестанет на него опираться.')) return
+    try {
+      await authFetch(`${API}/knowledge/${item.id}`, { method: 'DELETE' })
+      await loadKb()
+    } catch { /* см. выше */ }
+  }
+
+  /** Показать, что подберётся под конкретный вопрос. */
+  async function probeKb() {
+    if (!kbProbe.trim()) return
+    setKbProbeResult(null)
+    try {
+      const r = await authFetch(`${API}/knowledge/preview`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: kbProbe }),
+      })
+      setKbProbeResult(await r.json())
+    } catch (e) { setError(e.message) }
+  }
 
   async function save() {
     setSaving(true); setError(null); setMsg(null)
@@ -436,6 +523,101 @@ export default function AdminAiAssistant() {
       )}
 
       {/* ─── Журнал ─── */}
+      {section === 'knowledge' && (
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl border border-slate-700/60 bg-slate-900/40">
+            <div className="text-sm text-slate-300 leading-relaxed">
+              Здесь ассистент держит примеры: <b className="text-white">вопрос клиента → ответ живого оператора</b>.
+              Перед каждым тикетом он подбирает несколько самых близких и опирается на них.
+            </div>
+            <div className="text-[11px] text-slate-500 mt-2 leading-relaxed">
+              Это не дообучение модели — её веса не наши. Работает подбором примеров, поэтому
+              действует сразу, откатывается выключением строки, и всегда видно, на чём построен ответ.
+              Ответы самого ассистента в базу не идут: учиться на себе — верный способ закрепить свою же ошибку.
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={harvestNow} disabled={kbBusy}
+              className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-semibold flex items-center gap-2">
+              <RefreshCw className={`w-4 h-4 ${kbBusy ? 'animate-spin' : ''}`} />
+              {kbBusy ? 'Разбираем тикеты…' : 'Разобрать тикеты сейчас'}
+            </button>
+            {kb?.stats && (
+              <div className="flex flex-wrap gap-3 text-xs">
+                <Chip label="всего" value={kb.stats.total} />
+                <Chip label="в работе" value={kb.stats.active} tone="emerald" />
+                <Chip label="из истории" value={kb.stats.by_source?.history?.total || 0} />
+                <Chip label="правки оператора" value={kb.stats.by_source?.operator?.total || 0} tone="amber" />
+                <Chip label="добавлено руками" value={kb.stats.by_source?.manual?.total || 0} tone="sky" />
+                <Chip label="раз пригодились" value={kb.stats.used} />
+              </div>
+            )}
+          </div>
+
+          <div className="p-4 rounded-xl border border-slate-700/60 bg-slate-900/40">
+            <div className="text-xs text-slate-400 mb-2">Проверить, что подберётся под вопрос:</div>
+            <div className="flex gap-2 flex-wrap">
+              <input value={kbProbe} onChange={e => setKbProbe(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && probeKb()}
+                placeholder="не подключается впн на телефоне, выдаёт ошибку"
+                className="flex-1 min-w-[240px] px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm" />
+              <button onClick={probeKb}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm flex items-center gap-2">
+                <Search className="w-4 h-4" /> Подобрать
+              </button>
+            </div>
+            {kbProbeResult && (
+              <div className="mt-3 space-y-2">
+                {!kbProbeResult.items?.length && (
+                  <div className="text-xs text-slate-500">Ничего не подобралось — ассистент ответит без примеров.</div>
+                )}
+                {(kbProbeResult.items || []).map(i => (
+                  <div key={i.id} className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800 text-xs">
+                    <div className="text-slate-500 mb-1">{SOURCE_LABEL[i.source] || i.source} · ранг {Number(i.score).toFixed(3)}</div>
+                    <div className="text-slate-300">{i.question}</div>
+                    <div className="text-emerald-300/80 mt-1">{i.answer}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!kb ? <div className="text-sm text-slate-500">Загружаем…</div> : (
+            <div className="space-y-2">
+              <div className="text-xs text-slate-500">Примеров: {kb.total}</div>
+              {kb.items.map(i => (
+                <div key={i.id} className={`p-3 rounded-xl border ${i.is_active ? 'border-slate-700/60 bg-slate-900/40' : 'border-slate-800 bg-slate-950/40 opacity-60'}`}>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                      <span className={`px-1.5 py-0.5 rounded border ${SOURCE_TONE[i.source] || 'text-slate-400 border-slate-600'}`}>
+                        {SOURCE_LABEL[i.source] || i.source}
+                      </span>
+                      <span className="text-slate-500">вес {i.weight}</span>
+                      {i.ticket_id && <span className="text-slate-600">тикет #{i.ticket_id}</span>}
+                      {i.used_count > 0 && <span className="text-emerald-400/70">пригодился {i.used_count} раз</span>}
+                      {!i.is_active && <span className="text-slate-500">выключен</span>}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => toggleKb(i)} title={i.is_active ? 'Выключить' : 'Включить'}
+                        className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200">
+                        <Power className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => removeKb(i)} title="Удалить"
+                        className="p-1.5 rounded-lg hover:bg-red-500/20 text-slate-400 hover:text-red-400">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 text-[13px] text-slate-300 whitespace-pre-wrap break-words">{i.question}</div>
+                  <div className="mt-1.5 text-[13px] text-emerald-300/80 whitespace-pre-wrap break-words">{i.answer}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {section === 'log' && (
         <div className="space-y-3">
           {log?.by_action?.length > 0 && (

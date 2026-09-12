@@ -11,6 +11,10 @@ import EmailConfirmBanner from '../components/EmailConfirmBanner'
 import DashboardPremium from './dashboard/DashboardPremium'
 import { DashboardUiProvider, useDashboardUi } from '../contexts/DashboardUiContext'
 
+// Разделы кабинета. Список нужен ещё и для проверки ?section= — чтобы из
+// адресной строки нельзя было подставить что попало.
+const SECTIONS = ['profile', 'subscriptions', 'inbox', 'balance', 'referrals', 'security']
+
 function DashboardInner() {
   const { version } = useDashboardUi()
   const [user, setUser] = useState(null)
@@ -20,7 +24,13 @@ function DashboardInner() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [error, setError] = useState(null)
   const [copySuccess, setCopySuccess] = useState(null)
-  const [activeSection, setActiveSection] = useState('profile')
+  // Раздел можно открыть сразу по ссылке: /dashboard?section=security.
+  // Нужно, чтобы бот мог привести человека прямо к привязке аккаунта, а не
+  // к «откройте кабинет и найдите там вкладку».
+  const [activeSection, setActiveSection] = useState(() => {
+    const want = new URLSearchParams(window.location.search).get('section')
+    return SECTIONS.includes(want) ? want : 'profile'
+  })
 
   useEffect(() => {
     fetchMe()

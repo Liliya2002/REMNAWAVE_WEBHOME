@@ -273,8 +273,19 @@ function parseModelJson(raw) {
  * модели он удалён и вернёт 400. max_tokens ограничивает мышление и текст
  * вместе, поэтому запас нужен ощутимо больше лимита длины ответа.
  */
-async function askModel(settings, templates, ticket) {
+/**
+ * @param {object[]} [examples] похожие пары «вопрос → ответ оператора» из базы
+ *   знаний. Идут в ПОЛЬЗОВАТЕЛЬСКОЕ сообщение, а не в system: system помечен
+ *   cache_control и одинаков для всех тикетов, поэтому кэшируется — подмешав
+ *   туда примеры, свои для каждого тикета, мы бы обнуляли кэш на каждом вызове
+ *   и платили за весь промпт заново.
+ */
+async function askModel(settings, templates, ticket, examples = []) {
   const client = makeClient(settings)
+
+  const knowledge = examples.length
+    ? require('./aiKnowledge').renderForPrompt(examples)
+    : ''
 
   const body = {
     model: settings.model || 'claude-opus-4-8',
@@ -287,7 +298,7 @@ async function askModel(settings, templates, ticket) {
     system: [
       { type: 'text', text: buildSystemPrompt(settings, templates), cache_control: { type: 'ephemeral' } },
     ],
-    messages: [{ role: 'user', content: buildConversation(ticket) }],
+    messages: [{ role: 'user', content: buildConversation(ticket) + knowledge }],
   }
 
   const res = await client.messages.create(body)
