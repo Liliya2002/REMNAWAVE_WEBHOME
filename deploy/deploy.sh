@@ -18,7 +18,8 @@
 #   8. Smoke test /api/health
 #   9. При любой ошибке — авто-откат к предыдущей версии (git, .env, compose up)
 #
-# Не трогает: nginx/certbot/db (только backend + frontend перезапускаются).
+# Не трогает: certbot/db (backend + frontend обновляются, nginx пересоздаётся
+# ради upstream IP и настроек из compose).
 
 set -euo pipefail
 
@@ -243,13 +244,20 @@ if [ -x ./deploy/update-nginx-config.sh ]; then
   ./deploy/update-nginx-config.sh 2>&1 | sed 's/^/  /' || warn "update-nginx-config.sh упал"
 fi
 
-# Restart nginx чтобы он переподключился к свежим IP backend/frontend.
+# Пересоздаём nginx, чтобы он переподключился к свежим IP backend/frontend.
 # Иначе nginx-кеш resolver'а держит старые (мёртвые) адреса → 502 Bad Gateway.
-# Делаем только если nginx уже работает (если нет — запускать его — не задача deploy.sh).
+#
+# Именно `up -d --force-recreate`, а НЕ `restart`. restart поднимает тот же
+# контейнер с его прежним HostConfig, поэтому изменения в docker-compose.yml
+# для nginx не применялись никогда. Наступили на это с ротацией логов: лимит
+# прописали всем сервисам, а nginx — единственный, кто пишет строку на каждый
+# запрос, — остался без него и накопил 104 МБ. Простой тот же, что и у restart.
+#
+# Делаем только если nginx уже работает (если нет — запускать его не задача deploy.sh).
 if docker compose ps nginx 2>/dev/null | grep -q "Up\|running"; then
-  log "Перезапускаю nginx для обновления upstream IP…"
-  docker compose restart nginx 2>&1 | sed 's/^/  /' || warn "nginx restart упал"
-  ok "nginx перезапущен"
+  log "Пересоздаю nginx (обновление upstream IP + настроек из compose)…"
+  docker compose up -d --force-recreate nginx 2>&1 | sed 's/^/  /' || warn "nginx up упал"
+  ok "nginx пересоздан"
 fi
 
 # ─── Smoke test ───────────────────────────────────────────────────────────────
@@ -306,6 +314,32 @@ if [ "$SKIP_MIGRATIONS" != 1 ]; then
   PENDING=$(docker compose run --rm migrate status 2>&1 | grep -c PENDING || true)
   if [ "$PENDING" -gt 0 ]; then
     warn "Остались pending миграции: ${PENDING}"
+  fi
+fi
+
+# ─── Сверка ротации логов ─────────────────────────────────────────────────────
+#
+# Контейнер, созданный до появления `logging:` в compose, живёт со старым
+# HostConfig: docker compose пересоздаёт только те сервисы, которых касается
+# деплой, а остальные остаются как были — и пишут лог без предела, пока не
+# кончится диск. Снаружи это незаметно, поэтому проверяем явно.
+if docker compose ps -q >/dev/null 2>&1; then
+  UNCAPPED=""
+  for cid in $(docker compose ps -q 2>/dev/null); do
+    CAP=$(docker inspect --format '{{index .HostConfig.LogConfig.Config "max-size"}}' "$cid" 2>/dev/null || true)
+    if [ -z "$CAP" ]; then
+      # Имя СЕРВИСА берём из метки compose, а не из имени контейнера: там оно
+      # вида <проект>-<сервис>-<номер>, и обрезка префикса оставляет хвост «-1»,
+      # с которым подсказанная команда не сработает.
+      SVC=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.service"}}' "$cid" 2>/dev/null || true)
+      [ -z "$SVC" ] && SVC=$(docker inspect --format '{{.Name}}' "$cid" 2>/dev/null | sed 's|^/||')
+      UNCAPPED="${UNCAPPED} ${SVC}"
+    fi
+  done
+  if [ -n "$UNCAPPED" ]; then
+    warn "Без ограничения размера логов:${UNCAPPED}"
+    warn "Лог такого контейнера растёт без предела. Лечится пересозданием:"
+    warn "  docker compose up -d --force-recreate${UNCAPPED}"
   fi
 fi
 
