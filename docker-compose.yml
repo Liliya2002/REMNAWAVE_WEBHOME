@@ -30,6 +30,12 @@ services:
     image: postgres:16-alpine
     restart: always
     logging: *logs
+    # Postgres с 15-й версии по умолчанию пишет в лог каждый чекпоинт — строка
+    # на 250 символов про буферы и WAL каждые несколько минут, круглосуточно.
+    # Для разбора аварии она бесполезна, а объём даёт заметный. Ошибки,
+    # предупреждения и отказы подключения пишутся по-прежнему.
+    command: >
+      postgres -c log_checkpoints=off
     env_file:
       - .env
     environment:
