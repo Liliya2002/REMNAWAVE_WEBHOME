@@ -239,6 +239,13 @@ function buildPrompt(settings, ctx, allowedTargets) {
     ? ctx.promoCodes.join(', ') + '\nСсылаться можно ТОЛЬКО на них.'
     : 'Активных промокодов нет. Не упоминай никакие коды и скидки.')
 
+  // Контракт ответа словами, хотя схема уже передана в output_config.
+  // Через прокси structured output до модели не доходит: в журнале лежат ответы
+  // «**should_send:** true **segment:** expired» — markdown вместо JSON и с
+  // выдуманными именами полей. Отсюда и блокировка «недоступный сегмент
+  // undefined»: модель вернула segment, а код читает target.
+  parts.push('\n' + ai.describeSchema(PROPOSAL_SCHEMA))
+
   return parts.join('\n')
 }
 
@@ -257,6 +264,41 @@ function findInventedCodes(text, activeCodes) {
   // Частые слова капсом, не являющиеся кодами
   const stop = new Set(['VPN', 'HTTP', 'HTTPS', 'IOS', 'ANDROID', 'WIFI', 'QR', 'SBP', 'TELEGRAM'])
   return [...new Set(found)].filter(c => !upper.has(c) && !stop.has(c))
+}
+
+/**
+ * Привести ответ модели к именам полей схемы.
+ *
+ * Контракт в промпте описан явно, но это просьба, а не гарантия. В журнале
+ * прода лежит ответ с полями segment/title/message вместо target/message_text —
+ * модель придумала свои имена, и код прочитал target как undefined, а потом
+ * заблокировал «недоступный сегмент undefined». Терять из-за этого готовое
+ * предложение жалко: понять, что segment — это target, ничего не стоит.
+ *
+ * Синонимы берём только однозначные. Там, где смысл мог бы разойтись, лучше
+ * отбраковать ответ, чем угадать неверно.
+ */
+const ALIASES = {
+  target: ['segment', 'audience', 'target_type'],
+  message_text: ['message', 'text', 'body'],
+  template_name: ['template'],
+  should_send: ['send'],
+}
+
+function normalizeProposal(d) {
+  if (!d || typeof d !== 'object') return d
+  const out = { ...d }
+  for (const [canon, alts] of Object.entries(ALIASES)) {
+    if (out[canon] !== undefined && out[canon] !== null && out[canon] !== '') continue
+    for (const a of alts) {
+      if (out[a] !== undefined && out[a] !== null && out[a] !== '') {
+        out[canon] = out[a]
+        console.warn(`[broadcastAi] модель вернула «${a}» вместо «${canon}» — подставил`)
+        break
+      }
+    }
+  }
+  return out
 }
 
 async function logRun(accountId, row) {
@@ -363,7 +405,7 @@ async function runOnce(account, { force = false } = {}) {
     return { outcome: 'error', detail: d }
   }
 
-  const d = parsed.data
+  const d = normalizeProposal(parsed.data)
   const usage = { input_tokens: res.usage?.input_tokens, output_tokens: res.usage?.output_tokens }
   const base = { should_send: d.should_send, target: d.target, confidence: d.confidence, reason: d.reason, ...usage }
 

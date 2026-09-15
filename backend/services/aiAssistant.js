@@ -179,7 +179,40 @@ function buildSystemPrompt(settings, templates) {
 
   const limit = Number(settings.reply_char_limit) || 1200
   parts.push(`\nДержи ответ в пределах ${limit} символов.`)
+  parts.push('\n' + describeSchema(REPLY_SCHEMA))
   return parts.join('\n')
+}
+
+/**
+ * Описание формата ответа для промпта — собирается ИЗ САМОЙ СХЕМЫ.
+ *
+ * Зачем это нужно, хотя схема уже передаётся в output_config. Через прокси
+ * structured output до модели не доходит: в журнале планировщика рассылок на
+ * проде лежат ответы вида «**should_send:** true **segment:** expired» —
+ * markdown вместо JSON, причём с полями, которых в схеме нет (segment вместо
+ * target). Модель их выдумала, то есть схемы не видела вовсе. Три прогона из
+ * восемнадцати ушли в мусор, ещё один — в «недоступный сегмент undefined».
+ *
+ * Поэтому контракт дублируется словами в промпте. Собирается из схемы, а не
+ * пишется рядом руками: иначе поле переименуют в одном месте и забудут в
+ * другом, и разъехавшийся контракт будет выглядеть как «модель глючит».
+ * output_config при этом оставляем — если прокси научится, хуже не станет.
+ */
+function describeSchema(schema) {
+  const TYPE = { boolean: 'true или false', number: 'число', string: 'строка', integer: 'целое число' }
+  const lines = [
+    'ФОРМАТ ОТВЕТА. Верни ОДИН объект JSON и ничего больше: без markdown,',
+    'без ```-ограждений, без пояснений до или после. Имена полей — ровно эти:',
+    '',
+  ]
+  for (const [key, def] of Object.entries(schema.properties || {})) {
+    lines.push(`  "${key}" — ${TYPE[def.type] || def.type}. ${def.description || ''}`.trimEnd())
+  }
+  const req = schema.required || []
+  if (req.length) {
+    lines.push('', `Обязательны все поля: ${req.join(', ')}. Лишних полей не добавляй.`)
+  }
+  return lines.join('\n')
 }
 
 /** Переписка тикета → диалог для модели. is_from_admin отделяет наши реплики. */
@@ -369,5 +402,5 @@ module.exports = {
   ping, getSettings, normalize, matchStopWord, buildSystemPrompt, buildConversation,
   parseModelJson, DEFAULT_MAX_TOKENS,
   makeClient,
-  askModel, REPLY_SCHEMA, BASE_PROMPT,
+  askModel, REPLY_SCHEMA, BASE_PROMPT, describeSchema,
 }
