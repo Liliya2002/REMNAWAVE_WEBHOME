@@ -5,6 +5,12 @@
  * так по кругу, пока не соберёт достаточно для ответа. Всё, что она может
  * запросить, перечислено в tools.js и только читает.
  *
+ * Разбор идёт в фоне. Синхронно его не отдать: один запрос к модели — до двух
+ * минут, шагов до четырнадцати, а шлюз между браузером и нами рвёт соединение
+ * на шестидесятой секунде и подсовывает HTML-страницу 504 вместо ответа.
+ * Поэтому запуск сразу возвращает номер разбора, а результат забирается
+ * отдельно — заодно по ходу видно, чем он занят прямо сейчас.
+ *
  * Два ограничителя. Число шагов — чтобы цикл «спрошу ещё разок» не крутился
  * бесконечно на чужие деньги. Потолок токенов — чтобы один разбор не съел
  * дневной бюджет: в отличие от ассистента тикетов, здесь в контекст утягивается
@@ -54,7 +60,11 @@ const SYSTEM = `Ты — PROMETHEUS, аналитический центр пр�
 
 Если в памяти сказано, что владелец проблему отклонил, — не поднимай её снова, пока не появились новые данные. Он уже объяснил, почему.`
 
-/** Сохранить реплику в историю разбора. */
+/**
+ * Сохранить реплику в историю разбора.
+ *
+ * Заодно двигаем время разбора: по нему видно, что работа идёт, а не встала.
+ */
 async function saveMessage(sessionId, row) {
   await db.query(
     `INSERT INTO prometheus_messages (session_id, role, content, tool_name, tool_input, tool_result)
@@ -63,15 +73,40 @@ async function saveMessage(sessionId, row) {
      row.tool_input ? JSON.stringify(row.tool_input) : null,
      row.tool_result ? JSON.stringify(row.tool_result) : null]
   ).catch(e => log.warn('Реплика не записалась: ' + e.message))
+  await db.query('UPDATE prometheus_sessions SET updated_at = NOW() WHERE id = $1', [sessionId])
+    .catch(() => {})
+}
+
+/** Разборы, идущие прямо сейчас: номер разбора → обещание результата. */
+const running = new Map()
+
+/**
+ * Ошибку модели — на человеческий язык.
+ *
+ * Провайдер отдаёт JSON целиком в тексте ошибки, и в разделе появлялось
+ * `401 {"type":"error",…,"message":"okak"}`. По такому не понять ни что
+ * сломалось, ни куда идти чинить.
+ */
+function humanError(e) {
+  const raw = String(e?.message || e || 'неизвестная ошибка')
+  const code = e?.status || Number((raw.match(/^(\d{3})\b/) || [])[1]) || 0
+  if (code === 401 || code === 403) return 'Ключ ИИ отклонён провайдером. Проверьте его: админка → ИИ-ассистент → Подключение.'
+  if (code === 429) return 'Провайдер ограничил частоту запросов. Попробуйте через несколько минут.'
+  if (code === 402) return 'На счету у провайдера ИИ закончились средства.'
+  if (code === 404) return 'Провайдер не знает такой модели. Проверьте название модели в настройках подключения.'
+  if (code >= 500) return `Провайдер ИИ ответил ошибкой ${code}. Это на их стороне, попробуйте позже.`
+  if (/timeout|ETIMEDOUT|aborted/i.test(raw)) return 'Модель не ответила за отведённое время. Попробуйте сузить вопрос.'
+  if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(raw)) return 'Не удалось связаться с провайдером ИИ — проверьте адрес в настройках подключения.'
+  return raw.slice(0, 300)
 }
 
 /**
- * Провести разбор.
+ * Подготовка: всё, что должно сообщить об ошибке немедленно.
  *
- * @param {string} question вопрос владельца
- * @param {object} opts { sessionId, userId, onStep }
+ * Нет ключа, сломана защита, разбор уже идёт — про это владелец узнаёт сразу,
+ * а не через минуту молчания. Остальное происходит уже в фоне.
  */
-async function ask(question, { sessionId = null, userId = null, onStep = null } = {}) {
+async function prepare(question, { sessionId = null, userId = null } = {}) {
   const conn = await ai.getSettings(db)
   if (!conn.apiKey) return { ok: false, error: 'Не задан ключ ИИ: админка → ИИ-ассистент → Подключение' }
 
@@ -83,16 +118,29 @@ async function ask(question, { sessionId = null, userId = null, onStep = null } 
     return { ok: false, error: `Защита «только чтение» не прошла проверку (${guard.failed.join(', ')}). Разбор отменён.` }
   }
 
-  let sid = sessionId
-  if (!sid) {
+  let sid = sessionId ? Number(sessionId) : null
+  if (sid) {
+    if (running.has(sid)) return { ok: false, error: 'По этому разбору уже идёт работа — дождитесь ответа' }
+    const s = (await db.query('SELECT id FROM prometheus_sessions WHERE id = $1', [sid])).rows[0]
+    if (!s) return { ok: false, error: 'Разбор не найден' }
+  } else {
     const r = await db.query(
       'INSERT INTO prometheus_sessions (title, started_by) VALUES ($1,$2) RETURNING id',
       [String(question).replace(/\s+/g, ' ').slice(0, 120), userId]
     )
     sid = r.rows[0].id
   }
-  await saveMessage(sid, { role: 'user', content: question })
 
+  await db.query(
+    `UPDATE prometheus_sessions
+        SET run_status = 'running', run_error = NULL, run_started_at = NOW(), updated_at = NOW()
+      WHERE id = $1`, [sid])
+  await saveMessage(sid, { role: 'user', content: question })
+  return { ok: true, sid, conn }
+}
+
+/** Сам цикл: модель просит данные, получает их, и так пока не соберёт ответ. */
+async function runLoop(sid, question, conn) {
   // Память подкладывается ПЕРЕД вопросом: иначе он начнёт разбор с нуля и
   // потратит половину шагов на выяснение того, что уже выяснял.
   const brief = await memory.briefing(question).catch(() => '')
@@ -129,8 +177,10 @@ async function ask(question, { sessionId = null, userId = null, onStep = null } 
         messages,
       })
     } catch (e) {
-      await saveMessage(sid, { role: 'assistant', content: `Ошибка обращения к модели: ${e.message}` })
-      return { ok: false, error: e.message, session_id: sid, trace }
+      const why = humanError(e)
+      log.warn(`Разбор #${sid}: модель не ответила — ${e.message}`)
+      await saveMessage(sid, { role: 'assistant', content: why })
+      return { ok: false, error: why, session_id: sid, trace }
     }
 
     usedIn += res.usage?.input_tokens || 0
@@ -167,7 +217,6 @@ async function ask(question, { sessionId = null, userId = null, onStep = null } 
       const out = await tools.runTool(u.name, input)
       await saveMessage(sid, { role: 'tool', tool_name: u.name, tool_input: u.input, tool_result: out })
       trace.push({ type: 'tool', name: u.name, input: u.input, ok: out.ok !== false })
-      if (onStep) { try { onStep({ name: u.name, input: u.input, ok: out.ok !== false }) } catch {} }
 
       results.push({
         type: 'tool_result',
@@ -183,4 +232,64 @@ async function ask(question, { sessionId = null, userId = null, onStep = null } 
   return { ok: true, answer: text, session_id: sid, trace, usage: { input: usedIn, output: usedOut, tool_calls: calls }, incomplete: true }
 }
 
-module.exports = { ask, SYSTEM, MAX_STEPS }
+/**
+ * Запустить разбор и сразу вернуть его номер.
+ *
+ * Ответа здесь не дождаться, и это намеренно. Результат забирается через
+ * GET /sessions/:id — там же по мере работы появляются обращения к данным,
+ * так что видно, чем он занят, а не крутится пустое ожидание.
+ */
+async function start(question, opts = {}) {
+  const p = await prepare(question, opts)
+  if (!p.ok) return p
+  const sid = Number(p.sid)
+
+  const job = runLoop(sid, question, p.conn)
+    .catch(e => ({ ok: false, error: humanError(e), session_id: sid }))
+    .then(async r => {
+      await db.query(
+        `UPDATE prometheus_sessions
+            SET run_status = $2, run_error = $3, updated_at = NOW()
+          WHERE id = $1`,
+        [sid, r.ok ? 'done' : 'error', r.ok ? null : String(r.error || '').slice(0, 500)]
+      ).catch(e => log.warn('Состояние разбора не записалось: ' + e.message))
+      if (r.ok) log.info(`Разбор #${sid} закончен: обращений к данным ${r.usage?.tool_calls ?? 0}`)
+      else log.warn(`Разбор #${sid} не удался: ${r.error}`)
+      running.delete(sid)
+      return r
+    })
+
+  running.set(sid, job)
+  return { ok: true, session_id: sid, running: true }
+}
+
+/** Дождаться результата — для скриптов и проверок, не для HTTP. */
+async function ask(question, opts = {}) {
+  const s = await start(question, opts)
+  if (!s.ok) return s
+  return running.get(s.session_id) || { ok: true, session_id: s.session_id }
+}
+
+/**
+ * Подвесить оборванные разборы при старте.
+ *
+ * Разбор живёт в памяти процесса. Если бэкенд перезапустили посреди него, в
+ * базе навсегда останется «идёт работа», и владелец будет ждать ответа,
+ * которого уже никто не готовит.
+ */
+async function resetStale() {
+  const { rowCount } = await db.query(
+    `UPDATE prometheus_sessions
+        SET run_status = 'error',
+            run_error = 'Разбор оборвался: перезапуск сервера',
+            updated_at = NOW()
+      WHERE run_status = 'running'`)
+  if (rowCount) log.info(`Оборванных разборов помечено: ${rowCount}`)
+  return rowCount
+}
+
+module.exports = {
+  ask, start, resetStale,
+  isRunning: sid => running.has(Number(sid)),
+  SYSTEM, MAX_STEPS,
+}

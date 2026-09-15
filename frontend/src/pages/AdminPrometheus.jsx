@@ -41,6 +41,29 @@ const SUGGESTIONS = [
 const fmtDT = v => { const d = new Date(v); return isNaN(d) ? '—' : d.toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) }
 const fmtNum = n => (n == null ? '—' : Number(n).toLocaleString('ru-RU'))
 
+/**
+ * Разобрать ответ, не веря, что это JSON.
+ *
+ * Между браузером и бэкендом стоит nginx, и на его ошибках (502, 504) приходит
+ * HTML-страница. `r.json()` спотыкался об неё и выдавал «Unexpected token '<'»
+ * вместо объяснения, что произошло.
+ */
+async function asJson(r) {
+  const text = await r.text()
+  try {
+    const d = JSON.parse(text)
+    if (!r.ok) throw new Error(d.error || `Ошибка ${r.status}`)
+    return d
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      throw new Error(r.status === 504 || r.status === 502
+        ? 'Сервер не ответил вовремя. Обновите страницу — разбор мог продолжиться и записаться в историю.'
+        : `Неожиданный ответ сервера (${r.status})`)
+    }
+    throw e
+  }
+}
+
 export default function AdminPrometheus() {
   const [status, setStatus] = useState(null)
   const [sessions, setSessions] = useState([])
@@ -53,13 +76,24 @@ export default function AdminPrometheus() {
   const [memory, setMemory] = useState(null)
   const [findings, setFindings] = useState([])
   const bottomRef = useRef(null)
+  const pollRef = useRef(null)      // таймер опроса идущего разбора
+  const aliveRef = useRef(true)     // страница ещё открыта
 
   useEffect(() => {
     authFetch(`${API}/status`).then(r => r.json()).then(setStatus).catch(() => {})
-    loadSessions()
+    // Незаконченный разбор подхватываем сам: он идёт на сервере и не зависит от
+    // того, открыта ли страница. Уйти и вернуться за ответом — нормально.
+    loadSessions().then(items => {
+      const live = (items || []).find(s => s.run_status === 'running')
+      if (live) openSession(live.id)
+    })
+    return () => { aliveRef.current = false; clearTimeout(pollRef.current) }
   }, [])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [session])
+  // Следим за концом разбора, но только когда реплик стало больше. Иначе
+  // каждый опрос дёргал бы страницу вниз, пока человек читает написанное выше.
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) },
+    [session?.session?.id, session?.messages?.length])
 
   useEffect(() => {
     if (tab === 'memory') authFetch(`${API}/memory`).then(r => r.json()).then(setMemory).catch(() => {})
@@ -94,15 +128,34 @@ export default function AdminPrometheus() {
       const r = await authFetch(`${API}/sessions?limit=40`)
       const d = await r.json()
       setSessions(d.items || [])
-    } catch { /* список не критичен */ }
+      return d.items || []
+    } catch { return [] /* список не критичен */ }
   }
 
+  /**
+   * Показать разбор, а пока он идёт — переспрашивать.
+   *
+   * Обращения к данным пишутся на сервере по ходу дела, поэтому опрос даёт не
+   * только «готово / не готово», но и живую картину: куда он сходил, что нашёл.
+   */
   async function openSession(id) {
+    clearTimeout(pollRef.current)
     setError(null)
     try {
-      const r = await authFetch(`${API}/sessions/${id}`)
-      setSession(await r.json())
-    } catch (e) { setError(e.message) }
+      const d = await asJson(await authFetch(`${API}/sessions/${id}`))
+      if (!aliveRef.current) return
+      setSession(d)
+      setBusy(!!d.running)
+      if (d.running) {
+        pollRef.current = setTimeout(() => { if (aliveRef.current) openSession(id) }, 2500)
+      } else {
+        if (d.session?.run_status === 'error') setError(d.session.run_error || 'Разбор не удался')
+        loadSessions()
+      }
+    } catch (e) {
+      setBusy(false)
+      setError(e.message)
+    }
   }
 
   async function ask(text) {
@@ -119,23 +172,26 @@ export default function AdminPrometheus() {
     setQuestion('')
 
     try {
-      const r = await authFetch(`${API}/ask`, {
+      // Ответ приходит сразу и содержит только номер разбора: сам разбор идёт
+      // на сервере минутами, и ждать его в одном запросе нельзя.
+      const d = await asJson(await authFetch(`${API}/ask`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q, session_id: session?.session?.id || null }),
-      })
-      const d = await r.json()
-      if (!r.ok) throw new Error(d.error || 'Разбор не удался')
-      await openSession(d.session_id)
+      }))
       await loadSessions()
+      await openSession(d.session_id)
     } catch (e) {
       setError(e.message)
-    } finally { setBusy(false) }
+      setBusy(false)
+    }
   }
 
   async function removeSession(id) {
     if (!confirm('Удалить разбор из истории?')) return
-    await authFetch(`${API}/sessions/${id}`, { method: 'DELETE' }).catch(() => {})
-    if (session?.session?.id === id) setSession(null)
+    try {
+      await asJson(await authFetch(`${API}/sessions/${id}`, { method: 'DELETE' }))
+    } catch (e) { setError(e.message); return }   // идущий разбор удалять нельзя
+    if (session?.session?.id === id) { clearTimeout(pollRef.current); setSession(null); setBusy(false) }
     loadSessions()
   }
 
@@ -349,9 +405,16 @@ export default function AdminPrometheus() {
             <div className="space-y-3">
               {(session.messages || []).map((m, i) => <Message key={m.id || i} m={m} />)}
               {busy && (
-                <div className="flex items-center gap-2 text-sm text-amber-300/80 p-3">
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Разбирается: ходит за данными, это занимает минуту-другую…
+                <div className="flex items-start gap-2 text-sm text-amber-300/80 p-3">
+                  <Loader2 className="w-4 h-4 animate-spin shrink-0 mt-0.5" />
+                  <div>
+                    Разбирается: ходит за данными, это занимает минуты.
+                    <div className="text-xs text-slate-500 mt-0.5">
+                      Разбор идёт на сервере — страницу можно закрыть и вернуться за ответом позже.
+                      {(session?.messages || []).some(m => m.role === 'tool') &&
+                        ` Обращений к данным: ${(session.messages || []).filter(m => m.role === 'tool').length}.`}
+                    </div>
+                  </div>
                 </div>
               )}
               <div ref={bottomRef} />
@@ -401,7 +464,13 @@ export default function AdminPrometheus() {
               <div className="text-xs text-slate-300 line-clamp-2">{s.title || `Разбор #${s.id}`}</div>
               <div className="flex items-center justify-between mt-1">
                 <div className="text-[10px] text-slate-600">
-                  {fmtDT(s.updated_at)} · {s.реплик} реплик · {fmtNum(s.tool_calls)} обращений
+                  {s.run_status === 'running'
+                    ? <span className="text-amber-400/90 flex items-center gap-1">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> идёт разбор
+                      </span>
+                    : s.run_status === 'error'
+                      ? <span className="text-red-400/80">не удался</span>
+                      : `${fmtDT(s.updated_at)} · ${s.реплик} реплик · ${fmtNum(s.tool_calls)} обращений`}
                 </div>
                 <button onClick={e => { e.stopPropagation(); removeSession(s.id) }}
                   className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 text-slate-500 hover:text-red-400">

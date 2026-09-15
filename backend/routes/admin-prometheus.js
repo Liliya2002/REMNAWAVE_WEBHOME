@@ -5,9 +5,11 @@
  * самих разборов (кто что спросил и что ответил): она нужна, чтобы вывод можно
  * было перепроверить, а не верить на слово.
  *
- * Разбор идёт синхронно и может занять минуту-другую: модель ходит за данными
- * по нескольку раз. Очередь и фоновые задачи тут были бы уместны, но пока
- * разбор запускает человек и ждёт результата, это лишняя сложность.
+ * Разбор занимает минуты: модель ходит за данными по нескольку раз, один
+ * запрос к ней — до двух минут. Дождаться его в рамках HTTP-запроса нельзя:
+ * nginx рвёт соединение на шестидесятой секунде. Поэтому /ask только запускает
+ * разбор и отдаёт его номер, а ход и результат забираются через
+ * GET /sessions/:id.
  */
 const express = require('express')
 const router = express.Router()
@@ -62,18 +64,38 @@ router.get('/sessions', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-/** Один разбор целиком, вместе с обращениями к инструментам. */
+/**
+ * Один разбор целиком, вместе с обращениями к инструментам.
+ *
+ * Его же опрашивает страница, пока идёт разбор: реплики пишутся по мере дела,
+ * поэтому видно, за какими данными он сходил, ещё до готового ответа.
+ */
 router.get('/sessions/:id', async (req, res) => {
   try {
     const s = (await db.query('SELECT * FROM prometheus_sessions WHERE id = $1', [req.params.id])).rows[0]
     if (!s) return res.status(404).json({ error: 'Разбор не найден' })
     const m = await db.query(
       'SELECT * FROM prometheus_messages WHERE session_id = $1 ORDER BY id', [req.params.id])
-    res.json({ session: s, messages: m.rows })
+
+    // «Идёт работа» в базе и отсутствие её в памяти процесса — значит разбор
+    // оборвался (перезапуск, падение). Ждать такой ответ бессмысленно, и лучше
+    // сказать об этом, чем крутить ожидание вечно.
+    if (s.run_status === 'running' && !engine.isRunning(s.id)
+        && Date.now() - new Date(s.run_started_at || s.created_at).getTime() > 30000) {
+      s.run_status = 'error'
+      s.run_error = s.run_error || 'Разбор оборвался и не будет продолжен'
+    }
+    res.json({ session: s, messages: m.rows, running: s.run_status === 'running' })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
-/** Задать вопрос. Долгий запрос: модель ходит за данными по нескольку раз. */
+/**
+ * Запустить разбор.
+ *
+ * Отвечает сразу номером разбора, не дожидаясь результата: ответа ждать
+ * минуты, а шлюз рвёт соединение раньше. Ошибки, о которых можно сказать
+ * немедленно (нет ключа, не прошла защита), возвращаются здесь же.
+ */
 router.post('/ask', async (req, res) => {
   try {
     const { question, session_id } = req.body || {}
@@ -84,12 +106,12 @@ router.post('/ask', async (req, res) => {
     await audit.write(req, 'prometheus.ask', { type: 'prometheus' },
       { question: String(question).slice(0, 300) })
 
-    const r = await engine.ask(String(question).slice(0, 8000), {
+    const r = await engine.start(String(question).slice(0, 8000), {
       sessionId: session_id || null,
       userId: req.userId,
     })
     if (!r.ok) return res.status(502).json(r)
-    res.json(r)
+    res.status(202).json(r)
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
@@ -97,6 +119,9 @@ router.post('/ask', async (req, res) => {
  *  и относится оно к его собственным записям, не к данным проекта. */
 router.delete('/sessions/:id', async (req, res) => {
   try {
+    if (engine.isRunning(req.params.id)) {
+      return res.status(409).json({ error: 'Разбор ещё идёт — дождитесь окончания' })
+    }
     const { rowCount } = await db.query('DELETE FROM prometheus_sessions WHERE id = $1', [req.params.id])
     if (!rowCount) return res.status(404).json({ error: 'Разбор не найден' })
     await audit.write(req, 'prometheus.session.delete', { type: 'prometheus', id: req.params.id })

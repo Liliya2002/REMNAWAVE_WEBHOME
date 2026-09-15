@@ -311,6 +311,11 @@ telegramBot.autoStart().catch(err => console.warn('[TG bot] autoStart:', err.mes
 // YC: при рестарте помечаем зависшие IP-search job'ы как failed
 require('./services/yandexCloud/ipRangeSearch').recoverOrphanedJobs().catch(() => {})
 
+// PROMETHEUS: разбор живёт в памяти процесса. Если бэкенд перезапустили посреди
+// него, в базе останется «идёт работа», и владелец будет ждать ответа, которого
+// уже никто не готовит.
+require('./services/prometheus/engine').resetStale().catch(() => {})
+
 const PORT = process.env.PORT || 4000
 // Проверка платёжной конфигурации на старте: без неё покупка подписки молча
 // падает при каждом клике «Оплатить», и заметить это можно только по логам.
