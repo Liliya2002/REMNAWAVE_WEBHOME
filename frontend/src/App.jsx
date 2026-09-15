@@ -45,6 +45,7 @@ import AdminBedolagaPromo from './pages/AdminBedolagaPromo'
 import AdminBedolagaPromoUses from './pages/AdminBedolagaPromoUses'
 import AdminBroadcasts from './pages/AdminBroadcasts'
 import AdminAiAssistant from './pages/AdminAiAssistant'
+import AdminPrometheus from './pages/AdminPrometheus'
 import AdminPromo from './pages/AdminPromo'
 import AdminConfigBuilder from './pages/AdminConfigBuilder'
 import RuvdsLayout from './pages/ruvds/RuvdsLayout'
@@ -353,6 +354,7 @@ function AppShell(){
               <Route path="bedolaga" element={<AdminBedolaga />} />
               <Route path="bedolaga/expiring" element={<AdminBedolagaExpiring />} />
               <Route path="config-builder" element={<AdminConfigBuilder />} />
+              <Route path="prometheus" element={<AdminPrometheus />} />
               <Route path="ai" element={<AdminAiAssistant />} />
               <Route path="ai/:section" element={<AdminAiAssistant />} />
               <Route path="bedolaga/promo" element={<AdminBedolagaPromo />} />

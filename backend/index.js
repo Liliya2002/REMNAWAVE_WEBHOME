@@ -247,6 +247,8 @@ app.use('/api/landings', landingsRoutes)
 app.use('/api/countries', require('./routes/countries'))
 app.use('/api/admin', adminLimiter, adminTemplatesRoutes)
 app.use('/api/admin/ai', require('./routes/admin-ai-assistant'))
+// PROMETHEUS — аналитический центр проекта. Только чтение.
+app.use('/api/admin/prometheus', adminLimiter, require('./routes/admin-prometheus'))
 app.use('/api/admin/config-builder', require('./routes/admin-config-builder'))
 app.use('/api/webhooks', require('./routes/remnawave-webhook'))
 app.use('/api/notifications', notificationsRoutes)

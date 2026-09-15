@@ -6,10 +6,21 @@ import {
   Gift, Bell,
   Sparkles, FileText,
   Globe, Server, ShoppingCart, Cloud, Ticket, LifeBuoy, HardDrive, Wallet, KeyRound, Users2, CalendarClock,
-  Activity, Palette, BookOpen, TrendingUp, Shield, MessageCircle, Wrench, Send,
+  Activity, Palette, BookOpen, TrendingUp, Shield, MessageCircle, Wrench, Send, Flame,
 } from 'lucide-react'
 
 export const GROUPS = [
+  // PROMETHEUS стоит первым и отдельной группой намеренно: это не ещё один
+  // раздел админки, а взгляд на проект целиком, и заходить в него логично
+  // раньше, чем в частности.
+  {
+    id: 'prometheus',
+    title: 'PROMETHEUS',
+    color: 'from-amber-500 to-orange-600',
+    items: [
+      { to: '/admin/prometheus', Icon: Flame, label: 'Аналитический центр' },
+    ],
+  },
   {
     id: 'analytics',
     title: 'Аналитика',
