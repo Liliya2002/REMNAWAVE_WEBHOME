@@ -192,7 +192,7 @@ const TIMEOUT_MS = 10000
  * коммит: коммитить нечего, а ROLLBACK гарантирует, что даже случайно
  * созданное временное состояние не переживёт запрос.
  */
-async function runSelect(raw, { limit = MAX_ROWS, maskPii = true } = {}) {
+async function runSelect(raw, { limit = MAX_ROWS, maskPii = true, explain = true } = {}) {
   const check = validateSelect(raw)
   if (!check.ok) return { ok: false, error: check.error }
 
@@ -219,11 +219,46 @@ async function runSelect(raw, { limit = MAX_ROWS, maskPii = true } = {}) {
       fields: res.fields.map(f => f.name),
     }
   } catch (e) {
-    return { ok: false, error: e.message }
+    return explain ? await explainSqlError(e, check.sql) : { ok: false, error: e.message }
   } finally {
     await client.query('ROLLBACK').catch(() => {})
     client.release()
   }
+}
+
+/**
+ * Ошибка запроса — вместе с тем, как должно быть.
+ *
+ * Голое «column s.status does not exist» отправляет модель гадать дальше, и она
+ * перебирает названия по одному, тратя шаги и деньги. Если названия не угаданы,
+ * возвращаем настоящий состав упомянутых таблиц: следующая попытка будет
+ * осмысленной, а не второй догадкой.
+ */
+async function explainSqlError(e, sql) {
+  const out = { ok: false, error: e.message }
+  if (e.hint) out.hint = e.hint          // Postgres часто сам подсказывает похожее имя
+  if (e.code !== '42703' && e.code !== '42P01') return out   // не про колонки и таблицы
+
+  // Имена после FROM и JOIN. Разбор грубый, но нам нужен лишь список кандидатов.
+  const names = [...new Set(
+    [...String(sql).matchAll(/\b(?:from|join)\s+([a-z_][a-z0-9_]*)/gi)].map(m => m[1].toLowerCase())
+  )].slice(0, 6)
+  if (!names.length) return out
+
+  const r = await runSelect(
+    `SELECT table_name AS "таблица", string_agg(column_name, ', ' ORDER BY ordinal_position) AS "колонки"
+       FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name IN (${names.map(n => `'${n}'`).join(',')})
+      GROUP BY table_name`,
+    { limit: 20, maskPii: false, explain: false }   // explain: false — чтобы не зациклиться
+  )
+  if (r.ok && r.rows.length) {
+    out.таблицы_на_самом_деле = r.rows
+    out.подсказка = 'Возьми названия колонок отсюда, а не по памяти: в этом проекте они свои.'
+  } else if (r.ok) {
+    out.подсказка = `Таких таблиц в базе нет: ${names.join(', ')}. Посмотри список через db_schema без аргументов.`
+  }
+  return out
 }
 
 /**

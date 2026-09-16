@@ -64,17 +64,25 @@ const TOOLS = {
   /** Структура базы: какие таблицы есть и из чего состоят. */
   db_schema: {
     description: 'Структура базы: таблицы и колонки с типами. Без данных. ' +
-      'Начинайте с неё, если не знаете, где что лежит.',
+      'Вызывайте ПЕРВОЙ, до любого db_query: названия колонок в этом проекте свои, ' +
+      'и угаданные по памяти почти всегда неверны.',
     input_schema: {
       type: 'object',
       properties: {
-        table: { type: 'string', description: 'Имя таблицы. Пусто — список всех таблиц с числом строк.' },
+        table: { type: 'string', description: 'Имя таблицы — полное описание с типами. Пусто — карта всей базы: таблицы, число строк и состав колонок.' },
       },
     },
     async run({ table }) {
       if (!table) {
+        // Сразу с колонками, а не только имена таблиц. Список без состава
+        // экономит несколько сотен токенов и стоит потом нескольких неверных
+        // запросов подряд: модель начинает угадывать названия по памяти.
         const r = await ro.runSelect(
-          `SELECT c.relname AS "таблица", c.reltuples::bigint AS "примерно_строк"
+          `SELECT c.relname AS "таблица",
+                  c.reltuples::bigint AS "примерно_строк",
+                  (SELECT string_agg(a.attname, ', ' ORDER BY a.attnum)
+                     FROM pg_attribute a
+                    WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped) AS "колонки"
              FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
             WHERE n.nspname = 'public' AND c.relkind = 'r'
             ORDER BY c.relname`, { limit: 200 })
