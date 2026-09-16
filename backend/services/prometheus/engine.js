@@ -22,6 +22,7 @@
  */
 const db = require('../../db')
 const ai = require('../aiAssistant')
+const connection = require('./connection')
 const tools = require('./tools')
 const ro = require('./readonly')
 const memory = require('./memory')
@@ -90,10 +91,10 @@ const running = new Map()
 function humanError(e) {
   const raw = String(e?.message || e || 'неизвестная ошибка')
   const code = e?.status || Number((raw.match(/^(\d{3})\b/) || [])[1]) || 0
-  if (code === 401 || code === 403) return 'Ключ ИИ отклонён провайдером. Проверьте его: админка → ИИ-ассистент → Подключение.'
+  if (code === 401 || code === 403) return 'Ключ ИИ отклонён провайдером. Проверьте его на вкладке «Подключение» и нажмите «Проверить связь».'
   if (code === 429) return 'Провайдер ограничил частоту запросов. Попробуйте через несколько минут.'
   if (code === 402) return 'На счету у провайдера ИИ закончились средства.'
-  if (code === 404) return 'Провайдер не знает такой модели. Проверьте название модели в настройках подключения.'
+  if (code === 404) return 'Провайдер не знает ни такой модели, ни такого адреса. Проверьте их на вкладке «Подключение» — в адресе не должно быть /v1 на конце.'
   if (code >= 500) return `Провайдер ИИ ответил ошибкой ${code}. Это на их стороне, попробуйте позже.`
   if (/timeout|ETIMEDOUT|aborted/i.test(raw)) return 'Модель не ответила за отведённое время. Попробуйте сузить вопрос.'
   if (/ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(raw)) return 'Не удалось связаться с провайдером ИИ — проверьте адрес в настройках подключения.'
@@ -107,8 +108,11 @@ function humanError(e) {
  * а не через минуту молчания. Остальное происходит уже в фоне.
  */
 async function prepare(question, { sessionId = null, userId = null } = {}) {
-  const conn = await ai.getSettings(db)
-  if (!conn.apiKey) return { ok: false, error: 'Не задан ключ ИИ: админка → ИИ-ассистент → Подключение' }
+  // Подключение своё, с откатом на ассистентское. Так смена провайдера ради
+  // разборов не трогает ассистента, который отвечает живым клиентам.
+  const conn = await connection.get()
+  if (!conn.apiKey) return { ok: false, error: 'Не задан ключ ИИ: вкладка «Подключение» в этом разделе' }
+  if (!conn.model) return { ok: false, error: 'Не задана модель: вкладка «Подключение» в этом разделе' }
 
   // Рубежи проверяем перед каждым разбором, а не один раз при старте: если
   // защиту сломали правкой, узнать об этом надо до обращения к модели, а не
@@ -139,6 +143,14 @@ async function prepare(question, { sessionId = null, userId = null } = {}) {
   return { ok: true, sid, conn }
 }
 
+/** Модель не ответила — записать причину туда, где её увидят. */
+async function modelFailed(sid, e, trace) {
+  const why = humanError(e)
+  log.warn(`Разбор #${sid}: модель не ответила — ${e.message}`)
+  await saveMessage(sid, { role: 'assistant', content: why })
+  return { ok: false, error: why, session_id: sid, trace }
+}
+
 /** Сам цикл: модель просит данные, получает их, и так пока не соберёт ответ. */
 async function runLoop(sid, question, conn) {
   // Память подкладывается ПЕРЕД вопросом: иначе он начнёт разбор с нуля и
@@ -159,6 +171,9 @@ async function runLoop(sid, question, conn) {
   const defs = tools.toolDefinitions()
   let usedIn = 0, usedOut = 0, calls = 0
   const trace = []
+  // Управление размышлением понимают не все шлюзы. Признак приходит из проверки
+  // связи, но если провайдер передумал — отступаем на ходу, а не роняем разбор.
+  let thinking = conn.send_thinking !== false
 
   for (let step = 0; step < MAX_STEPS; step++) {
     if (usedIn + usedOut > MAX_TOKENS_PER_RUN) {
@@ -166,21 +181,28 @@ async function runLoop(sid, question, conn) {
       break
     }
 
+    const body = {
+      model: conn.model,
+      max_tokens: Number(conn.max_tokens) || ai.DEFAULT_MAX_TOKENS,
+      system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+      tools: defs,
+      messages,
+    }
+
     let res
     try {
-      res = await client.messages.create({
-        model: conn.model || 'claude-opus-4-8',
-        max_tokens: Number(conn.max_tokens) || ai.DEFAULT_MAX_TOKENS,
-        thinking: { type: 'adaptive' },
-        system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
-        tools: defs,
-        messages,
-      })
+      res = await client.messages.create(thinking ? { ...body, thinking: { type: 'adaptive' } } : body)
     } catch (e) {
-      const why = humanError(e)
-      log.warn(`Разбор #${sid}: модель не ответила — ${e.message}`)
-      await saveMessage(sid, { role: 'assistant', content: why })
-      return { ok: false, error: why, session_id: sid, trace }
+      if (thinking && /thinking/i.test(String(e.message)) && (e.status === 400 || e.status === 422)) {
+        // Шлюз не понял управление размышлением. Это не повод терять разбор:
+        // повторяем без него и дальше не просим.
+        log.info(`Разбор #${sid}: провайдер не понимает управление размышлением, продолжаю без него`)
+        thinking = false
+        await db.query('UPDATE prometheus_settings SET send_thinking = false WHERE id = 1').catch(() => {})
+        try { res = await client.messages.create(body) } catch (e2) { return modelFailed(sid, e2, trace) }
+      } else {
+        return modelFailed(sid, e, trace)
+      }
     }
 
     usedIn += res.usage?.input_tokens || 0

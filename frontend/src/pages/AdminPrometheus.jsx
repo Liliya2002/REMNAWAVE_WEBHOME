@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react'
 import {
   Flame, Send, ShieldCheck, ShieldAlert, Database, FileCode, Wrench,
   Trash2, History, Loader2, ChevronDown, ChevronRight, AlertCircle,
-  Brain, ClipboardList, Check, X, MessageSquare,
+  Brain, ClipboardList, Check, X, MessageSquare, Plug, RefreshCw,
 } from 'lucide-react'
 import { authFetch } from '../services/api'
 
@@ -72,7 +72,7 @@ export default function AdminPrometheus() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   const [showTools, setShowTools] = useState(false)
-  const [tab, setTab] = useState('chat')        // chat | memory | findings
+  const [tab, setTab] = useState('chat')        // chat | memory | findings | conn
   const [memory, setMemory] = useState(null)
   const [findings, setFindings] = useState([])
   const bottomRef = useRef(null)
@@ -282,6 +282,7 @@ export default function AdminPrometheus() {
           { id: 'chat', label: 'Разбор', Icon: MessageSquare },
           { id: 'memory', label: 'Память' + (status?.memory?.total_memory ? ` · ${status.memory.total_memory}` : ''), Icon: Brain },
           { id: 'findings', label: 'Находки', Icon: ClipboardList },
+          { id: 'conn', label: 'Подключение', Icon: Plug },
         ].map(x => (
           <button key={x.id} onClick={() => setTab(x.id)}
             className={`px-3 sm:px-4 py-2 text-sm flex items-center gap-2 border-b-2 -mb-px transition shrink-0 whitespace-nowrap ${
@@ -291,6 +292,9 @@ export default function AdminPrometheus() {
           </button>
         ))}
       </div>
+
+      {/* Подключение */}
+      {tab === 'conn' && <Connection onSaved={() => authFetch(`${API}/status`).then(r => r.json()).then(setStatus).catch(() => {})} />}
 
       {/* Память */}
       {tab === 'memory' && (
@@ -503,6 +507,163 @@ const STATUS_LABEL = { open: 'открыта', accepted: 'принята в ра
 const STATUS_TONE = {
   open: 'text-slate-300', accepted: 'text-emerald-400',
   dismissed: 'text-slate-500', fixed: 'text-emerald-500',
+}
+
+/**
+ * Своё подключение к нейросети.
+ *
+ * Отдельное от ассистента тикетов намеренно: тот отвечает живым клиентам, и
+ * переводить его на непроверенного провайдера ради разборов не стоит. Пустое
+ * поле означает «как у ассистента».
+ */
+function Connection({ onSaved }) {
+  const [own, setOwn] = useState(null)
+  const [eff, setEff] = useState(null)
+  const [form, setForm] = useState({ base_url: '', model: '', api_key: '', max_tokens: '' })
+  const [models, setModels] = useState(null)
+  const [test, setTest] = useState(null)
+  const [state, setState] = useState('')        // saving | testing | models
+  const [err, setErr] = useState(null)
+
+  useEffect(() => { load() }, [])
+
+  async function load() {
+    try {
+      const d = await asJson(await authFetch(`${API}/connection`))
+      setOwn(d.own); setEff(d.effective); setTest(d.check_result)
+      setForm({ base_url: d.own.base_url, model: d.own.model, api_key: '', max_tokens: d.own.max_tokens || '' })
+    } catch (e) { setErr(e.message) }
+  }
+
+  async function save() {
+    setState('saving'); setErr(null)
+    try {
+      const body = { base_url: form.base_url, model: form.model, max_tokens: form.max_tokens || null }
+      if (form.api_key.trim()) body.api_key = form.api_key.trim()   // пусто = не менять
+      await asJson(await authFetch(`${API}/connection`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }))
+      await load(); onSaved?.()
+    } catch (e) { setErr(e.message) } finally { setState('') }
+  }
+
+  async function runTest() {
+    setState('testing'); setErr(null); setTest(null)
+    try {
+      setTest(await asJson(await authFetch(`${API}/connection/test`, { method: 'POST' })))
+      onSaved?.()
+    } catch (e) { setErr(e.message) } finally { setState('') }
+  }
+
+  async function loadModels() {
+    setState('models'); setErr(null)
+    try {
+      const d = await asJson(await authFetch(`${API}/connection/models`))
+      if (!d.ok) setErr(d.error + (d.detail ? ` · ${d.detail}` : ''))
+      setModels(d.models || [])
+    } catch (e) { setErr(e.message) } finally { setState('') }
+  }
+
+  if (!own) return <div className="text-sm text-slate-500">Загружаем…</div>
+
+  const field = 'w-full px-3 py-2 bg-slate-950/60 border border-slate-700 rounded-lg text-white text-sm focus:border-amber-500 focus:outline-none'
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <div className="p-3 rounded-xl border border-slate-700/60 bg-slate-900/40 text-xs text-slate-400">
+        Подключение у раздела своё. Пустое поле — «как у ассистента тикетов», так что
+        задавать нужно только то, что отличается.
+        <div className="mt-1 text-slate-500">
+          Врозь — намеренно: ассистент отвечает живым клиентам, и переводить его на непроверенного
+          провайдера ради разборов не стоит. Память смену подключения переживает целиком —
+          она лежит в нашей базе и к провайдеру не привязана.
+        </div>
+      </div>
+
+      {err && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/40 text-sm text-red-300">{err}</div>}
+
+      <div className="space-y-3">
+        <div>
+          <label className="text-xs text-slate-400">Адрес провайдера</label>
+          <input className={field} value={form.base_url} placeholder={eff?.base_url || 'https://…'}
+            onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} />
+          <div className="text-[11px] text-slate-600 mt-1">
+            Без <span className="font-mono">/v1</span> на конце — его дописывает клиент.
+            Лишний даст «не найдено». {own.base_url ? '' : `Сейчас наследуется: ${eff?.base_url}`}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-xs text-slate-400">Ключ</label>
+          <input className={field} type="password" value={form.api_key} autoComplete="new-password"
+            placeholder={own.has_key ? 'ключ задан — оставьте пустым, чтобы не менять' : 'пусто — берётся ключ ассистента'}
+            onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))} />
+        </div>
+
+        <div>
+          <label className="text-xs text-slate-400">Модель</label>
+          <div className="flex gap-2">
+            <input className={field} value={form.model} list="prometheus-models"
+              placeholder={eff?.model || 'название модели'}
+              onChange={e => setForm(f => ({ ...f, model: e.target.value }))} />
+            <button onClick={loadModels} disabled={!!state}
+              className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 text-xs shrink-0 hover:text-white disabled:opacity-40 flex items-center gap-1.5">
+              <RefreshCw className={`w-3.5 h-3.5 ${state === 'models' ? 'animate-spin' : ''}`} /> список
+            </button>
+          </div>
+          <datalist id="prometheus-models">
+            {(models || []).map(m => <option key={m} value={m} />)}
+          </datalist>
+          {models && (
+            <div className="text-[11px] text-slate-500 mt-1">
+              {models.length ? `У провайдера доступно моделей: ${models.length}. Начните печатать — список подскажет.`
+                : 'Провайдер не отдал список моделей — впишите название вручную.'}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <label className="text-xs text-slate-400">Предел токенов на ответ</label>
+          <input className={field} type="number" value={form.max_tokens}
+            placeholder={String(eff?.max_tokens || 16000)}
+            onChange={e => setForm(f => ({ ...f, max_tokens: e.target.value }))} />
+        </div>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={save} disabled={!!state}
+          className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-sm">
+          {state === 'saving' ? 'Сохраняю…' : 'Сохранить'}
+        </button>
+        <button onClick={runTest} disabled={!!state}
+          className="px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-sm hover:text-white disabled:opacity-40 flex items-center gap-2">
+          {state === 'testing' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plug className="w-4 h-4" />}
+          Проверить связь
+        </button>
+      </div>
+
+      {/* Проверяем не «отвечает ли», а «вызывает ли инструменты»: разбор состоит
+          из обращений к данным, и без них провайдер бесполезен — хотя на обычном
+          вопросе выглядит полностью исправным. */}
+      {test && (
+        <div className={`p-3 rounded-xl border text-sm ${
+          test.ok ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+                  : 'border-red-500/40 bg-red-500/10 text-red-200'}`}>
+          <div className="font-medium flex items-center gap-2">
+            {test.ok ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+            {test.ok ? 'Связь есть, модель вызывает инструменты — разбор заработает' : 'Разбор не заработает'}
+          </div>
+          {test.error && <div className="mt-1 text-[13px]">{test.error}</div>}
+          {test.ok && (
+            <div className="mt-1 text-[11px] text-emerald-300/70">
+              {test.model} · ответ за {(test.ms / 1000).toFixed(1)} с · {test.tokens} токенов
+              {test.thinking_ok === false && ' · управление размышлением провайдер не понимает, обходимся без него'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function Badge({ tone, Icon, text }) {

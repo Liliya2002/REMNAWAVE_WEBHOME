@@ -19,6 +19,7 @@ const engine = require('../services/prometheus/engine')
 const tools = require('../services/prometheus/tools')
 const ro = require('../services/prometheus/readonly')
 const memory = require('../services/prometheus/memory')
+const connection = require('../services/prometheus/connection')
 const audit = require('../services/auditLog')
 
 router.use(verifyToken, verifyAdmin)
@@ -27,7 +28,7 @@ router.use(verifyToken, verifyAdmin)
 router.get('/status', async (req, res) => {
   try {
     const guard = await ro.selfCheck()
-    const ai = (await db.query('SELECT api_key, model FROM ai_assistant_settings LIMIT 1')).rows[0]
+    const conn = await connection.get()
     const stats = (await db.query(
       `SELECT COUNT(*)::int AS сессий,
               COALESCE(SUM(input_tokens + output_tokens), 0)::int AS токенов,
@@ -37,8 +38,9 @@ router.get('/status', async (req, res) => {
     res.json({
       readonly_ok: guard.ok,
       readonly_failed: guard.failed || [],
-      has_key: !!(ai && ai.api_key),
-      model: ai?.model || null,
+      has_key: !!conn.apiKey,
+      model: conn.model || null,
+      connection_checked: conn.check_result || null,
       tools: tools.toolDefinitions().map(t => ({ name: t.name, description: t.description })),
       masked_columns: {
         secrets: [...ro.SECRET_COLUMNS].length,
@@ -127,6 +129,51 @@ router.delete('/sessions/:id', async (req, res) => {
     await audit.write(req, 'prometheus.session.delete', { type: 'prometheus', id: req.params.id })
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ─── Подключение ────────────────────────────────────────────────────────────
+
+/** Своё подключение к нейросети. Ключ наружу не отдаём — только флаг. */
+router.get('/connection', async (req, res) => {
+  try {
+    const c = await connection.get()
+    res.json({
+      own: c.own, inherited: c.inherited,
+      effective: { base_url: c.base_url, model: c.model, max_tokens: c.max_tokens, has_key: !!c.apiKey },
+      send_thinking: c.send_thinking,
+      checked_at: c.checked_at, check_result: c.check_result,
+    })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+router.put('/connection', async (req, res) => {
+  try {
+    const c = await connection.save(req.body || {})
+    // В журнал — факт смены подключения, без ключа и без адреса.
+    await audit.write(req, 'prometheus.connection.update', { type: 'prometheus' },
+      { model: c.model, key_changed: req.body?.api_key ? true : undefined })
+    res.json({ own: c.own, inherited: c.inherited, effective: { base_url: c.base_url, model: c.model, has_key: !!c.apiKey } })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+/**
+ * Проверить связь.
+ *
+ * Не «отвечает ли что-нибудь», а «вызывает ли инструменты»: разбор состоит из
+ * обращений к данным, и провайдер, который их проглатывает, здесь бесполезен,
+ * хотя на обычном вопросе выглядит исправным.
+ */
+router.post('/connection/test', async (req, res) => {
+  try {
+    res.json(await connection.check())
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
+/** Список моделей у провайдера — чтобы не угадывать название руками. */
+router.get('/connection/models', async (req, res) => {
+  try {
+    res.json(await connection.models())
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
 // ─── Память ─────────────────────────────────────────────────────────────────
