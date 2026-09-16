@@ -12,9 +12,15 @@
  * отдельно — заодно по ходу видно, чем он занят прямо сейчас.
  *
  * Два ограничителя. Число шагов — чтобы цикл «спрошу ещё разок» не крутился
- * бесконечно на чужие деньги. Потолок токенов — чтобы один разбор не съел
- * дневной бюджет: в отличие от ассистента тикетов, здесь в контекст утягивается
- * содержимое файлов и выборки из базы, и растёт он быстро.
+ * бесконечно на чужие деньги. Потолок расхода из настроек — чтобы один разбор
+ * не съел дневной бюджет: здесь в контекст утягиваются файлы и выборки из базы,
+ * и растёт он быстро. Если провайдер не сообщает расход (посредники часто не
+ * сообщают), считаем сами по объёму переписки: приблизительно, зато тормоз
+ * работает, а не стоит на нуле.
+ *
+ * Упершись в любой из пределов, разбор НЕ умирает: последний шаг отдан под
+ * ответ из уже собранного. Иначе выходило худшее из возможного — всё потрачено,
+ * ничего не отдано.
  *
  * Ход разбора пишется в базу целиком: какой инструмент вызвали и что он вернул.
  * Без этого вывод невозможно перепроверить — остаётся верить на слово, а
@@ -29,7 +35,18 @@ const memory = require('./memory')
 const log = require('../logger').for('Prometheus')
 
 const MAX_STEPS = 14
-const MAX_TOKENS_PER_RUN = 220000
+const DEFAULT_BUDGET = 150000     // если в настройках не задано иное
+
+// Предел на один результат инструмента. Он остаётся в переписке навсегда и
+// пересылается на КАЖДОМ следующем шаге, поэтому цена у него не одна, а по
+// числу оставшихся шагов. Прежние 60 000 символов (~17 тысяч токенов) при
+// четырнадцати шагах превращались в сотни тысяч.
+const MAX_TOOL_RESULT = 12000
+
+// Сколько последних результатов держать целиком. Более ранние модель уже
+// осмыслила и пересказала себе в рассуждениях; возить их полный текст до конца
+// разбора — платить за одно и то же снова и снова.
+const KEEP_FULL_RESULTS = 3
 
 const SYSTEM = `Ты — PROMETHEUS, аналитический центр проекта VPN Webhome.
 
@@ -145,11 +162,80 @@ async function prepare(question, { sessionId = null, userId = null } = {}) {
   return { ok: true, sid, conn }
 }
 
-/** Модель не ответила — записать причину туда, где её увидят. */
-async function modelFailed(sid, e, trace) {
+/**
+ * Оценка расхода, когда провайдер его не сообщает.
+ *
+ * Шлюзы-посредники часто не возвращают usage, и счётчик стоял на нуле — потолок
+ * не срабатывал никогда. Считать приблизительно и ошибаться в третьем знаке
+ * лучше, чем не считать вовсе: нам нужен не счёт от провайдера, а вовремя
+ * нажатый тормоз.
+ */
+function approxTokens(x) {
+  const s = typeof x === 'string' ? x : JSON.stringify(x || '')
+  return Math.ceil(s.length / 3.2)     // кириллица дороже латиницы, берём с запасом
+}
+
+/** Результат инструмента для переписки: обрезаем по строкам, а не по символам. */
+function packToolResult(out) {
+  let s = JSON.stringify(out)
+  if (s.length <= MAX_TOOL_RESULT) return s
+
+  // У выборки режем строки: обрезанный по символам JSON нечитаем целиком, а
+  // половина строк — всё ещё ответ на вопрос «что там вообще лежит».
+  if (Array.isArray(out?.rows) && out.rows.length > 1) {
+    const rows = [...out.rows]
+    while (rows.length > 1 && JSON.stringify({ ...out, rows }).length > MAX_TOOL_RESULT) {
+      rows.splice(Math.ceil(rows.length / 2))
+    }
+    s = JSON.stringify({
+      ...out, rows,
+      показано_строк: rows.length,
+      всего_строк: out.rows.length,
+      обрезано: 'Результат велик. Спрашивай уже́ — сводкой, условием WHERE, меньшим LIMIT: целиком он не поместится.',
+    })
+    if (s.length <= MAX_TOOL_RESULT) return s
+  }
+  return s.slice(0, MAX_TOOL_RESULT) + '… (обрезано)'
+}
+
+/**
+ * Убрать из переписки текст давних результатов.
+ *
+ * Блок остаётся на месте — провайдер требует, чтобы у каждого вызова был свой
+ * ответ, — но текст в нём заменяется пометкой. Иначе каждый следующий шаг
+ * пересылает всё, что набралось раньше, и разбор дорожает квадратично.
+ */
+function pruneOldResults(messages) {
+  const idx = []
+  messages.forEach((m, i) => {
+    if (m.role === 'user' && Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result')) idx.push(i)
+  })
+  for (const i of idx.slice(0, Math.max(0, idx.length - KEEP_FULL_RESULTS))) {
+    messages[i] = {
+      role: 'user',
+      content: messages[i].content.map(b => b.type === 'tool_result'
+        ? { ...b, content: '(результат убран из переписки, чтобы не платить за него на каждом шаге; повтори вызов, если он снова нужен)' }
+        : b),
+    }
+  }
+}
+
+/** Записать расход в историю. Вызывается на ЛЮБОМ исходе, а не только удачном. */
+async function finishRun(sid, usedIn, usedOut, calls) {
+  await db.query(
+    `UPDATE prometheus_sessions
+        SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3,
+            tool_calls = tool_calls + $4, updated_at = NOW()
+      WHERE id = $1`, [sid, usedIn, usedOut, calls]).catch(() => {})
+}
+
+/** Модель не ответила — записать причину туда, где её увидят, и учесть расход. */
+async function modelFailed(sid, e, trace, spent = {}) {
   const why = humanError(e)
   log.warn(`Разбор #${sid}: модель не ответила — ${e.message}`)
   await saveMessage(sid, { role: 'assistant', content: why })
+  // Расход до поломки — это уже потраченные деньги, и они должны быть видны.
+  await finishRun(sid, spent.usedIn || 0, spent.usedOut || 0, spent.calls || 0)
   return { ok: false, error: why, session_id: sid, trace }
 }
 
@@ -177,11 +263,19 @@ async function runLoop(sid, question, conn) {
   // связи, но если провайдер передумал — отступаем на ходу, а не роняем разбор.
   let thinking = conn.send_thinking !== false
 
-  for (let step = 0; step < MAX_STEPS; step++) {
-    if (usedIn + usedOut > MAX_TOKENS_PER_RUN) {
-      trace.push({ type: 'limit', text: 'Достигнут потолок токенов на разбор' })
+  const budget = Number(conn.token_budget) || DEFAULT_BUDGET
+  let ranOut = null          // почему остановились, если остановились досрочно
+
+  // Последний шаг оставлен под ответ: на нём инструменты уже не нужны, нужен
+  // вывод из собранного. Без этого запаса разбор упирался в предел и умирал,
+  // потратив всё и не отдав ничего.
+  for (let step = 0; step < MAX_STEPS - 1; step++) {
+    if (usedIn + usedOut > budget) {
+      ranOut = 'потолок расхода'
       break
     }
+
+    pruneOldResults(messages)
 
     const body = {
       model: conn.model,
@@ -201,14 +295,17 @@ async function runLoop(sid, question, conn) {
         log.info(`Разбор #${sid}: провайдер не понимает управление размышлением, продолжаю без него`)
         thinking = false
         await db.query('UPDATE prometheus_settings SET send_thinking = false WHERE id = 1').catch(() => {})
-        try { res = await client.messages.create(body) } catch (e2) { return modelFailed(sid, e2, trace) }
+        try { res = await client.messages.create(body) } catch (e2) { return modelFailed(sid, e2, trace, { usedIn, usedOut, calls }) }
       } else {
-        return modelFailed(sid, e, trace)
+        return modelFailed(sid, e, trace, { usedIn, usedOut, calls })
       }
     }
 
-    usedIn += res.usage?.input_tokens || 0
-    usedOut += res.usage?.output_tokens || 0
+    // Провайдер расход не всегда сообщает — тогда считаем сами по объёму
+    // отправленного и полученного. Приблизительно, но тормоз работает.
+    usedIn += res.usage?.input_tokens || approxTokens(messages)
+    usedOut += res.usage?.output_tokens || approxTokens(res.content)
+    log.debug(`Разбор #${sid}: шаг ${step + 1}, потрачено ≈${usedIn + usedOut} из ${budget}`)
 
     if (res.stop_reason === 'refusal') {
       return { ok: false, error: 'Модель отклонила запрос', session_id: sid, trace }
@@ -220,11 +317,7 @@ async function runLoop(sid, question, conn) {
     // Инструменты не запрошены — значит это и есть ответ.
     if (!toolUses.length) {
       await saveMessage(sid, { role: 'assistant', content: text })
-      await db.query(
-        `UPDATE prometheus_sessions
-            SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3,
-                tool_calls = tool_calls + $4, updated_at = NOW()
-          WHERE id = $1`, [sid, usedIn, usedOut, calls])
+      await finishRun(sid, usedIn, usedOut, calls)
       return { ok: true, answer: text, session_id: sid, trace, usage: { input: usedIn, output: usedOut, tool_calls: calls } }
     }
 
@@ -242,18 +335,83 @@ async function runLoop(sid, question, conn) {
       await saveMessage(sid, { role: 'tool', tool_name: u.name, tool_input: u.input, tool_result: out })
       trace.push({ type: 'tool', name: u.name, input: u.input, ok: out.ok !== false })
 
-      results.push({
-        type: 'tool_result',
-        tool_use_id: u.id,
-        content: JSON.stringify(out).slice(0, 60000),
-      })
+      results.push({ type: 'tool_result', tool_use_id: u.id, content: packToolResult(out) })
     }
     messages.push({ role: 'user', content: results })
   }
 
-  const text = 'Разбор прерван: исчерпан лимит шагов. Сузьте вопрос — например, спросите про один раздел.'
+  if (!ranOut) ranOut = 'предел шагов'
+  return finalAnswer(sid, { client, conn, messages, defs, thinking, trace, usedIn, usedOut, calls, ranOut })
+}
+
+/**
+ * Последнее слово: собрать ответ из того, что уже добыто.
+ *
+ * Раньше упёршийся в предел разбор заканчивался фразой «исчерпан лимит шагов» —
+ * всё потрачено, ничего не отдано, хотя данные были собраны. Один такой стоил
+ * 600 тысяч токенов и ноль пользы.
+ *
+ * Инструменты на этом шаге запрещены явно: попроси мы «просто ответить», модель
+ * с большой вероятностью потянулась бы ещё за одним запросом.
+ */
+async function finalAnswer(sid, { client, conn, messages, defs, thinking, trace, usedIn, usedOut, calls, ranOut }) {
+  log.info(`Разбор #${sid}: ${ranOut}, собираю ответ из добытого (потрачено ≈${usedIn + usedOut})`)
+  trace.push({ type: 'limit', text: `Достигнут ${ranOut} — ответ собирается из уже собранного` })
+
+  const last = messages[messages.length - 1]
+  const ask = {
+    type: 'text',
+    text: 'Данных больше не будет: достигнут ' + ranOut + '. Ответь на вопрос владельца тем, что уже узнал. ' +
+      'Приведи числа, которые успел посчитать, и прямо скажи, чего выяснить не успел и каким запросом это доделать. ' +
+      'Незаконченный разбор с честной границей полезнее отказа.',
+  }
+  // Добавляем к последней реплике, а не новой: после блока ответов инструментов
+  // провайдер ждёт ход модели, а не второй подряд ход пользователя.
+  if (last && last.role === 'user' && Array.isArray(last.content)) last.content.push(ask)
+  else messages.push({ role: 'user', content: [ask] })
+
+  const body = {
+    model: conn.model,
+    max_tokens: Number(conn.max_tokens) || ai.DEFAULT_MAX_TOKENS,
+    system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+    tools: defs,
+    tool_choice: { type: 'none' },
+    messages,
+    ...(thinking ? { thinking: { type: 'adaptive' } } : {}),
+  }
+
+  let res
+  try {
+    res = await client.messages.create(body)
+  } catch (e) {
+    // Не всякий шлюз понимает запрет на инструменты — пробуем без него.
+    if (/tool_choice/i.test(String(e.message))) {
+      const { tool_choice, ...rest } = body
+      try { res = await client.messages.create(rest) } catch (e2) { return outOfBudget(sid, e2, trace, usedIn, usedOut, calls, ranOut) }
+    } else {
+      return outOfBudget(sid, e, trace, usedIn, usedOut, calls, ranOut)
+    }
+  }
+
+  usedIn += res.usage?.input_tokens || approxTokens(messages)
+  usedOut += res.usage?.output_tokens || approxTokens(res.content)
+
+  const text = (res.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+  const answer = text || `Разбор остановлен: ${ranOut}. Собрать ответ из добытого не вышло — сузьте вопрос.`
+  await saveMessage(sid, { role: 'assistant', content: answer })
+  await finishRun(sid, usedIn, usedOut, calls)
+  return {
+    ok: true, answer, session_id: sid, trace, incomplete: true, stopped_by: ranOut,
+    usage: { input: usedIn, output: usedOut, tool_calls: calls },
+  }
+}
+
+/** Даже последнее слово не удалось — сказать об этом и записать расход. */
+async function outOfBudget(sid, e, trace, usedIn, usedOut, calls, ranOut) {
+  const text = `Разбор остановлен: ${ranOut}. Собрать ответ из добытого не удалось — ${humanError(e)}`
   await saveMessage(sid, { role: 'assistant', content: text })
-  return { ok: true, answer: text, session_id: sid, trace, usage: { input: usedIn, output: usedOut, tool_calls: calls }, incomplete: true }
+  await finishRun(sid, usedIn, usedOut, calls)
+  return { ok: true, answer: text, session_id: sid, trace, incomplete: true, usage: { input: usedIn, output: usedOut, tool_calls: calls } }
 }
 
 /**

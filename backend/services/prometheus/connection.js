@@ -44,6 +44,9 @@ async function get() {
     base_url: normalizeBase(own.base_url || base.base_url),
     model: own.model || base.model,
     max_tokens: own.max_tokens || base.max_tokens,
+    // Потолок расхода на один разбор — не наследуется: у ассистента тикетов
+    // такого понятия нет, у него один короткий запрос на тикет.
+    token_budget: own.token_budget || 150000,
     send_thinking: own.send_thinking !== false,
     // Откуда что взято — это видно в админке, чтобы не гадать, почему разбор
     // идёт не той моделью, что ожидали.
@@ -52,6 +55,7 @@ async function get() {
       base_url: own.base_url || '',
       model: own.model || '',
       max_tokens: own.max_tokens || null,
+      token_budget: own.token_budget || 150000,
     },
     inherited: {
       key: !own.api_key,
@@ -82,6 +86,7 @@ async function save(b = {}) {
        base_url   = $3,
        model      = $4,
        max_tokens = $5,
+       token_budget = COALESCE($6, token_budget),
        updated_at = NOW()
      WHERE id = 1`,
     [
@@ -90,6 +95,8 @@ async function save(b = {}) {
       normalizeBase(b.base_url) || null,
       String(b.model || '').trim() || null,
       b.max_tokens == null ? null : clampTokens(b.max_tokens),
+      b.token_budget == null || b.token_budget === '' ? null
+        : Math.min(Math.max(Number(b.token_budget) || 150000, 20000), 2000000),
     ]
   )
   return get()

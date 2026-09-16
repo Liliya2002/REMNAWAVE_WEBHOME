@@ -421,6 +421,14 @@ export default function AdminPrometheus() {
                   </div>
                 </div>
               )}
+              {/* Расход показываем всегда, а не только при успехе: неудачный
+                  разбор тоже стоит денег, и знать об этом надо. */}
+              {!busy && session.session?.id && (session.session.input_tokens > 0 || session.session.output_tokens > 0) && (
+                <div className="text-[11px] text-slate-600 px-3">
+                  Потрачено: {fmtNum((session.session.input_tokens || 0) + (session.session.output_tokens || 0))} токенов
+                  {' · '}обращений к данным: {fmtNum(session.session.tool_calls)}
+                </div>
+              )}
               <div ref={bottomRef} />
             </div>
           )}
@@ -531,14 +539,14 @@ function Connection({ onSaved }) {
     try {
       const d = await asJson(await authFetch(`${API}/connection`))
       setOwn(d.own); setEff(d.effective); setTest(d.check_result)
-      setForm({ base_url: d.own.base_url, model: d.own.model, api_key: '', max_tokens: d.own.max_tokens || '' })
+      setForm({ base_url: d.own.base_url, model: d.own.model, api_key: '', max_tokens: d.own.max_tokens || '', token_budget: d.own.token_budget || 150000 })
     } catch (e) { setErr(e.message) }
   }
 
   async function save() {
     setState('saving'); setErr(null)
     try {
-      const body = { base_url: form.base_url, model: form.model, max_tokens: form.max_tokens || null }
+      const body = { base_url: form.base_url, model: form.model, max_tokens: form.max_tokens || null, token_budget: form.token_budget || null }
       if (form.api_key.trim()) body.api_key = form.api_key.trim()   // пусто = не менять
       await asJson(await authFetch(`${API}/connection`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
@@ -622,11 +630,24 @@ function Connection({ onSaved }) {
           )}
         </div>
 
-        <div>
-          <label className="text-xs text-slate-400">Предел токенов на ответ</label>
-          <input className={field} type="number" value={form.max_tokens}
-            placeholder={String(eff?.max_tokens || 16000)}
-            onChange={e => setForm(f => ({ ...f, max_tokens: e.target.value }))} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-slate-400">Предел токенов на ответ</label>
+            <input className={field} type="number" value={form.max_tokens}
+              placeholder={String(eff?.max_tokens || 16000)}
+              onChange={e => setForm(f => ({ ...f, max_tokens: e.target.value }))} />
+          </div>
+          <div>
+            <label className="text-xs text-slate-400">Потолок расхода на один разбор</label>
+            <input className={field} type="number" step="10000" value={form.token_budget}
+              onChange={e => setForm(f => ({ ...f, token_budget: e.target.value }))} />
+          </div>
+        </div>
+        <div className="text-[11px] text-slate-600 -mt-1">
+          Потолок — это ваши деньги. Достигнув его, разбор не обрывается молча: последний шаг
+          отдан под ответ из уже собранного, с честной пометкой, что осталось невыясненным.
+          Модель на каждом шаге получает всю переписку заново, поэтому расход растёт быстрее,
+          чем кажется: 150 000 — примерно десяток обращений к данным.
         </div>
       </div>
 
